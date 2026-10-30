@@ -139,12 +139,18 @@ function layoutPanes() {
   hint.textContent = "Join: A or Start on a controller · Space (WASD) · Enter (arrows)";
 }
 
-if (import.meta.env.PROD) {
-  reloadOnNewBuild(() => {
-    const seats = locals.map((local) => [local.device.id, local.name]);
-    sessionStorage.setItem(SEATS_KEY, JSON.stringify(seats));
-  });
-}
+if (import.meta.env.PROD) reloadOnNewBuild();
+
+// Chrome can keep a page we navigated away from alive in its back/forward cache, sockets included,
+// which would leave our players standing in the room. So hang up, and rejoin if we're brought back.
+addEventListener("pagehide", () => {
+  const seats = locals.map((local) => [local.device.id, local.name]);
+  sessionStorage.setItem(SEATS_KEY, JSON.stringify(seats));
+  for (const local of locals) void local.session?.room.leave();
+});
+addEventListener("pageshow", (event) => {
+  if (event.persisted) location.reload();
+});
 
 // Debug handle for the browser console and automated smoke tests (dev builds only).
 if (import.meta.env.DEV) Object.assign(window, { __game: { locals, views, world, engine } });

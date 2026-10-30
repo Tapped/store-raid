@@ -13,14 +13,13 @@ async function deployedBuild(): Promise<string | undefined> {
 }
 
 /** Reloads the page as soon as a newer build of main is being served. */
-export function reloadOnNewBuild(beforeReload: () => void): void {
+export function reloadOnNewBuild(): void {
   let loaded: string | undefined;
   setInterval(async () => {
     const build = await deployedBuild();
     if (!build) return;
     loaded ??= build;
     if (build === loaded) return;
-    beforeReload();
     location.reload();
   }, POLL_MS);
 }
