@@ -8,6 +8,7 @@ import {
   TransformNode,
 } from "@babylonjs/core";
 import { PLAYER_RADIUS } from "../../shared/constants";
+import { surfaceMaterial } from "./graphics";
 import type { World } from "./scene";
 
 const HEIGHT = 1.8;
@@ -32,9 +33,9 @@ export class PlayerView {
     );
     this.body.parent = this.root;
     this.body.position.y = HEIGHT / 2;
-    const mat = new StandardMaterial(`player-${name}-mat`, scene);
-    mat.diffuseColor = Color3.FromHexString(color);
-    this.body.material = mat;
+    this.body.material = surfaceMaterial(`player-${name}-mat`, scene, Color3.FromHexString(color), {
+      roughness: 0.35,
+    });
     world.shadows.addShadowCaster(this.body);
 
     this.tag = MeshBuilder.CreatePlane(`player-${name}-tag`, { width: 2, height: 0.5 }, scene);

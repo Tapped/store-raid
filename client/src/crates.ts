@@ -1,5 +1,6 @@
-import { Color3, type Mesh, MeshBuilder, Quaternion, StandardMaterial } from "@babylonjs/core";
+import { Color3, type Mesh, MeshBuilder, Quaternion } from "@babylonjs/core";
 import { CRATE_SIZE } from "../../shared/constants";
+import { surfaceMaterial } from "./graphics";
 import type { World } from "./scene";
 
 /** The visual for one physics crate; the server decides where it is. */
@@ -8,9 +9,9 @@ export class CrateView {
 
   constructor(world: World, id: string) {
     this.mesh = MeshBuilder.CreateBox(id, { size: CRATE_SIZE }, world.scene);
-    const mat = new StandardMaterial(`${id}-mat`, world.scene);
-    mat.diffuseColor = new Color3(0.62, 0.45, 0.26);
-    this.mesh.material = mat;
+    this.mesh.material = surfaceMaterial(`${id}-mat`, world.scene, new Color3(0.62, 0.45, 0.26), {
+      roughness: 0.7,
+    });
     this.mesh.receiveShadows = true;
     this.mesh.rotationQuaternion = new Quaternion();
     world.shadows.addShadowCaster(this.mesh);

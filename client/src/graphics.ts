@@ -1,9 +1,11 @@
 import {
   type AbstractEngine,
   type Camera,
+  type Color3,
   type Color4,
   DefaultRenderingPipeline,
   Engine,
+  PBRMaterial,
   type Scene,
   ShadowGenerator,
   SSAO2RenderingPipeline,
@@ -41,6 +43,20 @@ export function configureShadows(shadows: ShadowGenerator): void {
   } else {
     shadows.usePercentageCloserFiltering = true;
   }
+}
+
+/** A physically based surface. Colours are written as they should look, in sRGB. */
+export function surfaceMaterial(
+  name: string,
+  scene: Scene,
+  color: Color3,
+  { roughness = 0.8, metallic = 0 } = {},
+): PBRMaterial {
+  const material = new PBRMaterial(name, scene);
+  material.albedoColor = color.toLinearSpace();
+  material.roughness = roughness;
+  material.metallic = metallic;
+  return material;
 }
 
 /** The sky colour as written; the high pipeline gamma-corrects it, so it needs to start out linear. */
