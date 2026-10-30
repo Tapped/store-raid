@@ -18,6 +18,8 @@ export interface Device {
   /** True once per press. */
   joinPressed(): boolean;
   leavePressed(): boolean;
+  /** True once the reload combo has been held long enough. Keyboards have F5 instead. */
+  reloadHeld(): boolean;
 }
 
 const held = new Set<string>();
@@ -88,6 +90,7 @@ function keyboard(
     },
     joinPressed: () => takePressed(keys.join),
     leavePressed: () => takePressed(keys.leave),
+    reloadHeld: () => false,
   };
 }
 
@@ -130,6 +133,10 @@ const DEADZONE = 0.15;
 const BUTTON_SOUTH = 0; // A / Cross
 const BUTTON_BACK = 8; // Back / Share
 const BUTTON_START = 9;
+const BUTTON_LEFT_STICK = 10;
+const BUTTON_RIGHT_STICK = 11;
+
+const RELOAD_HOLD_MS = 1000;
 
 /** A stick's two axes with a radial deadzone, rescaled so it still reaches 0 and 1 smoothly. */
 function stick(x: number, y: number): [number, number] {
@@ -149,6 +156,9 @@ function controller(index: number): Device {
     else was.delete(button);
     return first;
   };
+  // Sticks still held from before a reload must be let go first, or it would reload forever.
+  let reloadArmed = false;
+  let reloadHeldSince: number | undefined;
   return {
     id: `pad${index}`,
     label: `Controller ${index + 1}`,
@@ -167,6 +177,17 @@ function controller(index: number): Device {
       return south || start;
     },
     leavePressed: () => edge(BUTTON_BACK),
+    reloadHeld() {
+      const buttons = pad()?.buttons;
+      if (!buttons?.[BUTTON_LEFT_STICK]?.pressed || !buttons[BUTTON_RIGHT_STICK]?.pressed) {
+        reloadArmed = true;
+        reloadHeldSince = undefined;
+        return false;
+      }
+      if (!reloadArmed) return false;
+      reloadHeldSince ??= performance.now();
+      return performance.now() - reloadHeldSince >= RELOAD_HOLD_MS;
+    },
   };
 }
 

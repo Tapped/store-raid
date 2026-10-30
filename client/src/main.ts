@@ -45,6 +45,7 @@ function leave(local: LocalPlayer) {
 
 function pollDevices() {
   for (const device of listDevices()) {
+    if (device.reloadHeld()) location.reload();
     const local = locals.find((l) => l.device === device);
     // Always ask, so a press made while seated or full isn't saved up for later.
     const joinPressed = device.joinPressed();
