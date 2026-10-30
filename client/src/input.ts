@@ -18,6 +18,8 @@ export interface Device {
   /** True once per press. */
   joinPressed(): boolean;
   leavePressed(): boolean;
+  /** True once per press: pick up or let go, depending on whether the player is carrying. */
+  grabPressed(): boolean;
   /** True once the reload combo has been held long enough. Keyboards have F5 instead. */
   reloadHeld(): boolean;
 }
@@ -66,6 +68,7 @@ function keyboard(
     lookRight: string;
     join: string;
     leave: string;
+    grab: string;
   },
   mouse: boolean,
 ): Device {
@@ -90,6 +93,7 @@ function keyboard(
     },
     joinPressed: () => takePressed(keys.join),
     leavePressed: () => takePressed(keys.leave),
+    grabPressed: () => takePressed(keys.grab),
     reloadHeld: () => false,
   };
 }
@@ -107,6 +111,7 @@ const keyboards = [
       lookRight: "KeyE",
       join: "Space",
       leave: "Escape",
+      grab: "KeyF",
     },
     true,
   ),
@@ -122,6 +127,7 @@ const keyboards = [
       lookRight: "Period",
       join: "Enter",
       leave: "Backspace",
+      grab: "ShiftRight",
     },
     false,
   ),
@@ -131,6 +137,7 @@ const DEADZONE = 0.15;
 
 // Standard gamepad mapping: https://w3c.github.io/gamepad/#remapping
 const BUTTON_SOUTH = 0; // A / Cross
+const BUTTON_WEST = 2; // X / Square
 const BUTTON_BACK = 8; // Back / Share
 const BUTTON_START = 9;
 const BUTTON_LEFT_STICK = 10;
@@ -177,6 +184,7 @@ function controller(index: number): Device {
       return south || start;
     },
     leavePressed: () => edge(BUTTON_BACK),
+    grabPressed: () => edge(BUTTON_WEST),
     reloadHeld() {
       const buttons = pad()?.buttons;
       if (!buttons?.[BUTTON_LEFT_STICK]?.pressed || !buttons[BUTTON_RIGHT_STICK]?.pressed) {

@@ -17,7 +17,7 @@ client/src/input.ts        Device: controllers (Gamepad API) and the two keyboar
 client/src/localPlayer.ts  LocalPlayer: one device + camera + connection
 client/src/splitscreen.ts  panes(count): the screen layout for 1–4 players
 client/src/players.ts      PlayerView: capsule + billboard name tag
-client/src/crates.ts       CrateView: a physics crate, drawn where the server says
+client/src/items.ts        ItemView: a box or sofa, drawn where the server says
 client/src/scene.ts        world, player camera
 client/src/graphics.ts     engine (WebGPU, else WebGL2), quality tier (balanced; `?quality=high` for all effects), `surfaceMaterial()` for PBR, camera effects
 client/src/reload.ts       /game/ reloads itself when main has a new build; local players keep their seats
@@ -27,6 +27,7 @@ server/src/rooms/          GameRoom (simulation) + schema.ts (synced state + inp
 server/src/physics.ts      PhysicsWorld: Havok bodies for one room
 server/src/persist.ts      load()/save(): state that survives server restarts
 scripts/bot.ts             headless player
+scripts/carry.ts           two bots carry a sofa to the dock, and report what worked
 ```
 
 ## How the game works

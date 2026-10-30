@@ -7,8 +7,12 @@ export const ARENA_SIZE = 40;
 /** Player collision radius. */
 export const PLAYER_RADIUS = 0.5;
 
-/** Edge length of a crate. */
-export const CRATE_SIZE = 1;
+/** What can be carried: its size (x = long side) and how many people it takes to lift it. */
+export const ITEM_KINDS = {
+  box: { size: [1, 1, 1], carriers: 1 },
+  sofa: { size: [2.4, 0.9, 0.9], carriers: 2 },
+} as const;
+export type ItemKind = keyof typeof ITEM_KINDS;
 
 /** Units per second at full input. */
 export const PLAYER_SPEED = 6;

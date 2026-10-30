@@ -72,7 +72,7 @@ export class LocalPlayer {
 
     // Other players: interpolate towards the latest snapshot (small spring for smooth motion).
     predict.attachAll("players", { mode: "lerp", fields: ["x", "z"], smoothMs: 65 });
-    predict.attachAll("crates", {
+    predict.attachAll("items", {
       mode: "lerp",
       fields: ["x", "y", "z", "qx", "qy", "qz", "qw"],
       smoothMs: 65,
@@ -102,6 +102,12 @@ export class LocalPlayer {
 
     this.session = { room, predict, input, sessionId: room.sessionId, self };
     this.status = "";
+  }
+
+  /** Pick up what's in reach, or let go of what's in hand. The server decides what happens. */
+  grabOrDrop(): void {
+    const session = this.session;
+    if (session) session.room.send(session.self.carrying ? "drop" : "grab");
   }
 
   /** One rendered frame: turn the camera, send due inputs, follow our player. */

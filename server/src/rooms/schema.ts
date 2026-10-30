@@ -18,10 +18,14 @@ export const Player = schema({
   z: t.number(),
   vx: t.number(),
   vz: t.number(),
+  /** Id of the item in this player's hands, or "". */
+  carrying: t.string(),
 });
 export type Player = SchemaType<typeof Player>;
 
-export const Crate = schema({
+export const Item = schema({
+  kind: t.string(),
+  delivered: t.boolean(),
   x: t.number(),
   y: t.number(),
   z: t.number(),
@@ -30,10 +34,10 @@ export const Crate = schema({
   qz: t.number(),
   qw: t.number(),
 });
-export type Crate = SchemaType<typeof Crate>;
+export type Item = SchemaType<typeof Item>;
 
 export const GameState = schema({
   players: t.map(Player),
-  crates: t.map(Crate),
+  items: t.map(Item),
 });
 export type GameState = SchemaType<typeof GameState>;

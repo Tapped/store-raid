@@ -6,11 +6,20 @@ import HavokPhysics, {
   type MotionType,
   type QTransform,
 } from "@babylonjs/havok";
-import { CRATE_SIZE, PLAYER_RADIUS, TICK_RATE } from "../../shared/constants";
+import { ITEM_KINDS, type ItemKind, PLAYER_RADIUS, TICK_RATE } from "../../shared/constants";
 import { LEVEL_BOXES } from "../../shared/level";
 
 const GRAVITY = -9.81;
-const CRATE_DENSITY = 25; // kg per cubic meter
+const ITEM_DENSITY = 25; // kg per cubic meter
+/** How hard a carried item is pulled towards where it should be, per second of error. */
+const CARRY_GAIN = 12;
+const CARRY_MAX_SPEED = 14;
+const DROP_SPIN = 5; // radians per second, at most
+// What collides with what. Carried items miss players, or their carriers would knock them about.
+const LAYER_STATIC = 1;
+const LAYER_PLAYER = 2;
+const LAYER_ITEM = 4;
+const LAYER_CARRIED = 8;
 const PLAYER_HEIGHT = 1.8;
 const GROUND_SIZE = 200;
 const IDENTITY: [number, number, number, number] = [0, 0, 0, 1];
@@ -46,7 +55,7 @@ export interface Pose {
  */
 export class PhysicsWorld {
   private readonly world = ok(havok.HP_World_Create());
-  private readonly crateShape: HP_ShapeId;
+  private readonly itemShapes = new Map<ItemKind, { loose: HP_ShapeId; carried: HP_ShapeId }>();
   private readonly playerShape: HP_ShapeId;
   private readonly shapes: HP_ShapeId[] = [];
   private readonly bodies = new Set<HP_BodyId>();
@@ -63,10 +72,18 @@ export class PhysicsWorld {
       );
     }
 
-    this.crateShape = this.shape(
-      ok(havok.HP_Shape_CreateBox([0, 0, 0], IDENTITY, [CRATE_SIZE, CRATE_SIZE, CRATE_SIZE])),
-    );
-    havok.HP_Shape_SetDensity(this.crateShape, CRATE_DENSITY);
+    for (const [kind, { size }] of Object.entries(ITEM_KINDS)) {
+      const box = (membership: number, collides: number) => {
+        const shape = this.shape(ok(havok.HP_Shape_CreateBox([0, 0, 0], IDENTITY, [...size])));
+        havok.HP_Shape_SetDensity(shape, ITEM_DENSITY);
+        havok.HP_Shape_SetFilterInfo(shape, [membership, collides]);
+        return shape;
+      };
+      this.itemShapes.set(kind as ItemKind, {
+        loose: box(LAYER_ITEM, LAYER_STATIC | LAYER_PLAYER | LAYER_ITEM | LAYER_CARRIED),
+        carried: box(LAYER_CARRIED, LAYER_STATIC | LAYER_ITEM | LAYER_CARRIED),
+      });
+    }
     this.playerShape = this.shape(
       ok(
         havok.HP_Shape_CreateCapsule(
@@ -76,12 +93,61 @@ export class PhysicsWorld {
         ),
       ),
     );
+    havok.HP_Shape_SetFilterInfo(this.playerShape, [LAYER_PLAYER, LAYER_ITEM]);
   }
 
-  addCrate(x: number, y: number, z: number): HP_BodyId {
-    const body = this.addBody(this.crateShape, havok.MotionType.DYNAMIC, [[x, y, z], IDENTITY]);
-    havok.HP_Body_SetMassProperties(body, ok(havok.HP_Shape_BuildMassProperties(this.crateShape)));
+  addItem(kind: ItemKind, x: number, y: number, z: number): HP_BodyId {
+    const shape = this.itemShape(kind).loose;
+    const body = this.addBody(shape, havok.MotionType.DYNAMIC, [[x, y, z], IDENTITY]);
+    havok.HP_Body_SetMassProperties(body, ok(havok.HP_Shape_BuildMassProperties(shape)));
     return body;
+  }
+
+  /** Picked up: gravity stops applying and `carry` steers it. It still hits shelves on the way. */
+  lift(body: HP_BodyId, kind: ItemKind): void {
+    havok.HP_Body_SetShape(body, this.itemShape(kind).carried);
+    havok.HP_Body_SetGravityFactor(body, 0);
+    havok.HP_Body_SetActivationControl(body, havok.ActivationControl.ALWAYS_ACTIVE);
+  }
+
+  /**
+   * Let go: it falls again, with a bit of spin so it tumbles. It still misses players, who are standing
+   * right against it and would catch it, until `settle` makes it an ordinary object again.
+   */
+  letGo(body: HP_BodyId): void {
+    havok.HP_Body_SetGravityFactor(body, 1);
+    havok.HP_Body_SetActivationControl(body, havok.ActivationControl.SIMULATION_CONTROLLED);
+    const spin = () => (Math.random() * 2 - 1) * DROP_SPIN;
+    havok.HP_Body_SetAngularVelocity(body, [spin(), spin(), spin()]);
+  }
+
+  settle(body: HP_BodyId, kind: ItemKind): void {
+    havok.HP_Body_SetShape(body, this.itemShape(kind).loose);
+  }
+
+  /**
+   * Pull a lifted item towards a position and a turn around y. Velocities rather than teleports, so
+   * it can't pass through walls. Returns how far it still is from there, to notice it getting stuck.
+   */
+  carry(body: HP_BodyId, x: number, y: number, z: number, yaw: number): number {
+    const [[px, py, pz], [qx, qy, qz, qw]] = ok(havok.HP_Body_GetQTransform(body));
+    const [dx, dy, dz] = [x - px, y - py, z - pz];
+    const distance = Math.hypot(dx, dy, dz);
+    const scale = Math.min(CARRY_GAIN, CARRY_MAX_SPEED / Math.max(distance, 1e-6));
+    havok.HP_Body_SetLinearVelocity(body, [dx * scale, dy * scale, dz * scale]);
+
+    // Rotation left to do, target * inverse(current), to whichever end of the item is closer.
+    let ty = Math.sin(yaw / 2);
+    let tw = Math.cos(yaw / 2);
+    if (Math.abs(ty * qy + tw * qw) < Math.SQRT1_2) [ty, tw] = [tw, -ty];
+    const sign = ty * qy + tw * qw < 0 ? -1 : 1;
+    const turn = 2 * CARRY_GAIN * sign;
+    havok.HP_Body_SetAngularVelocity(body, [
+      (ty * qz - tw * qx) * turn,
+      (ty * -qw + tw * qy) * -turn,
+      (-ty * qx - tw * qz) * turn,
+    ]);
+    return distance;
   }
 
   addPlayer(x: number, z: number): HP_BodyId {
@@ -124,6 +190,12 @@ export class PhysicsWorld {
     havok.HP_World_Release(this.world);
   }
 
+  private itemShape(kind: ItemKind) {
+    const shapes = this.itemShapes.get(kind);
+    if (!shapes) throw new Error(`Unknown item kind: ${kind}`);
+    return shapes;
+  }
+
   private shape(shape: HP_ShapeId): HP_ShapeId {
     this.shapes.push(shape);
     return shape;
@@ -131,6 +203,7 @@ export class PhysicsWorld {
 
   private addStatic(center: [number, number, number], size: [number, number, number]): void {
     const shape = this.shape(ok(havok.HP_Shape_CreateBox([0, 0, 0], IDENTITY, size)));
+    havok.HP_Shape_SetFilterInfo(shape, [LAYER_STATIC, LAYER_ITEM | LAYER_CARRIED]);
     this.addBody(shape, havok.MotionType.STATIC, [center, IDENTITY]);
   }
 
