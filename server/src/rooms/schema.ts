@@ -21,7 +21,19 @@ export const Player = schema({
 });
 export type Player = SchemaType<typeof Player>;
 
+export const Crate = schema({
+  x: t.number(),
+  y: t.number(),
+  z: t.number(),
+  qx: t.number(),
+  qy: t.number(),
+  qz: t.number(),
+  qw: t.number(),
+});
+export type Crate = SchemaType<typeof Crate>;
+
 export const GameState = schema({
   players: t.map(Player),
+  crates: t.map(Crate),
 });
 export type GameState = SchemaType<typeof GameState>;

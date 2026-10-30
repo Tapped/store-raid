@@ -1,4 +1,5 @@
 import { MAX_LOCAL_PLAYERS } from "../../shared/constants";
+import { CrateView } from "./crates";
 import { createEngine } from "./graphics";
 import { attachMouse, type Device, listDevices } from "./input";
 import { LocalPlayer } from "./localPlayer";
@@ -17,6 +18,7 @@ addEventListener("resize", () => engine.resize());
 
 const locals: LocalPlayer[] = [];
 const views = new Map<string, PlayerView>();
+const crates = new Map<string, CrateView>();
 const labels: HTMLDivElement[] = [];
 
 const SEATS_KEY = "seats";
@@ -103,6 +105,35 @@ function syncViews() {
   }
 }
 
+/** Every crate, as the first connection sees it: they all see the same room. */
+function syncCrates() {
+  const session = locals.find((local) => local.session)?.session;
+  const state = session?.room.state.crates;
+  for (const [id, view] of crates) {
+    if (state?.has(id)) continue;
+    view.dispose();
+    crates.delete(id);
+  }
+  if (!session || !state) return;
+  for (const [id, crate] of state) {
+    let view = crates.get(id);
+    if (!view) {
+      view = new CrateView(world, id);
+      crates.set(id, view);
+    }
+    const { predict } = session;
+    view.setPose(
+      predict.value(crate, "x"),
+      predict.value(crate, "y"),
+      predict.value(crate, "z"),
+      predict.value(crate, "qx"),
+      predict.value(crate, "qy"),
+      predict.value(crate, "qz"),
+      predict.value(crate, "qw"),
+    );
+  }
+}
+
 /** Give every local player their part of the screen, and a label on top of it. */
 function layoutPanes() {
   const layout = panes(locals.length);
@@ -154,7 +185,8 @@ addEventListener("pageshow", (event) => {
 });
 
 // Debug handle for the browser console and automated smoke tests (dev builds only).
-if (import.meta.env.DEV) Object.assign(window, { __game: { locals, views, world, engine } });
+if (import.meta.env.DEV)
+  Object.assign(window, { __game: { locals, views, crates, world, engine } });
 
 engine.runRenderLoop(() => {
   const dt = engine.getDeltaTime() / 1000;
@@ -162,6 +194,7 @@ engine.runRenderLoop(() => {
   for (const local of locals) local.update(dt);
   world.lobbyCamera.alpha += dt * 0.1;
   syncViews();
+  syncCrates();
   layoutPanes();
   world.scene.render();
 });

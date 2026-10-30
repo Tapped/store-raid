@@ -1,3 +1,4 @@
+import type { HP_BodyId } from "@babylonjs/havok";
 import { type Client, type CloseCode, Room, type StepContext } from "@colyseus/core";
 import { resolveCircleCircle } from "../../../shared/collision";
 import {
@@ -7,10 +8,11 @@ import {
   PLAYER_RADIUS,
   TICK_RATE,
 } from "../../../shared/constants";
-import { spawnPoint } from "../../../shared/level";
+import { CRATE_SPAWNS, spawnPoint } from "../../../shared/level";
 import { stepMover } from "../../../shared/movement";
 import { load, save } from "../persist";
-import { GameState, MoveInput, Player } from "./schema";
+import { PhysicsWorld } from "../physics";
+import { Crate, GameState, MoveInput, Player } from "./schema";
 
 export interface JoinOptions {
   name?: string;
@@ -28,6 +30,10 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
 
   private joinCount = 0;
 
+  private readonly physics = new PhysicsWorld();
+  private readonly playerBodies = new Map<string, HP_BodyId>();
+  private readonly crateBodies = new Map<string, HP_BodyId>();
+
   /** Where each player (by name) last was, so a restart or reload puts them back there. */
   private lastSeen = load("lastSeen", {} as Record<string, { x: number; z: number }>);
 
@@ -37,6 +43,11 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   };
 
   onCreate() {
+    for (const [i, { x, y, z }] of CRATE_SPAWNS.entries()) {
+      const id = `crate${i}`;
+      this.state.crates.set(id, new Crate({ x, y, z, qx: 0, qy: 0, qz: 0, qw: 1 }));
+      this.crateBodies.set(id, this.physics.addCrate(x, y, z));
+    }
     this.setFixedTimestep((ctx) => this.step(ctx), TICK_RATE);
   }
 
@@ -55,6 +66,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
         vz: 0,
       }),
     );
+    this.playerBodies.set(client.sessionId, this.physics.addPlayer(spawn.x, spawn.z));
     console.log(`${name} (${client.sessionId}) joined`);
   }
 
@@ -66,6 +78,13 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       save("lastSeen", this.lastSeen);
     }
     this.state.players.delete(client.sessionId);
+    const body = this.playerBodies.get(client.sessionId);
+    if (body) this.physics.removeBody(body);
+    this.playerBodies.delete(client.sessionId);
+  }
+
+  onDispose() {
+    this.physics.dispose();
   }
 
   private step(ctx: StepContext) {
@@ -91,6 +110,17 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
           players[j].z = b.z;
         }
       }
+    }
+
+    // 3. Physics, with players where they ended up: they shove crates, crates never stop them.
+    for (const [sessionId, player] of this.state.players) {
+      const body = this.playerBodies.get(sessionId);
+      if (body) this.physics.movePlayer(body, player.x, player.z);
+    }
+    this.physics.step(ctx.dt);
+    for (const [id, crate] of this.state.crates) {
+      const body = this.crateBodies.get(id);
+      if (body) this.physics.readPose(body, crate);
     }
   }
 }

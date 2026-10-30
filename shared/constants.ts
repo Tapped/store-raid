@@ -7,6 +7,9 @@ export const ARENA_SIZE = 40;
 /** Player collision radius. */
 export const PLAYER_RADIUS = 0.5;
 
+/** Edge length of a crate. */
+export const CRATE_SIZE = 1;
+
 /** Units per second at full input. */
 export const PLAYER_SPEED = 6;
 

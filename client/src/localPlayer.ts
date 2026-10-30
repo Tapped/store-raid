@@ -72,6 +72,11 @@ export class LocalPlayer {
 
     // Other players: interpolate towards the latest snapshot (small spring for smooth motion).
     predict.attachAll("players", { mode: "lerp", fields: ["x", "z"], smoothMs: 65 });
+    predict.attachAll("crates", {
+      mode: "lerp",
+      fields: ["x", "y", "z", "qx", "qy", "qz", "qw"],
+      smoothMs: 65,
+    });
 
     const input = openInput(room);
 

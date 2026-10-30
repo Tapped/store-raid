@@ -7,7 +7,7 @@ A multiplayer browser game with splitscreen and controllers.
 - **Client:** Babylon.js 9 + TypeScript, bundled by Vite 8 (`client/`)
 - **Server:** Colyseus 0.18, authoritative, fixed 30 Hz tick (`server/`)
 - **Shared:** simulation code both sides run: constants, level, collision, movement (`shared/`)
-- Node ≥ 22. Lint/format: Biome. No physics engine (yet).
+- Node ≥ 22. Lint/format: Biome. Physics: Havok, on the server only.
 
 ## Layout
 
@@ -17,12 +17,14 @@ client/src/input.ts        Device: controllers (Gamepad API) and the two keyboar
 client/src/localPlayer.ts  LocalPlayer: one device + camera + connection
 client/src/splitscreen.ts  panes(count): the screen layout for 1–4 players
 client/src/players.ts      PlayerView: capsule + billboard name tag
+client/src/crates.ts       CrateView: a physics crate, drawn where the server says
 client/src/scene.ts        world, player camera
 client/src/graphics.ts     engine (WebGPU, else WebGL2), quality tier (balanced; `?quality=high` for all effects), camera effects
 client/src/reload.ts       /game/ reloads itself when main has a new build; local players keep their seats
 client/src/net.ts          Colyseus client, joinGame(), waitForServer()
 client/src/assets.ts       assetUrl(), loadModel() with placeholder fallback
 server/src/rooms/          GameRoom (simulation) + schema.ts (synced state + input)
+server/src/physics.ts      PhysicsWorld: Havok bodies for one room
 server/src/persist.ts      load()/save(): state that survives server restarts
 scripts/bot.ts             headless player
 ```
@@ -33,6 +35,9 @@ scripts/bot.ts             headless player
   server runs `stepMover` for each at 30 Hz and syncs state. Each client **predicts its own
   player** with the same step and **interpolates everyone else**, so `shared/movement.ts` must stay
   a pure function of `(state, input, dt)`: no clocks, randomness or other state.
+- **Physics runs on the server only** (`PhysicsWorld`, Havok). Clients interpolate the poses it
+  syncs and never run it; player movement stays in `stepMover`, not in physics. Players are
+  kinematic: they shove objects, objects don't stop them.
 - **Each person on the screen has their own room connection** (`LocalPlayer`). The server doesn't
   know about splitscreen; several screens can play in the same room. Per-person logic belongs in
   `LocalPlayer`, not in globals, and anything that addresses "the player" must say which one.
