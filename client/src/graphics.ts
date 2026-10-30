@@ -1,29 +1,47 @@
 import {
+  type AbstractEngine,
   type Camera,
   type Color4,
   DefaultRenderingPipeline,
+  Engine,
   type Scene,
   ShadowGenerator,
   SSAO2RenderingPipeline,
   TAARenderingPipeline,
+  WebGPUEngine,
 } from "@babylonjs/core";
 
-export type Quality = "standard" | "high";
+export type Quality = "balanced" | "high";
 
-/** Windows gets the high settings, everything else standard; `?quality=` overrides that. */
+/** Windows gets the high settings, everything else balanced; `?quality=` overrides that. */
 export const quality: Quality = (() => {
   const asked = new URLSearchParams(location.search).get("quality");
-  if (asked === "high" || asked === "standard") return asked;
-  return /^Win/.test(navigator.platform) ? "high" : "standard";
+  if (asked === "high" || asked === "balanced") return asked;
+  return /^Win/.test(navigator.platform) ? "high" : "balanced";
 })();
 
+/** WebGPU where the browser offers it (secure pages only), otherwise WebGL2. */
+export async function createEngine(canvas: HTMLCanvasElement): Promise<AbstractEngine> {
+  // Native resolution is what stops the picture looking soft on HiDPI screens, on every tier.
+  if (await WebGPUEngine.IsSupportedAsync) {
+    try {
+      const engine = new WebGPUEngine(canvas, { antialias: true, adaptToDeviceRatio: true });
+      await engine.initAsync();
+      return engine;
+    } catch (err) {
+      console.warn("WebGPU failed to start, using WebGL2", err);
+    }
+  }
+  return new Engine(canvas, true, undefined, true);
+}
+
 export function configureShadows(shadows: ShadowGenerator): void {
+  shadows.filteringQuality = ShadowGenerator.QUALITY_HIGH;
   if (quality === "high") {
     shadows.useContactHardeningShadow = true;
     shadows.contactHardeningLightSizeUVRatio = 0.25;
-    shadows.filteringQuality = ShadowGenerator.QUALITY_HIGH;
   } else {
-    shadows.useBlurExponentialShadowMap = true;
+    shadows.usePercentageCloserFiltering = true;
   }
 }
 
@@ -32,7 +50,7 @@ export function skyColor(color: Color4): Color4 {
   return quality === "high" ? color.toLinearSpace() : color;
 }
 
-export const SHADOW_MAP_SIZE = quality === "high" ? 4096 : 1024;
+export const SHADOW_MAP_SIZE = quality === "high" ? 4096 : 2048;
 
 /**
  * Post-processing for one camera; returns how to remove it, which must happen before the camera is
@@ -40,7 +58,7 @@ export const SHADOW_MAP_SIZE = quality === "high" ? 4096 : 1024;
  * and split panes sharing one would blend each other's pictures.
  */
 export function addCameraEffects(scene: Scene, camera: Camera): () => void {
-  if (quality === "standard") return () => {};
+  if (quality === "balanced") return () => {};
 
   // TAA has to come first.
   const taa = new TAARenderingPipeline(`taa-${camera.name}`, scene, [camera]);

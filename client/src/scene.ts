@@ -1,9 +1,9 @@
 import {
+  type AbstractEngine,
   ArcRotateCamera,
   Color3,
   Color4,
   DirectionalLight,
-  type Engine,
   HemisphericLight,
   MeshBuilder,
   Scene,
@@ -31,7 +31,7 @@ export function createPlayerCamera(scene: Scene, name: string): ArcRotateCamera 
 }
 
 /** Static world: lights, ground and the level boxes from shared/level.ts. */
-export function createWorld(engine: Engine): World {
+export function createWorld(engine: AbstractEngine): World {
   const scene = new Scene(engine);
   scene.clearColor = skyColor(new Color4(0.53, 0.72, 0.9, 1));
 
