@@ -1,0 +1,63 @@
+/**
+ * Headless bot player, for testing server logic and multiplayer without a browser.
+ *
+ *   npx tsx scripts/bot.ts [name] [seconds]     (defaults: bot, 10)
+ *
+ * Joins your game server (SERVER_PORT from ~/.config/game.env, else 2567), walks in a square and prints every
+ * player's position once a second. Run several at once for several players.
+ */
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { ColyseusSDK } from "@colyseus/sdk";
+import type server from "../server/src/app";
+import type { MoveInput } from "../server/src/rooms/schema";
+import { MOVE_SCALE, TICK_RATE } from "../shared/constants";
+
+const name = process.argv[2] ?? "bot";
+const seconds = Number(process.argv[3] ?? 10);
+const port = process.env.SERVER_PORT ?? envFilePort() ?? "2567";
+
+function envFilePort(): string | undefined {
+  try {
+    const env = readFileSync(`${homedir()}/.config/game.env`, "utf8");
+    return /^SERVER_PORT=(\d+)$/m.exec(env)?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
+const client = new ColyseusSDK<typeof server>(`ws://127.0.0.1:${port}`);
+const room = await client.joinOrCreate("game", { name });
+const input = room.input<MoveInput>({ mode: "reliable" });
+room.onLeave((code) => console.log(`left (code ${code})`));
+console.log(`${name} joined as ${room.sessionId} on port ${port}`);
+
+// One input per server tick, like the browser client: 1 s each of +z, +x, -z, -x.
+const square: [number, number][] = [
+  [0, 1],
+  [1, 0],
+  [0, -1],
+  [-1, 0],
+];
+let tick = 0;
+const stepper = setInterval(() => {
+  const [moveX, moveZ] = square[Math.floor(tick++ / TICK_RATE) % square.length];
+  input.data.moveX = moveX * MOVE_SCALE;
+  input.data.moveZ = moveZ * MOVE_SCALE;
+  input.send();
+}, 1000 / TICK_RATE);
+
+const printer = setInterval(() => {
+  const players = [...room.state.players.entries()].map(
+    ([id, p]) =>
+      `${p.name}${id === room.sessionId ? "*" : ""}(${p.x.toFixed(1)}, ${p.z.toFixed(1)})`,
+  );
+  console.log(players.join("  "));
+}, 1000);
+
+setTimeout(async () => {
+  clearInterval(stepper);
+  clearInterval(printer);
+  await room.leave();
+  process.exit(0);
+}, seconds * 1000);
