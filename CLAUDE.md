@@ -19,6 +19,7 @@ client/src/splitscreen.ts  panes(count): the screen layout for 1–4 players
 client/src/players.ts      PlayerView: capsule + billboard name tag
 client/src/scene.ts        world, player camera
 client/src/graphics.ts     quality tier (Windows high, others standard; `?quality=` overrides), per-camera effects
+client/src/reload.ts       /game/ reloads itself when main has a new build; local players keep their seats
 client/src/net.ts          Colyseus client, joinGame(), waitForServer()
 client/src/assets.ts       assetUrl(), loadModel() with placeholder fallback
 server/src/rooms/          GameRoom (simulation) + schema.ts (synced state + input)
