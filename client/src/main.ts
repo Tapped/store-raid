@@ -1,6 +1,5 @@
-import { Engine } from "@babylonjs/core";
 import { MAX_LOCAL_PLAYERS } from "../../shared/constants";
-import { quality } from "./graphics";
+import { createEngine } from "./graphics";
 import { attachMouse, type Device, listDevices } from "./input";
 import { LocalPlayer } from "./localPlayer";
 import { PlayerView } from "./players";
@@ -11,7 +10,7 @@ import { panes } from "./splitscreen";
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const hint = document.getElementById("hint") as HTMLDivElement;
 
-const engine = new Engine(canvas, true, undefined, quality === "high");
+const engine = await createEngine(canvas);
 const world = createWorld(engine);
 attachMouse(canvas);
 addEventListener("resize", () => engine.resize());
@@ -46,6 +45,7 @@ function leave(local: LocalPlayer) {
 
 function pollDevices() {
   for (const device of listDevices()) {
+    if (device.reloadHeld()) location.reload();
     const local = locals.find((l) => l.device === device);
     // Always ask, so a press made while seated or full isn't saved up for later.
     const joinPressed = device.joinPressed();
@@ -140,12 +140,18 @@ function layoutPanes() {
   hint.textContent = "Join: A or Start on a controller · Space (WASD) · Enter (arrows)";
 }
 
-if (import.meta.env.PROD) {
-  reloadOnNewBuild(() => {
-    const seats = locals.map((local) => [local.device.id, local.name]);
-    sessionStorage.setItem(SEATS_KEY, JSON.stringify(seats));
-  });
-}
+if (import.meta.env.PROD) reloadOnNewBuild();
+
+// Chrome can keep a page we navigated away from alive in its back/forward cache, sockets included,
+// which would leave our players standing in the room. So hang up, and rejoin if we're brought back.
+addEventListener("pagehide", () => {
+  const seats = locals.map((local) => [local.device.id, local.name]);
+  sessionStorage.setItem(SEATS_KEY, JSON.stringify(seats));
+  for (const local of locals) void local.session?.room.leave();
+});
+addEventListener("pageshow", (event) => {
+  if (event.persisted) location.reload();
+});
 
 // Debug handle for the browser console and automated smoke tests (dev builds only).
 if (import.meta.env.DEV) Object.assign(window, { __game: { locals, views, world, engine } });
