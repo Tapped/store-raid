@@ -4,6 +4,7 @@ import { quality } from "./graphics";
 import { attachMouse, type Device, listDevices } from "./input";
 import { LocalPlayer } from "./localPlayer";
 import { PlayerView } from "./players";
+import { reloadOnNewBuild } from "./reload";
 import { createWorld } from "./scene";
 import { panes } from "./splitscreen";
 
@@ -19,15 +20,22 @@ const locals: LocalPlayer[] = [];
 const views = new Map<string, PlayerView>();
 const labels: HTMLDivElement[] = [];
 
+const SEATS_KEY = "seats";
+/** Device id → seat, for players coming back from a reload. Controllers return on their next press. */
+const savedSeats = new Map<string, string>(JSON.parse(sessionStorage.getItem(SEATS_KEY) ?? "[]"));
+sessionStorage.removeItem(SEATS_KEY);
+
 /** Seats are P1–P4; a new player takes the lowest free one. */
 function freeName(): string {
+  const saved = [...savedSeats.values()];
   for (let seat = 1; ; seat++) {
-    if (!locals.some((local) => local.name === `P${seat}`)) return `P${seat}`;
+    const name = `P${seat}`;
+    if (!locals.some((local) => local.name === name) && !saved.includes(name)) return name;
   }
 }
 
-function join(device: Device) {
-  locals.push(new LocalPlayer(world, device, freeName()));
+function join(device: Device, name = freeName()) {
+  locals.push(new LocalPlayer(world, device, name));
   locals.sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -42,7 +50,11 @@ function pollDevices() {
     // Always ask, so a press made while seated or full isn't saved up for later.
     const joinPressed = device.joinPressed();
     const leavePressed = device.leavePressed();
-    if (local && leavePressed) leave(local);
+    const seat = savedSeats.get(device.id);
+    if (seat) {
+      savedSeats.delete(device.id);
+      join(device, seat);
+    } else if (local && leavePressed) leave(local);
     else if (!local && joinPressed && locals.length < MAX_LOCAL_PLAYERS) join(device);
   }
 }
@@ -126,6 +138,13 @@ function layoutPanes() {
 
   hint.style.display = locals.length < MAX_LOCAL_PLAYERS ? "" : "none";
   hint.textContent = "Join: A or Start on a controller · Space (WASD) · Enter (arrows)";
+}
+
+if (import.meta.env.PROD) {
+  reloadOnNewBuild(() => {
+    const seats = locals.map((local) => [local.device.id, local.name]);
+    sessionStorage.setItem(SEATS_KEY, JSON.stringify(seats));
+  });
 }
 
 // Debug handle for the browser console and automated smoke tests (dev builds only).
