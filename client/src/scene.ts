@@ -3,17 +3,25 @@ import {
   ArcRotateCamera,
   Color3,
   Color4,
+  CubeTexture,
   DirectionalLight,
   HemisphericLight,
+  ImageProcessingConfiguration,
   MeshBuilder,
   Scene,
   ShadowGenerator,
-  StandardMaterial,
   Vector3,
 } from "@babylonjs/core";
 import { ARENA_SIZE } from "../../shared/constants";
 import { LEVEL_BOXES } from "../../shared/level";
-import { addCameraEffects, configureShadows, SHADOW_MAP_SIZE, skyColor } from "./graphics";
+import { assetUrl } from "./assets";
+import {
+  addCameraEffects,
+  configureShadows,
+  SHADOW_MAP_SIZE,
+  skyColor,
+  surfaceMaterial,
+} from "./graphics";
 
 export interface World {
   scene: Scene;
@@ -38,11 +46,21 @@ export function createWorld(engine: AbstractEngine): World {
   const lobbyCamera = new ArcRotateCamera("lobby", -Math.PI / 2, 0.9, 38, Vector3.Zero(), scene);
   addCameraEffects(scene, lobbyCamera);
 
+  // Image-based lighting: what PBR surfaces reflect and most of their soft ambient light.
+  scene.environmentTexture = CubeTexture.CreateFromPrefilteredData(
+    assetUrl("textures/environment.env"),
+    scene,
+  );
+  scene.environmentIntensity = 0.7;
+  scene.imageProcessingConfiguration.toneMappingEnabled = true;
+  scene.imageProcessingConfiguration.toneMappingType =
+    ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
+
   const hemi = new HemisphericLight("hemi", new Vector3(0, 1, 0), scene);
-  hemi.intensity = 0.6;
+  hemi.intensity = 0.2;
   const sun = new DirectionalLight("sun", new Vector3(-0.5, -1, 0.3), scene);
   sun.position = new Vector3(20, 40, -20);
-  sun.intensity = 0.8;
+  sun.intensity = 2.5;
   const shadows = new ShadowGenerator(SHADOW_MAP_SIZE, sun);
   configureShadows(shadows);
 
@@ -51,14 +69,13 @@ export function createWorld(engine: AbstractEngine): World {
     { width: ARENA_SIZE, height: ARENA_SIZE },
     scene,
   );
-  const groundMat = new StandardMaterial("groundMat", scene);
-  groundMat.diffuseColor = new Color3(0.35, 0.55, 0.3);
-  groundMat.specularColor = Color3.Black();
+  const groundMat = surfaceMaterial("groundMat", scene, new Color3(0.35, 0.55, 0.3), {
+    roughness: 0.95,
+  });
   ground.material = groundMat;
   ground.receiveShadows = true;
 
-  const wallMat = new StandardMaterial("wallMat", scene);
-  wallMat.diffuseColor = new Color3(0.6, 0.58, 0.55);
+  const wallMat = surfaceMaterial("wallMat", scene, new Color3(0.6, 0.58, 0.55));
   for (const [i, box] of LEVEL_BOXES.entries()) {
     const mesh = MeshBuilder.CreateBox(
       `box${i}`,
