@@ -4,6 +4,7 @@ import { Predict } from "@colyseus/sdk/predict";
 import type { MoveInput } from "../../server/src/rooms/schema";
 import { MOVE_SCALE } from "../../shared/constants";
 import { stepMover } from "../../shared/movement";
+import { addCameraEffects } from "./graphics";
 import type { Device } from "./input";
 import { type GameConnection, joinGame, waitForServer } from "./net";
 import { createPlayerCamera, type World } from "./scene";
@@ -34,6 +35,7 @@ export class LocalPlayer {
   status = "Connecting…";
   private left = false;
   private readonly cameraTarget = new Vector3();
+  private readonly removeCameraEffects: () => void;
 
   constructor(
     world: World,
@@ -41,6 +43,7 @@ export class LocalPlayer {
     readonly name: string,
   ) {
     this.camera = createPlayerCamera(world.scene, `camera-${name}`);
+    this.removeCameraEffects = addCameraEffects(world.scene, this.camera);
     void this.connect();
   }
 
@@ -131,6 +134,7 @@ export class LocalPlayer {
   leave(): void {
     this.left = true;
     void this.session?.room.leave();
+    this.removeCameraEffects();
     this.camera.dispose();
   }
 }

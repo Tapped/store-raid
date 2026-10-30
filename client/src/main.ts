@@ -1,5 +1,6 @@
 import { Engine } from "@babylonjs/core";
 import { MAX_LOCAL_PLAYERS } from "../../shared/constants";
+import { quality } from "./graphics";
 import { attachMouse, type Device, listDevices } from "./input";
 import { LocalPlayer } from "./localPlayer";
 import { PlayerView } from "./players";
@@ -9,7 +10,7 @@ import { panes } from "./splitscreen";
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const hint = document.getElementById("hint") as HTMLDivElement;
 
-const engine = new Engine(canvas, true);
+const engine = new Engine(canvas, true, undefined, quality === "high");
 const world = createWorld(engine);
 attachMouse(canvas);
 addEventListener("resize", () => engine.resize());

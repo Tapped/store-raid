@@ -13,6 +13,7 @@ import {
 } from "@babylonjs/core";
 import { ARENA_SIZE } from "../../shared/constants";
 import { LEVEL_BOXES } from "../../shared/level";
+import { addCameraEffects, configureShadows, SHADOW_MAP_SIZE, skyColor } from "./graphics";
 
 export interface World {
   scene: Scene;
@@ -32,17 +33,18 @@ export function createPlayerCamera(scene: Scene, name: string): ArcRotateCamera 
 /** Static world: lights, ground and the level boxes from shared/level.ts. */
 export function createWorld(engine: Engine): World {
   const scene = new Scene(engine);
-  scene.clearColor = new Color4(0.53, 0.72, 0.9, 1);
+  scene.clearColor = skyColor(new Color4(0.53, 0.72, 0.9, 1));
 
   const lobbyCamera = new ArcRotateCamera("lobby", -Math.PI / 2, 0.9, 38, Vector3.Zero(), scene);
+  addCameraEffects(scene, lobbyCamera);
 
   const hemi = new HemisphericLight("hemi", new Vector3(0, 1, 0), scene);
   hemi.intensity = 0.6;
   const sun = new DirectionalLight("sun", new Vector3(-0.5, -1, 0.3), scene);
   sun.position = new Vector3(20, 40, -20);
   sun.intensity = 0.8;
-  const shadows = new ShadowGenerator(1024, sun);
-  shadows.useBlurExponentialShadowMap = true;
+  const shadows = new ShadowGenerator(SHADOW_MAP_SIZE, sun);
+  configureShadows(shadows);
 
   const ground = MeshBuilder.CreateGround(
     "ground",
