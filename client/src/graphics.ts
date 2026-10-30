@@ -20,10 +20,11 @@ export const quality: Quality = (() => {
   return /^Win/.test(navigator.platform) ? "high" : "balanced";
 })();
 
-/** WebGPU where the browser offers it (secure pages only), otherwise WebGL2. */
+/** WebGPU where the browser offers it (secure pages only), otherwise WebGL2; `?engine=webgl` forces WebGL2. */
 export async function createEngine(canvas: HTMLCanvasElement): Promise<AbstractEngine> {
   // Native resolution is what stops the picture looking soft on HiDPI screens, on every tier.
-  if (await WebGPUEngine.IsSupportedAsync) {
+  const forceWebGL = new URLSearchParams(location.search).get("engine") === "webgl";
+  if (!forceWebGL && (await WebGPUEngine.IsSupportedAsync)) {
     try {
       const engine = new WebGPUEngine(canvas, { antialias: true, adaptToDeviceRatio: true });
       await engine.initAsync();
