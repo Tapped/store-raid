@@ -13,12 +13,9 @@ import {
 
 export type Quality = "balanced" | "high";
 
-/** Windows gets the high settings, everything else balanced; `?quality=` overrides that. */
-export const quality: Quality = (() => {
-  const asked = new URLSearchParams(location.search).get("quality");
-  if (asked === "high" || asked === "balanced") return asked;
-  return /^Win/.test(navigator.platform) ? "high" : "balanced";
-})();
+/** Balanced everywhere; `?quality=high` asks for all the effects. */
+export const quality: Quality =
+  new URLSearchParams(location.search).get("quality") === "high" ? "high" : "balanced";
 
 /** WebGPU where the browser offers it (secure pages only), otherwise WebGL2; `?engine=webgl` forces WebGL2. */
 export async function createEngine(canvas: HTMLCanvasElement): Promise<AbstractEngine> {
