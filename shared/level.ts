@@ -23,6 +23,23 @@ export const LEVEL_BOXES: (Box & { height: number })[] = [
   { minX: -2, maxX: 2, minZ: -1, maxZ: 1, height: 1.5 },
 ];
 
+/** Where crates start: stacks just off the ground, so they settle when a room opens. */
+export const CRATE_SPAWNS: { x: number; y: number; z: number }[] = [
+  // A pyramid
+  { x: 13.4, y: 0.6, z: 0 },
+  { x: 14.6, y: 0.6, z: 0 },
+  { x: 14, y: 1.7, z: 0 },
+  // A tower
+  { x: -14, y: 0.6, z: 4 },
+  { x: -14, y: 1.7, z: 4 },
+  { x: -14, y: 2.8, z: 4 },
+  { x: -14, y: 3.9, z: 4 },
+  // A row
+  { x: -2, y: 0.6, z: 14 },
+  { x: 0, y: 0.6, z: 14 },
+  { x: 2, y: 0.6, z: 14 },
+];
+
 /** Spawn points on a ring around the centre block. */
 export function spawnPoint(index: number): { x: number; z: number } {
   const angle = index * 2.399963; // golden angle — never two spawns on top of each other

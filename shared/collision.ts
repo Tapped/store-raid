@@ -1,5 +1,5 @@
 /**
- * Simple 2D collision on the ground plane (x/z). No physics engine: circles for movers,
+ * Simple 2D collision for player movement on the ground plane (x/z): circles for movers,
  * axis-aligned boxes for the level. Pure functions — shared by server and client prediction.
  */
 
