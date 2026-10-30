@@ -18,7 +18,7 @@ client/src/localPlayer.ts  LocalPlayer: one device + camera + connection
 client/src/splitscreen.ts  panes(count): the screen layout for 1–4 players
 client/src/players.ts      PlayerView: capsule + billboard name tag
 client/src/scene.ts        world, player camera
-client/src/graphics.ts     engine (WebGPU, else WebGL2), quality tier (Windows high, others balanced; `?quality=`), camera effects
+client/src/graphics.ts     engine (WebGPU, else WebGL2), quality tier (balanced; `?quality=high` for all effects), camera effects
 client/src/reload.ts       /game/ reloads itself when main has a new build; local players keep their seats
 client/src/net.ts          Colyseus client, joinGame(), waitForServer()
 client/src/assets.ts       assetUrl(), loadModel() with placeholder fallback
