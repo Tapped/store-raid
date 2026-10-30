@@ -13,7 +13,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { ARENA_SIZE } from "../../shared/constants";
-import { LEVEL_BOXES } from "../../shared/level";
+import { DOCK, LEVEL_BOXES } from "../../shared/level";
 import { assetUrl } from "./assets";
 import {
   addCameraEffects,
@@ -69,13 +69,26 @@ export function createWorld(engine: AbstractEngine): World {
     { width: ARENA_SIZE, height: ARENA_SIZE },
     scene,
   );
-  const groundMat = surfaceMaterial("groundMat", scene, new Color3(0.35, 0.55, 0.3), {
-    roughness: 0.95,
+  ground.material = surfaceMaterial("groundMat", scene, new Color3(0.42, 0.42, 0.4), {
+    roughness: 0.6,
   });
-  ground.material = groundMat;
   ground.receiveShadows = true;
 
+  const dock = MeshBuilder.CreateGround(
+    "dock",
+    { width: DOCK.maxX - DOCK.minX, height: DOCK.maxZ - DOCK.minZ },
+    scene,
+  );
+  dock.position.set((DOCK.minX + DOCK.maxX) / 2, 0, (DOCK.minZ + DOCK.maxZ) / 2);
+  dock.material = surfaceMaterial("dockMat", scene, new Color3(0.75, 0.6, 0.15), {
+    roughness: 0.9,
+  });
+  dock.receiveShadows = true;
+
   const wallMat = surfaceMaterial("wallMat", scene, new Color3(0.6, 0.58, 0.55));
+  const shelfMat = surfaceMaterial("shelfMat", scene, new Color3(0.2, 0.3, 0.45), {
+    roughness: 0.5,
+  });
   for (const [i, box] of LEVEL_BOXES.entries()) {
     const mesh = MeshBuilder.CreateBox(
       `box${i}`,
@@ -83,7 +96,7 @@ export function createWorld(engine: AbstractEngine): World {
       scene,
     );
     mesh.position.set((box.minX + box.maxX) / 2, box.height / 2, (box.minZ + box.maxZ) / 2);
-    mesh.material = wallMat;
+    mesh.material = box.kind === "shelf" ? shelfMat : wallMat;
     mesh.receiveShadows = true;
     shadows.addShadowCaster(mesh);
   }

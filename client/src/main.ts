@@ -1,7 +1,7 @@
-import { MAX_LOCAL_PLAYERS } from "../../shared/constants";
-import { CrateView } from "./crates";
+import { type ItemKind, MAX_LOCAL_PLAYERS } from "../../shared/constants";
 import { createEngine } from "./graphics";
 import { attachMouse, type Device, listDevices } from "./input";
+import { ItemView } from "./items";
 import { LocalPlayer } from "./localPlayer";
 import { PlayerView } from "./players";
 import { reloadOnNewBuild } from "./reload";
@@ -18,7 +18,7 @@ addEventListener("resize", () => engine.resize());
 
 const locals: LocalPlayer[] = [];
 const views = new Map<string, PlayerView>();
-const crates = new Map<string, CrateView>();
+const items = new Map<string, ItemView>();
 const labels: HTMLDivElement[] = [];
 
 const SEATS_KEY = "seats";
@@ -52,6 +52,7 @@ function pollDevices() {
     // Always ask, so a press made while seated or full isn't saved up for later.
     const joinPressed = device.joinPressed();
     const leavePressed = device.leavePressed();
+    if (device.grabPressed()) local?.grabOrDrop();
     const seat = savedSeats.get(device.id);
     if (seat) {
       savedSeats.delete(device.id);
@@ -105,32 +106,33 @@ function syncViews() {
   }
 }
 
-/** Every crate, as the first connection sees it: they all see the same room. */
-function syncCrates() {
+/** Every item, as the first connection sees it: they all see the same room. */
+function syncItems() {
   const session = locals.find((local) => local.session)?.session;
-  const state = session?.room.state.crates;
-  for (const [id, view] of crates) {
+  const state = session?.room.state.items;
+  for (const [id, view] of items) {
     if (state?.has(id)) continue;
     view.dispose();
-    crates.delete(id);
+    items.delete(id);
   }
   if (!session || !state) return;
-  for (const [id, crate] of state) {
-    let view = crates.get(id);
+  for (const [id, item] of state) {
+    let view = items.get(id);
     if (!view) {
-      view = new CrateView(world, id);
-      crates.set(id, view);
+      view = new ItemView(world, id, item.kind as ItemKind);
+      items.set(id, view);
     }
     const { predict } = session;
     view.setPose(
-      predict.value(crate, "x"),
-      predict.value(crate, "y"),
-      predict.value(crate, "z"),
-      predict.value(crate, "qx"),
-      predict.value(crate, "qy"),
-      predict.value(crate, "qz"),
-      predict.value(crate, "qw"),
+      predict.value(item, "x"),
+      predict.value(item, "y"),
+      predict.value(item, "z"),
+      predict.value(item, "qx"),
+      predict.value(item, "qy"),
+      predict.value(item, "qz"),
+      predict.value(item, "qw"),
     );
+    view.setDelivered(item.delivered);
   }
 }
 
@@ -168,7 +170,8 @@ function layoutPanes() {
     : [world.lobbyCamera];
 
   hint.style.display = locals.length < MAX_LOCAL_PLAYERS ? "" : "none";
-  hint.textContent = "Join: A or Start on a controller · Space (WASD) · Enter (arrows)";
+  hint.textContent =
+    "Join: A or Start on a controller · Space (WASD) · Enter (arrows) | Grab/drop: X · F · Right Shift";
 }
 
 if (import.meta.env.PROD) reloadOnNewBuild();
@@ -185,8 +188,7 @@ addEventListener("pageshow", (event) => {
 });
 
 // Debug handle for the browser console and automated smoke tests (dev builds only).
-if (import.meta.env.DEV)
-  Object.assign(window, { __game: { locals, views, crates, world, engine } });
+if (import.meta.env.DEV) Object.assign(window, { __game: { locals, views, items, world, engine } });
 
 engine.runRenderLoop(() => {
   const dt = engine.getDeltaTime() / 1000;
@@ -194,7 +196,7 @@ engine.runRenderLoop(() => {
   for (const local of locals) local.update(dt);
   world.lobbyCamera.alpha += dt * 0.1;
   syncViews();
-  syncCrates();
+  syncItems();
   layoutPanes();
   world.scene.render();
 });

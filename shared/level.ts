@@ -1,48 +1,71 @@
 import type { Box } from "./collision";
-import { ARENA_SIZE } from "./constants";
+import { ARENA_SIZE, type ItemKind } from "./constants";
 
 const HALF = ARENA_SIZE / 2;
 const WALL = 1;
+const WALL_HEIGHT = 3;
+const DOOR = 6; // half the width of the opening to the loading dock
+const DOCK_DEPTH = 8;
+
+const SHELF_WIDTH = 1.2;
+const SHELF_HEIGHT = 2.4;
+/** Shelf rows run along z; the aisles between them are wide enough for two people and a sofa. */
+const SHELF_ROWS = [-15, -9, -3, 3, 9, 15];
+const SHELF_SPANS = [
+  [-12, -2],
+  [1, 11],
+];
+
+/** Where finished items go. An item whose centre is in here counts as delivered. */
+export const DOCK: Box = { minX: -DOOR, maxX: DOOR, minZ: HALF, maxZ: HALF + DOCK_DEPTH };
 
 /**
  * Static level geometry, used by the server for collision and by the client for rendering.
- * Boxes are axis-aligned on the ground plane (x/z); `height` is visual only.
+ * Boxes are axis-aligned on the ground plane (x/z); `height` is how far up they block physics.
  */
-export const LEVEL_BOXES: (Box & { height: number })[] = [
-  // Outer walls
-  { minX: -HALF - WALL, maxX: HALF + WALL, minZ: HALF, maxZ: HALF + WALL, height: 2 },
-  { minX: -HALF - WALL, maxX: HALF + WALL, minZ: -HALF - WALL, maxZ: -HALF, height: 2 },
-  { minX: HALF, maxX: HALF + WALL, minZ: -HALF, maxZ: HALF, height: 2 },
-  { minX: -HALF - WALL, maxX: -HALF, minZ: -HALF, maxZ: HALF, height: 2 },
-  // Pillars
-  { minX: -9, maxX: -7, minZ: -9, maxZ: -7, height: 3 },
-  { minX: 7, maxX: 9, minZ: -9, maxZ: -7, height: 3 },
-  { minX: -9, maxX: -7, minZ: 7, maxZ: 9, height: 3 },
-  { minX: 7, maxX: 9, minZ: 7, maxZ: 9, height: 3 },
-  // Centre block
-  { minX: -2, maxX: 2, minZ: -1, maxZ: 1, height: 1.5 },
+export const LEVEL_BOXES: (Box & { height: number; kind: "wall" | "shelf" })[] = [
+  // Outer walls, with an opening onto the dock in the north one
+  ...[
+    { minX: -HALF - WALL, maxX: -DOOR, minZ: HALF, maxZ: HALF + WALL },
+    { minX: DOOR, maxX: HALF + WALL, minZ: HALF, maxZ: HALF + WALL },
+    { minX: -HALF - WALL, maxX: HALF + WALL, minZ: -HALF - WALL, maxZ: -HALF },
+    { minX: HALF, maxX: HALF + WALL, minZ: -HALF, maxZ: HALF },
+    { minX: -HALF - WALL, maxX: -HALF, minZ: -HALF, maxZ: HALF },
+    // The dock
+    { minX: -DOOR - WALL, maxX: -DOOR, minZ: HALF + WALL, maxZ: HALF + DOCK_DEPTH },
+    { minX: DOOR, maxX: DOOR + WALL, minZ: HALF + WALL, maxZ: HALF + DOCK_DEPTH },
+    {
+      minX: -DOOR - WALL,
+      maxX: DOOR + WALL,
+      minZ: HALF + DOCK_DEPTH,
+      maxZ: HALF + DOCK_DEPTH + WALL,
+    },
+  ].map((box) => ({ ...box, height: WALL_HEIGHT, kind: "wall" as const })),
+  ...SHELF_ROWS.flatMap((x) =>
+    SHELF_SPANS.map(([minZ, maxZ]) => ({
+      minX: x - SHELF_WIDTH / 2,
+      maxX: x + SHELF_WIDTH / 2,
+      minZ,
+      maxZ,
+      height: SHELF_HEIGHT,
+      kind: "shelf" as const,
+    })),
+  ),
 ];
 
-/** Where crates start: stacks just off the ground, so they settle when a room opens. */
-export const CRATE_SPAWNS: { x: number; y: number; z: number }[] = [
-  // A pyramid
-  { x: 13.4, y: 0.6, z: 0 },
-  { x: 14.6, y: 0.6, z: 0 },
-  { x: 14, y: 1.7, z: 0 },
-  // A tower
-  { x: -14, y: 0.6, z: 4 },
-  { x: -14, y: 1.7, z: 4 },
-  { x: -14, y: 2.8, z: 4 },
-  { x: -14, y: 3.9, z: 4 },
-  // A row
-  { x: -2, y: 0.6, z: 14 },
-  { x: 0, y: 0.6, z: 14 },
-  { x: 2, y: 0.6, z: 14 },
+/** Where items start, just off the ground, so they settle when a room opens. */
+export const ITEM_SPAWNS: { kind: ItemKind; x: number; y: number; z: number }[] = [
+  { kind: "sofa", x: 0, y: 0.5, z: -16 },
+  { kind: "sofa", x: -12, y: 0.5, z: -16 },
+  { kind: "box", x: 6, y: 0.6, z: -6 },
+  { kind: "box", x: -6, y: 0.6, z: -6 },
+  { kind: "box", x: 12, y: 0.6, z: 6 },
+  { kind: "box", x: -12, y: 0.6, z: 6 },
+  { kind: "box", x: 0, y: 0.6, z: 6 },
+  { kind: "box", x: 12, y: 0.6, z: -16 },
 ];
 
-/** Spawn points on a ring around the centre block. */
+/** Spawn points along the front of the store, by the dock. */
 export function spawnPoint(index: number): { x: number; z: number } {
-  const angle = index * 2.399963; // golden angle — never two spawns on top of each other
-  const radius = 5 + (index % 3) * 3;
-  return { x: Math.cos(angle) * radius, z: Math.sin(angle) * radius };
+  return { x: -12 + (index % 8) * 3.4, z: 13 + (index % 2) * 2 };
 }
