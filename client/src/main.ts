@@ -66,8 +66,11 @@ function pollDevices() {
  * Everyone in the room, once: each connection sees the same players, so take local players from
  * their own prediction and the rest from whichever connection is first.
  */
-function syncViews() {
-  const seen = new Map<string, { name: string; color: string; x: number; z: number }>();
+function syncViews(dt: number) {
+  const seen = new Map<
+    string,
+    { name: string; color: string; x: number; z: number; carrying: boolean }
+  >();
   for (const { session } of locals) {
     if (!session) continue;
     const { self, predict, sessionId } = session;
@@ -76,6 +79,7 @@ function syncViews() {
       color: self.color,
       x: predict.value(self, "x"),
       z: predict.value(self, "z"),
+      carrying: self.carrying !== "",
     });
   }
   for (const { session } of locals) {
@@ -87,6 +91,7 @@ function syncViews() {
         color: player.color,
         x: session.predict.value(player, "x"),
         z: session.predict.value(player, "z"),
+        carrying: player.carrying !== "",
       });
     }
   }
@@ -102,7 +107,7 @@ function syncViews() {
       view = new PlayerView(world, player.name, player.color);
       views.set(sessionId, view);
     }
-    view.setPosition(player.x, player.z);
+    view.update(player.x, player.z, player.carrying, dt);
   }
 }
 
@@ -195,7 +200,7 @@ engine.runRenderLoop(() => {
   pollDevices();
   for (const local of locals) local.update(dt);
   world.lobbyCamera.alpha += dt * 0.1;
-  syncViews();
+  syncViews(dt);
   syncItems();
   layoutPanes();
   world.scene.render();
