@@ -1,5 +1,6 @@
 import { type ItemKind, MAX_LOCAL_PLAYERS } from "../../shared/constants";
 import { createEngine } from "./graphics";
+import { addHarbour } from "./harbour";
 import { attachMouse, type Device, listDevices } from "./input";
 import { ItemView } from "./items";
 import { LocalPlayer } from "./localPlayer";
@@ -8,6 +9,7 @@ import { addProps } from "./props";
 import { reloadOnNewBuild } from "./reload";
 import { createWorld } from "./scene";
 import { panes } from "./splitscreen";
+import { addShelves } from "./store";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const hint = document.getElementById("hint") as HTMLDivElement;
@@ -15,6 +17,8 @@ const hint = document.getElementById("hint") as HTMLDivElement;
 const engine = await createEngine(canvas);
 const world = createWorld(engine);
 void addProps(world);
+void addShelves(world);
+void addHarbour(world.scene);
 attachMouse(canvas);
 addEventListener("resize", () => engine.resize());
 

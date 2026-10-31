@@ -7,10 +7,12 @@ import {
   DirectionalLight,
   HemisphericLight,
   ImageProcessingConfiguration,
+  type Mesh,
   MeshBuilder,
   Scene,
   ShadowGenerator,
   Vector3,
+  Vector4,
 } from "@babylonjs/core";
 import { ARENA_SIZE } from "../../shared/constants";
 import { DOCK, LEVEL_BOXES } from "../../shared/level";
@@ -22,12 +24,18 @@ import {
   skyColor,
   surfaceMaterial,
 } from "./graphics";
+import { storeSurface } from "./store";
+
+const FLOOR_TILE = 6; // meters that one repeat of a surface texture covers
+const WALL_TILE = 3;
 
 export interface World {
   scene: Scene;
   /** Slowly circles the arena while nobody has joined. */
   lobbyCamera: ArcRotateCamera;
   shadows: ShadowGenerator;
+  /** Stand-ins for the shelf models, removed when those have loaded. */
+  plainShelves: Mesh[];
 }
 
 /** Third-person camera behind a player (looking towards +z). Its player's device turns it. */
@@ -69,9 +77,8 @@ export function createWorld(engine: AbstractEngine): World {
     { width: ARENA_SIZE, height: ARENA_SIZE },
     scene,
   );
-  ground.material = surfaceMaterial("groundMat", scene, new Color3(0.42, 0.42, 0.4), {
-    roughness: 0.6,
-  });
+  const floorTiles = ARENA_SIZE / FLOOR_TILE;
+  ground.material = storeSurface("floor", scene, [floorTiles, floorTiles]);
   ground.receiveShadows = true;
 
   const dock = MeshBuilder.CreateGround(
@@ -80,26 +87,48 @@ export function createWorld(engine: AbstractEngine): World {
     scene,
   );
   dock.position.set((DOCK.minX + DOCK.maxX) / 2, 0, (DOCK.minZ + DOCK.maxZ) / 2);
-  dock.material = surfaceMaterial("dockMat", scene, new Color3(0.75, 0.6, 0.15), {
-    roughness: 0.9,
-  });
+  const dockMaterial = storeSurface("dock", scene, [
+    (DOCK.maxX - DOCK.minX) / FLOOR_TILE,
+    (DOCK.maxZ - DOCK.minZ) / FLOOR_TILE,
+  ]);
+  dockMaterial.albedoColor = new Color3(1, 0.72, 0.1);
+  dock.material = dockMaterial;
   dock.receiveShadows = true;
 
-  const wallMat = surfaceMaterial("wallMat", scene, new Color3(0.6, 0.58, 0.55));
+  const wallMat = storeSurface("wall", scene);
+  const plainShelves: Mesh[] = [];
   const shelfMat = surfaceMaterial("shelfMat", scene, new Color3(0.2, 0.3, 0.45), {
     roughness: 0.5,
   });
   for (const [i, box] of LEVEL_BOXES.entries()) {
+    const width = box.maxX - box.minX;
+    const depth = box.maxZ - box.minZ;
+    const tiled = (u: number, v: number) => new Vector4(0, 0, u / WALL_TILE, v / WALL_TILE);
     const mesh = MeshBuilder.CreateBox(
       `box${i}`,
-      { width: box.maxX - box.minX, depth: box.maxZ - box.minZ, height: box.height },
+      {
+        width,
+        depth,
+        height: box.height,
+        wrap: true,
+        // Back, front, right, left, top, bottom, so the bricks stay the same size on every face.
+        faceUV: [
+          tiled(width, box.height),
+          tiled(width, box.height),
+          tiled(depth, box.height),
+          tiled(depth, box.height),
+          tiled(width, depth),
+          tiled(width, depth),
+        ],
+      },
       scene,
     );
     mesh.position.set((box.minX + box.maxX) / 2, box.height / 2, (box.minZ + box.maxZ) / 2);
     mesh.material = box.kind === "shelf" ? shelfMat : wallMat;
     mesh.receiveShadows = true;
     shadows.addShadowCaster(mesh);
+    if (box.kind === "shelf") plainShelves.push(mesh);
   }
 
-  return { scene, lobbyCamera, shadows };
+  return { scene, lobbyCamera, shadows, plainShelves };
 }
