@@ -27,6 +27,8 @@ const CARRY_LAG_TIME = 0.4;
 const MAX_CARRY_SLACK = 2;
 /** Seconds a dropped item falls through players before it can be bumped into again. */
 const FALL_TIME = 1;
+/** Radians per second a player's facing turns, so a carried box swings round rather than whips. */
+const FACING_TURN_RATE = 6;
 
 export interface JoinOptions {
   name?: string;
@@ -75,6 +77,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       );
       this.itemBodies.set(id, this.physics.addItem(kind, x, y, z));
     }
+    // Patch as often as we step: at the default 20 Hz, each patch holds one to three ticks of motion.
+    this.patchRate = 1000 / TICK_RATE;
     this.setFixedTimestep((ctx) => this.step(ctx), TICK_RATE);
   }
 
@@ -234,6 +238,22 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     };
   }
 
+  private turnTowardsWalking(sessionId: string, player: Player, dt: number) {
+    const speed = Math.hypot(player.vx, player.vz);
+    if (speed <= 0.1) return;
+    const x = player.vx / speed;
+    const z = player.vz / speed;
+    const facing = this.facing.get(sessionId);
+    if (!facing) {
+      this.facing.set(sessionId, { x, z });
+      return;
+    }
+    const left = Math.atan2(facing.x * z - facing.z * x, facing.x * x + facing.z * z);
+    const turn = Math.max(-FACING_TURN_RATE * dt, Math.min(FACING_TURN_RATE * dt, left));
+    const angle = Math.atan2(facing.z, facing.x) + turn;
+    this.facing.set(sessionId, { x: Math.cos(angle), z: Math.sin(angle) });
+  }
+
   private step(ctx: StepContext) {
     // 1. Apply every buffered input — the same step the client predicts with.
     for (const [sessionId, player] of this.state.players) {
@@ -242,8 +262,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       for (const input of channel) {
         stepMover(player, input, ctx.dt);
       }
-      const speed = Math.hypot(player.vx, player.vz);
-      if (speed > 0.1) this.facing.set(sessionId, { x: player.vx / speed, z: player.vz / speed });
+      this.turnTowardsWalking(sessionId, player, ctx.dt);
     }
 
     // 2. Push overlapping players apart (server-only; clients get corrected).

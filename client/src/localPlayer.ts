@@ -11,6 +11,9 @@ import { createPlayerCamera, type World } from "./scene";
 
 const LOOK_SPEED = 2.5; // radians per second at full stick
 const DRAG_SPEED = 0.005; // radians per pixel
+const CAMERA_FOLLOW_TIME = 0.1; // seconds to close about 63% of the gap to our player
+/** Two patches behind, with a little spring: a carried item stays ahead of its carrier. */
+const ITEM_SMOOTHING = { mode: "lerp", delay: 67, smoothMs: 40 } as const;
 
 function openInput(room: GameConnection) {
   return room.input<MoveInput>({ mode: "reliable" });
@@ -73,9 +76,13 @@ export class LocalPlayer {
     // Other players: interpolate towards the latest snapshot (small spring for smooth motion).
     predict.attachAll("players", { mode: "lerp", fields: ["x", "z"], smoothMs: 65 });
     predict.attachAll("items", {
-      mode: "lerp",
-      fields: ["x", "y", "z", "qx", "qy", "qz", "qw"],
-      smoothMs: 65,
+      x: ITEM_SMOOTHING,
+      y: ITEM_SMOOTHING,
+      z: ITEM_SMOOTHING,
+      qx: ITEM_SMOOTHING,
+      qy: ITEM_SMOOTHING,
+      qz: ITEM_SMOOTHING,
+      qw: ITEM_SMOOTHING,
     });
 
     const input = openInput(room);
@@ -139,7 +146,8 @@ export class LocalPlayer {
       session.predict.value(session.self, "z"),
     );
     // In place: assigning `camera.target` would keep the camera where it is and change its angles.
-    Vector3.LerpToRef(this.camera.target, this.cameraTarget, 0.15, this.camera.target);
+    const follow = 1 - Math.exp(-dt / CAMERA_FOLLOW_TIME);
+    Vector3.LerpToRef(this.camera.target, this.cameraTarget, follow, this.camera.target);
   }
 
   leave(): void {
