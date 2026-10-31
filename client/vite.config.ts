@@ -10,7 +10,7 @@ const wsPrefix = `${base}ws`;
 export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
   base,
-  publicDir: false,
+  publicDir: fileURLToPath(new URL("../public", import.meta.url)),
   server: {
     host: "127.0.0.1",
     port,

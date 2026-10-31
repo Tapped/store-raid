@@ -20,7 +20,7 @@ client/src/players.ts      PlayerView: capsule + billboard name tag
 client/src/items.ts        ItemView: a box or sofa, drawn where the server says
 client/src/scene.ts        world, player camera
 client/src/graphics.ts     engine (WebGPU, else WebGL2), quality tier (balanced; `?quality=high` for all effects), `surfaceMaterial()` for PBR, camera effects
-client/src/reload.ts       /game/ reloads itself when main has a new build; local players keep their seats
+client/src/reload.ts       production builds reload when a served .game-build file changes; nothing writes that file locally
 client/src/net.ts          Colyseus client, joinGame(), waitForServer()
 client/src/assets.ts       assetUrl(), loadModel() with placeholder fallback
 server/src/rooms/          GameRoom (simulation) + schema.ts (synced state + input)
@@ -56,44 +56,42 @@ scripts/carry.ts           two bots carry a sofa to the dock, and report what wo
 
 ## Running
 
-Your dev servers already run as services, so **don't start `npm run dev` yourself.** They reload on
-file changes (Vite HMR for the client, `tsx watch` for the server; players rejoin by themselves).
+This is a solo, local project. Start everything with **`npm run dev`** (requires Node ≥ 22.12):
 
-- Your preview: `$PREVIEW_URL` in `~/.config/game.env`. Always give the user that exact URL.
-- The merged game: `/game/` next to it.
-- Upload page for files on the user's computer: `/upload/` on the same host. Files from the web:
-  `curl -fLo /srv/assets/<dir>/<name> <url>`.
-- Logs: `journalctl --user -u game-client -f` / `journalctl --user -u game-server -f`
-- Restart (e.g. after `npm install`): `systemctl --user restart game-client game-server`
+- Game: `http://127.0.0.1:5173/`. The game server listens on `127.0.0.1:2567`, and the browser
+  reaches it through Vite's proxy at `/ws`.
+- Both reload on file changes (Vite HMR for the client, `tsx watch` for the server; players rejoin
+  by themselves). Logs go to that terminal, and Ctrl+C stops both.
+- `PORT`, `SERVER_PORT` and `BASE` environment variables override the defaults.
 - Console (dev only): `window.__game` → `{ locals, views, world, engine }`.
 - Controllers need a secure page (HTTPS or localhost), and a button press before they show up.
   Holding both sticks down for a second reloads the page.
 
 ## Debugging
 
-You can't see the browser, so check your work from the terminal:
+You can't see the browser, so check your work from the terminal, with `npm run dev` running:
 
-- **Your own Vite, no password:** `http://127.0.0.1:$PORT/<you>/` (`$PORT` from
-  `~/.config/game.env`). `curl -s http://127.0.0.1:$PORT/<you>/src/main.ts` returns an HTML error
-  page if the file doesn't compile.
+- **Compile errors:** `curl -s http://127.0.0.1:5173/src/main.ts` returns an HTML error page if the
+  file doesn't compile.
 - **Bot players:** `npx tsx scripts/bot.ts [name] [seconds]` joins your game server, walks in a
   square and prints every player's position each second.
-- **Merges:** `cat /srv/merge-status/<you>` shows your last merge result.
 
-## Shipping
+## Committing
 
 - `npm run check` must pass. `npm run format` fixes formatting.
-- Ship with **`/ship`** (or `ship` in the terminal): rebases on main, runs the check, pushes to
-  `<you>/main`; the merge bot merges it into main. Never push to `main` yourself.
-- Ship every commit as soon as it works.
+- Work and commit on `main`. There is no merge bot or ship step.
+- The `night-coding-vm` remote is the old server. Don't push to it.
+- `.gitattributes` keeps every text file LF, which Biome requires, including on Windows.
 
 ## Assets
 
-Shared assets (models, textures, audio) live in **`/srv/assets`** on the server, not in git, and
-are served at `/assets/...`; `/srv/assets/manifest.json` lists them.
+Assets (models, textures, audio) live in **`public/assets/`**, not in git, and are served at
+`/assets/...` in dev and copied into builds. A fresh clone doesn't have them, so copy them in by
+hand. `public/assets/manifest.json` is a snapshot from the old server: nothing regenerates it.
 
 - `loadModel(scene, "models/props/crate.glb", placeholder)` shows the placeholder until the file
-  exists, so use the final path from day one.
+  exists, so use the final path from day one. Vite answers a missing asset with `200` and its HTML
+  page, so check the content type, not only the status, when testing a URL with curl.
 - Folders: `models/{characters,props,level}`, `textures/`, `audio/{sfx,music}`, `ui/`. Lowercase
   kebab-case. `.glb` from Blender: Y-up, transforms applied, meters.
 - Anything bundled with the client uses `import.meta.env.BASE_URL`, never a bare `/` path.

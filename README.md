@@ -8,8 +8,8 @@ npm ci
 npm run dev        # http://127.0.0.1:5173
 ```
 
-Shared assets (`/assets/...`) only exist on the server, so models fall back to placeholders on a
-laptop. On a shipjam server your dev servers run as services: see `CLAUDE.md`.
+Assets live in `public/assets/` and are served at `/assets/...`. They aren't in git, so a fresh clone
+needs them copied in by hand; without them, models fall back to placeholders.
 
 ## Controls
 
