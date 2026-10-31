@@ -1,7 +1,7 @@
 /**
  * Headless bot player, for testing server logic and multiplayer without a browser.
  *
- *   npx tsx scripts/bot.ts [name] [seconds]     (defaults: bot, 10)
+ *   pnpm exec tsx scripts/bot.ts [name] [seconds]     (defaults: bot, 10)
  *
  * Joins your game server (SERVER_PORT from ~/.config/game.env, else 2567), walks in a square and prints every
  * player's position once a second. Run several at once for several players.

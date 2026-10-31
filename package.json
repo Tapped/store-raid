@@ -1,12 +1,13 @@
 {
   "name": "friday_fun",
   "private": true,
+  "packageManager": "pnpm@12.16.1",
   "type": "module",
   "engines": {
     "node": ">=22.12"
   },
   "scripts": {
-    "dev": "concurrently -k -n client,server \"npm:dev:client\" \"npm:dev:server\"",
+    "dev": "concurrently -k -n client,server \"pnpm:dev:client\" \"pnpm:dev:server\"",
     "dev:client": "vite --config client/vite.config.ts",
     "dev:server": "tsx watch --clear-screen=false --include \"server/src/**/*.ts\" --include \"shared/**/*.ts\" server/src/index.ts",
     "build": "vite build --config client/vite.config.ts",
@@ -15,7 +16,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "check": "npm run typecheck && npm run lint && npm run build:verify"
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run build:verify"
   },
   "dependencies": {
     "@babylonjs/core": "^9.32.0",

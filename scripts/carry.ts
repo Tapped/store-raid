@@ -2,7 +2,7 @@
  * Two bots carry a sofa to the loading dock, then lift one and walk apart so it falls. Exits non-zero
  * if any of that doesn't happen. Needs your game server running (SERVER_PORT from ~/.config/game.env).
  *
- *   npx tsx scripts/carry.ts
+ *   pnpm exec tsx scripts/carry.ts
  */
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
