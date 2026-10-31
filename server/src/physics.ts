@@ -6,7 +6,13 @@ import HavokPhysics, {
   type MotionType,
   type QTransform,
 } from "@babylonjs/havok";
-import { ITEM_KINDS, type ItemKind, PLAYER_RADIUS, TICK_RATE } from "../../shared/constants";
+import {
+  ITEM_KINDS,
+  type ItemKind,
+  PLAYER_HEIGHT,
+  PLAYER_RADIUS,
+  TICK_RATE,
+} from "../../shared/constants";
 import { LEVEL_BOXES } from "../../shared/level";
 
 const GRAVITY = -9.81;
@@ -20,7 +26,6 @@ const LAYER_STATIC = 1;
 const LAYER_PLAYER = 2;
 const LAYER_ITEM = 4;
 const LAYER_CARRIED = 8;
-const PLAYER_HEIGHT = 1.8;
 const GROUND_SIZE = 200;
 const IDENTITY: [number, number, number, number] = [0, 0, 0, 1];
 

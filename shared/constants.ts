@@ -4,8 +4,11 @@ export const TICK_RATE = 30;
 /** Arena size in world units (meters). The arena is centred on the origin. */
 export const ARENA_SIZE = 40;
 
-/** Player collision radius. */
-export const PLAYER_RADIUS = 0.5;
+/** Player collision radius, fitted to the character model's body. */
+export const PLAYER_RADIUS = 0.3;
+
+/** Player collision height, about that of the character model. */
+export const PLAYER_HEIGHT = 1.8;
 
 /** What can be carried: its size (x = long side) and how many people it takes to lift it. */
 export const ITEM_KINDS = {

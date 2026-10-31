@@ -9,12 +9,11 @@ import {
   StandardMaterial,
   TransformNode,
 } from "@babylonjs/core";
-import { PLAYER_RADIUS } from "../../shared/constants";
+import { PLAYER_HEIGHT, PLAYER_RADIUS } from "../../shared/constants";
 import { loadContainer } from "./assets";
 import { surfaceMaterial } from "./graphics";
 import type { World } from "./scene";
 
-const HEIGHT = 1.8;
 const CHARACTER = "models/characters/ch17.glb";
 
 /** Slower than this (m/s) counts as standing still. */
@@ -61,11 +60,11 @@ export class PlayerView {
 
     this.capsule = MeshBuilder.CreateCapsule(
       `player-${name}-body`,
-      { radius: PLAYER_RADIUS, height: HEIGHT },
+      { radius: PLAYER_RADIUS, height: PLAYER_HEIGHT },
       scene,
     );
     this.capsule.parent = this.root;
-    this.capsule.position.y = HEIGHT / 2;
+    this.capsule.position.y = PLAYER_HEIGHT / 2;
     this.capsule.material = surfaceMaterial(
       `player-${name}-mat`,
       scene,
@@ -76,7 +75,7 @@ export class PlayerView {
 
     this.tag = MeshBuilder.CreatePlane(`player-${name}-tag`, { width: 2, height: 0.5 }, scene);
     this.tag.parent = this.root;
-    this.tag.position.y = HEIGHT + 0.5;
+    this.tag.position.y = PLAYER_HEIGHT + 0.5;
     this.tag.billboardMode = TransformNode.BILLBOARDMODE_ALL;
     this.tag.isPickable = false;
     const texture = new DynamicTexture(`player-${name}-text`, { width: 256, height: 64 }, scene);
