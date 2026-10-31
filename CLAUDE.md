@@ -82,7 +82,6 @@ You can't see the browser, so check your work from the terminal, with `pnpm run 
 
 - `pnpm run check` must pass. `pnpm run format` fixes formatting.
 - Work and commit on `main`. There is no merge bot or ship step.
-- The `night-coding-vm` remote is the old server. Don't push to it.
 - `.gitattributes` keeps every text file LF, which Biome requires, including on Windows.
 
 ## Assets
