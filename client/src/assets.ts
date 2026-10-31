@@ -2,8 +2,8 @@ import "@babylonjs/loaders/glTF";
 import { type AbstractMesh, ImportMeshAsync, type Scene } from "@babylonjs/core";
 
 /**
- * URL of a shared asset in /srv/assets on the server, served at /assets/ for every build, so the
- * path is always absolute: assetUrl("models/props/crate.glb") → "/assets/models/props/crate.glb"
+ * URL of a shared asset, served at /assets/ for every build, so the path is always absolute:
+ * assetUrl("models/props/crate.glb") → "/assets/models/props/crate.glb"
  */
 export function assetUrl(path: string): string {
   return `/assets/${path.replace(/^\/+/, "")}`;

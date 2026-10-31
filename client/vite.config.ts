@@ -1,5 +1,30 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, lstatSync, mkdirSync, symlinkSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
+
+const publicDir = fileURLToPath(new URL("../public", import.meta.url));
+
+/**
+ * Assets are shared by every checkout: they live in `assets/` next to `main/`, and each checkout's
+ * `public/assets` links there. A real `public/assets` folder is left alone.
+ */
+function linkSharedAssets() {
+  const link = resolve(publicDir, "assets");
+  if (lstatSync(link, { throwIfNoEntry: false })) return;
+  // The common git dir is `main/.git` from main and from every worktree.
+  const gitDir = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+    cwd: import.meta.dirname,
+    encoding: "utf8",
+  }).trim();
+  const shared = resolve(dirname(dirname(gitDir)), "assets");
+  if (!existsSync(shared)) return;
+  mkdirSync(publicDir, { recursive: true });
+  symlinkSync(shared, link, "junction");
+}
+
+linkSharedAssets();
 
 // Set by the server (see ~/.config/game.env); defaults are for running on a laptop.
 const port = Number(process.env.PORT ?? 5173);
@@ -10,7 +35,7 @@ const wsPrefix = `${base}ws`;
 export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
   base,
-  publicDir: fileURLToPath(new URL("../public", import.meta.url)),
+  publicDir,
   server: {
     host: "127.0.0.1",
     port,

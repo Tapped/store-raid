@@ -9,8 +9,9 @@ pnpm install
 pnpm run dev        # http://127.0.0.1:5173
 ```
 
-Assets live in `public/assets/` and are served at `/assets/...`. They aren't in git, so a fresh clone
-needs them copied in by hand; without them, models fall back to placeholders.
+Assets aren't in git. They live in an `assets/` folder next to the `main/` checkout, shared with
+everything in `worktrees/`, and are served at `/assets/...`. A fresh clone needs them copied in by
+hand; without them, models fall back to placeholders.
 
 ## Controls
 

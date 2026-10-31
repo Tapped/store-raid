@@ -87,9 +87,19 @@ You can't see the browser, so check your work from the terminal, with `pnpm run 
 
 ## Assets
 
-Assets (models, textures, audio) live in **`public/assets/`**, not in git, and are served at
-`/assets/...` in dev and copied into builds. A fresh clone doesn't have them, so copy them in by
-hand. `public/assets/manifest.json` is a snapshot from the old server: nothing regenerates it.
+Assets (models, textures, audio) are never stored in git. One copy lives in **`assets/`** next to
+the `main/` checkout, and every checkout shares it:
+
+```
+store-raid/
+  assets/      shared by all checkouts, not in git
+  main/        the main checkout, which holds .git
+  worktrees/   linked worktrees, one folder per branch
+```
+
+`client/vite.config.ts` links each checkout's `public/assets` to that folder when Vite starts, so
+they're served at `/assets/...` in dev and copied into builds. A fresh clone needs `assets/` copied
+in by hand. `assets/manifest.json` is a snapshot from the old server: nothing regenerates it.
 
 - `loadModel(scene, "models/props/crate.glb", placeholder)` shows the placeholder until the file
   exists, so use the final path from day one. Vite answers a missing asset with `200` and its HTML
