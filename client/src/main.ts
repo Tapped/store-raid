@@ -4,6 +4,7 @@ import { attachMouse, type Device, listDevices } from "./input";
 import { ItemView } from "./items";
 import { LocalPlayer } from "./localPlayer";
 import { PlayerView } from "./players";
+import { addProps } from "./props";
 import { reloadOnNewBuild } from "./reload";
 import { createWorld } from "./scene";
 import { panes } from "./splitscreen";
@@ -13,6 +14,7 @@ const hint = document.getElementById("hint") as HTMLDivElement;
 
 const engine = await createEngine(canvas);
 const world = createWorld(engine);
+void addProps(world);
 attachMouse(canvas);
 addEventListener("resize", () => engine.resize());
 

@@ -19,6 +19,7 @@ client/src/localPlayer.ts  LocalPlayer: one device + camera + connection
 client/src/splitscreen.ts  panes(count): leftover screen layout for 1–4 players, to be removed
 client/src/players.ts      PlayerView: animated character (capsule if the model is missing) + billboard name tag
 client/src/items.ts        ItemView: a box or sofa, drawn where the server says
+client/src/props.ts        addProps(): scenery models, drawn only, with no collision
 client/src/scene.ts        world, player camera
 client/src/graphics.ts     engine (WebGPU, else WebGL2), quality tier (balanced; `?quality=high` for all effects), `surfaceMaterial()` for PBR, camera effects
 client/src/reload.ts       production builds reload when a served .game-build file changes; nothing writes that file locally
