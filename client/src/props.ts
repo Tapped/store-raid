@@ -5,7 +5,6 @@ import type { World } from "./scene";
 /** Scenery near the dock: drawn only, so it has no collision and players walk through it. */
 const PROPS: { model: string; x: number; y?: number; z: number; turn?: number }[] = [
   { model: "wood-crate", x: -9, z: 14.5, turn: 0.3 },
-  { model: "miners-oil-lamp", x: -9, y: 1.74, z: 14.5 },
   { model: "cardboard", x: -6.5, z: 14, turn: -0.5 },
   { model: "cardboard", x: 8, z: 15, turn: 1.1 },
   { model: "wood-crate", x: 10.5, z: 15.5, turn: -0.2 },
