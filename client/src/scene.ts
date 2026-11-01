@@ -30,7 +30,7 @@ import { storeSurface } from "./store";
 const FLOOR_TILE = 6; // meters that one repeat of a surface texture covers
 const WALL_TILE = 3;
 const LOBBY_TARGET = new Vector3(91.5, 3, -45); // on the harbour street between the rows of street lights
-const DUSK_REFLECTION =new Color3(0.6, 0.68, 0.85);
+const DUSK_REFLECTION = new Color3(0.6, 0.68, 0.85);
 
 export interface World {
   scene: Scene;
