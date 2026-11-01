@@ -7,6 +7,7 @@ import {
   DefaultRenderingPipeline,
   Engine,
   ImageProcessingConfiguration,
+  type Mesh,
   PBRMaterial,
   type Scene,
   ShadowGenerator,
@@ -17,7 +18,7 @@ import {
 
 export type Quality = "balanced" | "high";
 
-/** Balanced everywhere; `?quality=high` asks for all the effects. */
+/** Both tiers run the same pipeline; `?quality=high` only makes shadows and ambient occlusion finer. */
 export const quality: Quality =
   new URLSearchParams(location.search).get("quality") === "high" ? "high" : "balanced";
 
@@ -81,12 +82,23 @@ export function gradePicture(config: ImageProcessingConfiguration): void {
   config.vignetteBlendMode = ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY;
 }
 
-/** The sky colour as written; the high pipeline gamma-corrects it, so it needs to start out linear. */
-export function skyColor(color: Color4): Color4 {
-  return quality === "high" ? color.toLinearSpace() : color;
+export const SHADOW_MAP_SIZE = quality === "high" ? 4096 : 2048;
+
+/**
+ * Draws a mesh at many fixed places. The copies never move, so last frame's matrices are the same
+ * ones. Saying so up front matters: left to itself, Babylon only adds them after the first draw,
+ * which WebGPU rejects once TAA asks for motion vectors.
+ */
+export function drawInstances(mesh: Mesh, matrices: Float32Array): void {
+  mesh.thinInstanceSetBuffer("matrix", matrices, 16, true);
+  mesh.thinInstanceSetBuffer("previousMatrix", matrices, 16, true);
+  mesh.thinInstanceRefreshBoundingInfo();
 }
 
-export const SHADOW_MAP_SIZE = quality === "high" ? 4096 : 2048;
+const AMBIENT_OCCLUSION =
+  quality === "high"
+    ? { ratio: 1, samples: 16, expensiveBlur: true }
+    : { ratio: 0.5, samples: 8, expensiveBlur: false };
 
 /**
  * Post-processing for one camera; returns how to remove it, which must happen before the camera is
@@ -94,29 +106,29 @@ export const SHADOW_MAP_SIZE = quality === "high" ? 4096 : 2048;
  * and split panes sharing one would blend each other's pictures.
  */
 export function addCameraEffects(scene: Scene, camera: Camera): () => void {
-  if (quality === "balanced") return () => {};
-
   // TAA has to come first.
   const taa = new TAARenderingPipeline(`taa-${camera.name}`, scene, [camera]);
   taa.samples = 16;
-  taa.msaaSamples = 4;
   taa.reprojectHistory = true;
   taa.clampHistory = true;
   taa.disableOnCameraMove = false;
 
+  // Reprojecting draws the scene into the pre-pass target, so that's where multisampling has to go.
+  const prePass = scene.enablePrePassRenderer();
+  if (prePass) prePass.samples = 4;
+
   const ssao = new SSAO2RenderingPipeline(
     `ssao-${camera.name}`,
     scene,
-    { ssaoRatio: 1, blurRatio: 1 },
+    { ssaoRatio: AMBIENT_OCCLUSION.ratio, blurRatio: AMBIENT_OCCLUSION.ratio },
     [camera],
   );
-  ssao.samples = 16;
+  ssao.samples = AMBIENT_OCCLUSION.samples;
   ssao.radius = 1.5;
   ssao.totalStrength = 1;
-  ssao.expensiveBlur = true;
+  ssao.expensiveBlur = AMBIENT_OCCLUSION.expensiveBlur;
 
   const post = new DefaultRenderingPipeline(`post-${camera.name}`, true, scene, [camera]);
-  post.samples = 4;
   post.bloomEnabled = true;
   post.bloomThreshold = 0.9;
   post.bloomWeight = 0.15;

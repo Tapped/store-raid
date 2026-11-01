@@ -8,6 +8,7 @@ import {
   ShaderLanguage,
   StandardMaterial,
 } from "@babylonjs/core";
+import { drawInstances } from "./graphics";
 
 /** Where things are on the street light model. */
 const LIGHT_HEIGHT = 7.9;
@@ -122,8 +123,7 @@ export function addStreetLamps(scene: Scene, matrices: Float32Array): void {
   face.isPickable = false;
   const buffer = new Float32Array(faces.length * 16);
   for (const [i, matrix] of faces.entries()) matrix.copyToArray(buffer, i * 16);
-  face.thinInstanceSetBuffer("matrix", buffer, 16, true);
-  face.thinInstanceRefreshBoundingInfo();
+  drawInstances(face, buffer);
 
   const light = (material: unknown) => {
     // Loaded materials are announced twice: when created, and when added to the scene.

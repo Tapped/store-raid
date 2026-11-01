@@ -1,6 +1,7 @@
 import { Mesh, PBRMaterial, type Scene, Texture } from "@babylonjs/core";
 import { LEVEL_BOXES } from "../../shared/level";
 import { assetUrl, loadContainer } from "./assets";
+import { drawInstances } from "./graphics";
 import type { World } from "./scene";
 
 const BAY_LENGTH = 2;
@@ -59,8 +60,7 @@ async function drawCopies(world: World, model: string, matrices: number[], shado
   const buffer = Float32Array.from(matrices);
   for (const mesh of container.meshes) {
     if (!(mesh instanceof Mesh) || mesh.getTotalVertices() === 0) continue;
-    mesh.thinInstanceSetBuffer("matrix", buffer, 16, true);
-    mesh.thinInstanceRefreshBoundingInfo();
+    drawInstances(mesh, buffer);
     mesh.receiveShadows = true;
     if (shadows) world.shadows.addShadowCaster(mesh);
   }

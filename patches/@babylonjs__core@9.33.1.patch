@@ -1,0 +1,13 @@
+diff --git a/Materials/materialHelper.functions.js b/Materials/materialHelper.functions.js
+index 60a8ac8461241184dbb371ed1212c11a47d708b5..b8e0e3f387082de17e58772618cade1e012a9fec 100644
+--- a/Materials/materialHelper.functions.js
++++ b/Materials/materialHelper.functions.js
+@@ -539,7 +539,7 @@ export function PrepareAttributesForBones(attribs, mesh, defines, fallbacks) {
+  */
+ export function PrepareAttributesForInstances(attribs, defines) {
+     if (defines["INSTANCES"] || defines["THIN_INSTANCES"]) {
+-        PushAttributesForInstances(attribs, !!defines["PREPASS_VELOCITY"]);
++        PushAttributesForInstances(attribs, !!defines["PREPASS_VELOCITY"] || !!defines["PREPASS_VELOCITY_LINEAR"]);
+     }
+     if (defines.INSTANCESCOLOR) {
+         attribs.push(`instanceColor`);

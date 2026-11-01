@@ -26,7 +26,7 @@ client/src/paving.ts       addPavingVariation(): world-space brightness and damp
 client/src/lamps.ts        addStreetLamps(): glowing lamp faces, and lamp light summed in every PBR shader (not scene lights)
 client/src/scene.ts        world, lights and fog, player camera
 client/src/sky.ts          addSky(): overcast sky dome, painted at startup; HORIZON, the colour fog fades to
-client/src/graphics.ts     engine (WebGPU, else WebGL2), quality tier (balanced; `?quality=high` for all effects), `surfaceMaterial()` for PBR, `gradePicture()` for the colour look, camera effects
+client/src/graphics.ts     engine (WebGPU, else WebGL2), one pipeline of TAA with MSAA, SSAO, bloom and sharpen (`?quality=high` for finer shadows and SSAO), `surfaceMaterial()` for PBR, `gradePicture()` for the colour look, `drawInstances()` for static copies, camera effects
 client/src/reload.ts       production builds reload when a served .game-build file changes; nothing writes that file locally
 client/src/net.ts          Colyseus client, joinGame(), waitForServer()
 client/src/assets.ts       assetUrl(), loadModel() with placeholder fallback

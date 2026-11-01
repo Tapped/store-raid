@@ -21,7 +21,6 @@ import {
   configureShadows,
   gradePicture,
   SHADOW_MAP_SIZE,
-  skyColor,
   surfaceMaterial,
 } from "./graphics";
 import { addSky, HORIZON } from "./sky";
@@ -52,7 +51,7 @@ export function createPlayerCamera(scene: Scene, name: string): ArcRotateCamera 
 /** Static world: lights, ground and the level boxes from shared/level.ts. */
 export function createWorld(engine: AbstractEngine): World {
   const scene = new Scene(engine);
-  scene.clearColor = skyColor(HORIZON.toColor4());
+  scene.clearColor = HORIZON.toColor4().toLinearSpace();
   addSky(scene);
   scene.fogMode = Scene.FOGMODE_EXP2;
   scene.fogDensity = 0.003;

@@ -7,6 +7,7 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import { assetUrl } from "./assets";
+import { drawInstances } from "./graphics";
 import { addStreetLamps } from "./lamps";
 import { addPavingVariation } from "./paving";
 
@@ -55,8 +56,7 @@ export async function addHarbour(scene: Scene): Promise<void> {
       mesh.setEnabled(false);
       continue;
     }
-    mesh.thinInstanceSetBuffer("matrix", underGltfRoot(matrices), 16, true);
-    mesh.thinInstanceRefreshBoundingInfo();
+    drawInstances(mesh, underGltfRoot(matrices));
     mesh.isPickable = false;
   }
   const streetLights = layout.placements.SM_StreetLight;
