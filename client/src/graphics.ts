@@ -106,17 +106,7 @@ const AMBIENT_OCCLUSION =
  * and split panes sharing one would blend each other's pictures.
  */
 export function addCameraEffects(scene: Scene, camera: Camera): () => void {
-  // TAA has to come first.
-  const taa = new TAARenderingPipeline(`taa-${camera.name}`, scene, [camera]);
-  taa.samples = 16;
-  taa.reprojectHistory = true;
-  taa.clampHistory = true;
-  taa.disableOnCameraMove = false;
-
-  // Reprojecting draws the scene into the pre-pass target, so that's where multisampling has to go.
-  const prePass = scene.enablePrePassRenderer();
-  if (prePass) prePass.samples = 4;
-
+  // Before TAA, so ambient occlusion gets smoothed over frames along with the rest of the picture.
   const ssao = new SSAO2RenderingPipeline(
     `ssao-${camera.name}`,
     scene,
@@ -128,6 +118,16 @@ export function addCameraEffects(scene: Scene, camera: Camera): () => void {
   ssao.totalStrength = 1;
   ssao.expensiveBlur = AMBIENT_OCCLUSION.expensiveBlur;
 
+  const taa = new TAARenderingPipeline(`taa-${camera.name}`, scene, [camera]);
+  taa.samples = 16;
+  taa.reprojectHistory = true;
+  taa.clampHistory = true;
+  taa.disableOnCameraMove = false;
+
+  // Reprojecting draws the scene into the pre-pass target, so that's where multisampling has to go.
+  const prePass = scene.enablePrePassRenderer();
+  if (prePass) prePass.samples = 4;
+
   const post = new DefaultRenderingPipeline(`post-${camera.name}`, true, scene, [camera]);
   post.bloomEnabled = true;
   post.bloomThreshold = 0.9;
@@ -137,7 +137,7 @@ export function addCameraEffects(scene: Scene, camera: Camera): () => void {
 
   return () => {
     post.dispose();
-    ssao.dispose();
     taa.dispose();
+    ssao.dispose();
   };
 }
