@@ -29,11 +29,12 @@ import { storeSurface } from "./store";
 
 const FLOOR_TILE = 6; // meters that one repeat of a surface texture covers
 const WALL_TILE = 3;
-const DUSK_REFLECTION = new Color3(0.6, 0.68, 0.85);
+const LOBBY_TARGET = new Vector3(91.5, 3, -45); // on the harbour street between the rows of street lights
+const DUSK_REFLECTION =new Color3(0.6, 0.68, 0.85);
 
 export interface World {
   scene: Scene;
-  /** Slowly circles the arena while nobody has joined. */
+  /** Slowly circles a spot in the harbour while nobody has joined. */
   lobbyCamera: ArcRotateCamera;
   shadows: ShadowGenerator;
   /** Stand-ins for the shelf models, removed when those have loaded. */
@@ -57,7 +58,7 @@ export function createWorld(engine: AbstractEngine): World {
   scene.fogDensity = 0.003;
   scene.fogColor = HORIZON;
 
-  const lobbyCamera = new ArcRotateCamera("lobby", -Math.PI / 2, 0.9, 38, Vector3.Zero(), scene);
+  const lobbyCamera = new ArcRotateCamera("lobby", -Math.PI / 2, 1.45, 7, LOBBY_TARGET, scene);
   addCameraEffects(scene, lobbyCamera);
 
   // Image-based lighting: what PBR surfaces reflect and most of their soft ambient light.
