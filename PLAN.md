@@ -57,6 +57,10 @@ playtest comes after step 3, because that's when we'll find out whether the game
 
 ## Decisions
 
+- **Start in the harbour:** players start in a stopped van in the harbour, then move into one of the
+  buildings. The walled store in `shared/level.ts` is temporary, so don't polish it. This needs
+  collision along the route, a building interior with its own lighting, and a camera that works
+  under a roof. Steps 1–5 still describe the old store, and haven't been reworked for this.
 - **Online first:** each new feature only needs to work for one player per screen. The splitscreen
   code stays until Emil confirms, and removing it is a small cleanup at any point.
 - **Custom movement stays:** players keep using `stepMover`, not Havok, because that protects
