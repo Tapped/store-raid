@@ -7,6 +7,7 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import { assetUrl } from "./assets";
+import { addStreetLamps } from "./lamps";
 import { addPavingVariation } from "./paving";
 
 const MODEL = "models/level/harbour.glb";
@@ -58,6 +59,9 @@ export async function addHarbour(scene: Scene): Promise<void> {
     mesh.thinInstanceRefreshBoundingInfo();
     mesh.isPickable = false;
   }
+  const streetLights = layout.placements.SM_StreetLight;
+  if (streetLights) addStreetLamps(scene, underGltfRoot(streetLights));
+
   for (const material of container.materials) {
     if (material instanceof PBRMaterial && PAVING.includes(material.name)) {
       material.albedoColor = new Color3(0.45, 0.45, 0.47); // dark like wet asphalt, as in the store

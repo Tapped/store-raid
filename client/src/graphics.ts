@@ -71,7 +71,7 @@ export function gradePicture(config: ImageProcessingConfiguration): void {
   const curves = new ColorCurves();
   curves.globalSaturation = -25;
   curves.globalHue = 215;
-  curves.globalDensity = 6;
+  curves.globalDensity = 3;
   config.colorCurves = curves;
   config.colorCurvesEnabled = true;
 

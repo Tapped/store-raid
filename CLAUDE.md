@@ -23,6 +23,7 @@ client/src/props.ts        addProps(): scenery models, drawn only, with no colli
 client/src/store.ts        addShelves(): stocked shelving over the shelf collision boxes; storeSurface(): textured walls and floor
 client/src/harbour.ts      addHarbour(): the harbour around the store, as instanced scenery with no collision
 client/src/paving.ts       addPavingVariation(): world-space brightness and damp patches on harbour paving
+client/src/lamps.ts        addStreetLamps(): glowing lamp faces, and lamp light summed in every PBR shader (not scene lights)
 client/src/scene.ts        world, lights and fog, player camera
 client/src/sky.ts          addSky(): overcast sky dome, painted at startup; HORIZON, the colour fog fades to
 client/src/graphics.ts     engine (WebGPU, else WebGL2), quality tier (balanced; `?quality=high` for all effects), `surfaceMaterial()` for PBR, `gradePicture()` for the colour look, camera effects

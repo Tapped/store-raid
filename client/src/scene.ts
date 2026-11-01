@@ -30,7 +30,7 @@ import { storeSurface } from "./store";
 const FLOOR_TILE = 6; // meters that one repeat of a surface texture covers
 const WALL_TILE = 3;
 const LOBBY_TARGET = new Vector3(91.5, 3, -45); // on the harbour street between the rows of street lights
-const DUSK_REFLECTION = new Color3(0.6, 0.68, 0.85);
+const DUSK_REFLECTION = new Color3(0.7, 0.72, 0.8);
 
 export interface World {
   scene: Scene;
@@ -66,7 +66,7 @@ export function createWorld(engine: AbstractEngine): World {
     assetUrl("textures/environment.env"),
     scene,
   );
-  scene.environmentIntensity = 0.45;
+  scene.environmentIntensity = 0.28;
   // That image is a sunny day, so cool what every surface takes from it. A material's constructor
   // announces it before setting its own fields, hence the wait for it to finish.
   scene.onNewMaterialAddedObservable.add((material) => {
@@ -77,8 +77,8 @@ export function createWorld(engine: AbstractEngine): World {
 
   // Overcast dusk: most light comes from the whole sky, and the sun only leaves faint shadows.
   const hemi = new HemisphericLight("hemi", new Vector3(0, 1, 0), scene);
-  hemi.intensity = 0.45;
-  hemi.diffuse = new Color3(0.62, 0.7, 0.88);
+  hemi.intensity = 0.18;
+  hemi.diffuse = new Color3(0.72, 0.76, 0.86);
   hemi.groundColor = new Color3(0.12, 0.12, 0.15);
   const sun = new DirectionalLight("sun", new Vector3(-0.5, -1, 0.3), scene);
   sun.position = new Vector3(20, 40, -20);
