@@ -2,9 +2,11 @@ import {
   type AbstractEngine,
   type Camera,
   type Color3,
-  type Color4,
+  Color4,
+  ColorCurves,
   DefaultRenderingPipeline,
   Engine,
+  ImageProcessingConfiguration,
   PBRMaterial,
   type Scene,
   ShadowGenerator,
@@ -57,6 +59,26 @@ export function surfaceMaterial(
   material.roughness = roughness;
   material.metallic = metallic;
   return material;
+}
+
+/** The game's look: muted, cool and contrasty, with darkened corners. */
+export function gradePicture(config: ImageProcessingConfiguration): void {
+  config.toneMappingEnabled = true;
+  config.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
+  config.contrast = 1.2;
+  config.exposure = 0.95;
+
+  const curves = new ColorCurves();
+  curves.globalSaturation = -25;
+  curves.globalHue = 215;
+  curves.globalDensity = 6;
+  config.colorCurves = curves;
+  config.colorCurvesEnabled = true;
+
+  config.vignetteEnabled = true;
+  config.vignetteWeight = 0.8;
+  config.vignetteColor = new Color4(0, 0, 0, 0);
+  config.vignetteBlendMode = ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY;
 }
 
 /** The sky colour as written; the high pipeline gamma-corrects it, so it needs to start out linear. */

@@ -11,6 +11,7 @@ import { assetUrl } from "./assets";
 const MODEL = "models/level/harbour.glb";
 const LAYOUT = "models/level/harbour.json";
 const WATER_SIZE = 1500;
+const PAVING = ["M_TileConcrete", "M_Road", "M_Ground"];
 
 interface Layout {
   water: { x: number; y: number; z: number }[];
@@ -56,7 +57,12 @@ export async function addHarbour(scene: Scene): Promise<void> {
     mesh.thinInstanceRefreshBoundingInfo();
     mesh.isPickable = false;
   }
-  for (const material of container.materials) material.freeze();
+  for (const material of container.materials) {
+    if (material instanceof PBRMaterial && PAVING.includes(material.name)) {
+      material.albedoColor = new Color3(0.45, 0.45, 0.47); // dark like wet asphalt, as in the store
+    }
+    material.freeze();
+  }
 
   for (const { x, y, z } of layout.water) {
     const water = MeshBuilder.CreateGround(

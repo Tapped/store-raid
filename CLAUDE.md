@@ -22,8 +22,9 @@ client/src/items.ts        ItemView: a box or sofa, drawn where the server says
 client/src/props.ts        addProps(): scenery models, drawn only, with no collision
 client/src/store.ts        addShelves(): stocked shelving over the shelf collision boxes; storeSurface(): textured walls and floor
 client/src/harbour.ts      addHarbour(): the harbour around the store, as instanced scenery with no collision
-client/src/scene.ts        world, player camera
-client/src/graphics.ts     engine (WebGPU, else WebGL2), quality tier (balanced; `?quality=high` for all effects), `surfaceMaterial()` for PBR, camera effects
+client/src/scene.ts        world, lights and fog, player camera
+client/src/sky.ts          addSky(): overcast sky dome, painted at startup; HORIZON, the colour fog fades to
+client/src/graphics.ts     engine (WebGPU, else WebGL2), quality tier (balanced; `?quality=high` for all effects), `surfaceMaterial()` for PBR, `gradePicture()` for the colour look, camera effects
 client/src/reload.ts       production builds reload when a served .game-build file changes; nothing writes that file locally
 client/src/net.ts          Colyseus client, joinGame(), waitForServer()
 client/src/assets.ts       assetUrl(), loadModel() with placeholder fallback
