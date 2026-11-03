@@ -77,7 +77,9 @@ export class PhysicsWorld {
       );
     }
 
-    for (const [kind, { size }] of Object.entries(ITEM_KINDS)) {
+    for (const [kind, { size, hands }] of Object.entries(ITEM_KINDS)) {
+      // Players step over small one-handed things, rather than kicking them out of reach.
+      const shoved = hands === 2 ? LAYER_PLAYER : 0;
       const box = (membership: number, collides: number) => {
         const shape = this.shape(ok(havok.HP_Shape_CreateBox([0, 0, 0], IDENTITY, [...size])));
         havok.HP_Shape_SetDensity(shape, ITEM_DENSITY);
@@ -85,7 +87,7 @@ export class PhysicsWorld {
         return shape;
       };
       this.itemShapes.set(kind as ItemKind, {
-        loose: box(LAYER_ITEM, LAYER_STATIC | LAYER_PLAYER | LAYER_ITEM | LAYER_CARRIED),
+        loose: box(LAYER_ITEM, LAYER_STATIC | shoved | LAYER_ITEM | LAYER_CARRIED),
         carried: box(LAYER_CARRIED, LAYER_STATIC | LAYER_ITEM | LAYER_CARRIED),
       });
     }
@@ -147,10 +149,11 @@ export class PhysicsWorld {
     if (Math.abs(ty * qy + tw * qw) < Math.SQRT1_2) [ty, tw] = [tw, -ty];
     const sign = ty * qy + tw * qw < 0 ? -1 : 1;
     const turn = 2 * CARRY_GAIN * sign;
+    // The vector part of (0, ty, 0, tw) * (-qx, -qy, -qz, qw): the axis to turn about, times sin(angle / 2).
     havok.HP_Body_SetAngularVelocity(body, [
-      (ty * qz - tw * qx) * turn,
-      (ty * -qw + tw * qy) * -turn,
-      (-ty * qx - tw * qz) * turn,
+      (-ty * qz - tw * qx) * turn,
+      (ty * qw - tw * qy) * turn,
+      (ty * qx - tw * qz) * turn,
     ]);
     return distance;
   }

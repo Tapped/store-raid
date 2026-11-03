@@ -1,3 +1,5 @@
+import type { Hand } from "../../shared/constants";
+
 /** One frame of what a device wants. Sticks are -1..1; drag is mouse pixels since the last read. */
 export interface Controls {
   moveX: number; // right
@@ -14,8 +16,8 @@ export interface Device {
   /** True once per press. */
   joinPressed(): boolean;
   leavePressed(): boolean;
-  /** True once per press: pick up or let go, depending on whether the player is carrying. */
-  grabPressed(): boolean;
+  /** True once per press of a hand's button: let go of what it holds, or else grab with it. */
+  handPressed(hand: Hand): boolean;
   /** True once the reload combo has been held long enough. Keyboards have F5 instead. */
   reloadHeld(): boolean;
 }
@@ -58,6 +60,9 @@ function axis(negative: number | boolean, positive: number | boolean): number {
   return Number(positive) - Number(negative);
 }
 
+/** The hands sit side by side, left of right, next to WASD. */
+const KEYBOARD_HANDS: Record<Hand, string> = { left: "KeyF", right: "KeyG" };
+
 const keyboard: Device = {
   read() {
     const controls: Controls = {
@@ -74,7 +79,7 @@ const keyboard: Device = {
   },
   joinPressed: () => anyPressed("Space", "Enter"),
   leavePressed: () => anyPressed("Escape"),
-  grabPressed: () => anyPressed("KeyF"),
+  handPressed: (hand) => anyPressed(KEYBOARD_HANDS[hand]),
   reloadHeld: () => false,
 };
 
@@ -82,7 +87,8 @@ const DEADZONE = 0.15;
 
 // Standard gamepad mapping: https://w3c.github.io/gamepad/#remapping
 const BUTTON_SOUTH = 0; // A / Cross
-const BUTTON_WEST = 2; // X / Square
+const BUTTON_LEFT_BUMPER = 4;
+const BUTTON_RIGHT_BUMPER = 5;
 const BUTTON_BACK = 8; // Back / Share
 const BUTTON_START = 9;
 const BUTTON_LEFT_STICK = 10;
@@ -126,7 +132,7 @@ function controller(index: number): Device {
       return south || start;
     },
     leavePressed: () => edge(BUTTON_BACK),
-    grabPressed: () => edge(BUTTON_WEST),
+    handPressed: (hand) => edge(hand === "left" ? BUTTON_LEFT_BUMPER : BUTTON_RIGHT_BUMPER),
     reloadHeld() {
       const buttons = pad()?.buttons;
       if (!buttons?.[BUTTON_LEFT_STICK]?.pressed || !buttons[BUTTON_RIGHT_STICK]?.pressed) {
@@ -174,6 +180,6 @@ export const input: Device = {
   },
   joinPressed: () => any((device) => device.joinPressed()),
   leavePressed: () => any((device) => device.leavePressed()),
-  grabPressed: () => any((device) => device.grabPressed()),
+  handPressed: (hand) => any((device) => device.handPressed(hand)),
   reloadHeld: () => any((device) => device.reloadHeld()),
 };

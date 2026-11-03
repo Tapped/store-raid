@@ -33,7 +33,7 @@ type Pose = "stand" | "walk" | "carry-stand" | "carry-walk";
 /**
  * The visual for one player: the character model, or a coloured capsule until it has loaded or if
  * the asset is missing, with a floating name tag. The tag is a billboard in the scene, not
- * screen-space UI, so it faces the camera and sits right in every split pane.
+ * screen-space UI, so it always faces the camera.
  */
 export class PlayerView {
   private readonly root: TransformNode;

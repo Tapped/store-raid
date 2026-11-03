@@ -4,6 +4,8 @@ import { surfaceMaterial } from "./graphics";
 import type { World } from "./scene";
 
 const COLORS: Record<ItemKind, Color3> = {
+  phone: new Color3(0.85, 0.86, 0.88),
+  tv: new Color3(0.06, 0.06, 0.07),
   box: new Color3(0.62, 0.45, 0.26),
   sofa: new Color3(0.2, 0.34, 0.55),
 };
@@ -17,7 +19,7 @@ const SOFA_PARTS = [
   [0.25, 0.4, 0.65, 1.075, 0.25, -0.125],
 ];
 
-/** The visual for one physics item; the server decides where it is. */
+/** The visual for one physics item, a box for now; the server decides where it is. */
 export class ItemView {
   private readonly root: TransformNode;
   private readonly material;

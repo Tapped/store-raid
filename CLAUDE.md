@@ -17,7 +17,7 @@ client/src/main.ts         render loop: input → player → views and items; jo
 client/src/input.ts        Device: the keyboard and mouse, controllers (Gamepad API), and `input`, all of them at once
 client/src/localPlayer.ts  LocalPlayer: the player at this screen: device + camera + connection
 client/src/players.ts      PlayerView: animated character (capsule if the model is missing) + billboard name tag
-client/src/items.ts        ItemView: a box or sofa, drawn where the server says
+client/src/items.ts        ItemView: a phone, TV, box or sofa (boxes for now), drawn where the server says
 client/src/props.ts        addProps(): scenery models, drawn only, with no collision
 client/src/store.ts        addShelves(): stocked shelving over the shelf collision boxes; storeSurface(): textured walls and floor
 client/src/harbour.ts      addHarbour(): the harbour around the store, as instanced scenery with no collision
@@ -33,7 +33,7 @@ server/src/rooms/          GameRoom (simulation) + schema.ts (synced state + inp
 server/src/physics.ts      PhysicsWorld: Havok bodies for one room
 server/src/persist.ts      load()/save(): state that survives server restarts
 scripts/bot.ts             headless player
-scripts/carry.ts           two bots carry a sofa to the dock, and report what worked
+scripts/hands.ts           bots check the hands: phones, a TV and a two-person sofa, and report what worked
 ```
 
 ## How the game works
@@ -60,6 +60,10 @@ scripts/carry.ts           two bots carry a sofa to the dock, and report what wo
   stick + camera angle into it.
 - Coordinates: x = right, z = forward, y = up. 1 unit = 1 meter.
 - Non-movement actions → a message handler in `GameRoom.messages`, validated on the server.
+- **Hands:** each player has `left` and `right`, the id of the item in that hand. A two-handed item
+  is in both. `ITEM_KINDS` says how many hands each kind takes and how many people it takes to
+  lift. A hand's button (`hand` message) lets go of what it holds, or else grabs the nearest item
+  that fits. One-handed items are stepped over rather than shoved, so players can walk up to them.
 - Lasting state goes through `server/src/persist.ts`, keyed by player name, never `sessionId`.
 
 ## Running

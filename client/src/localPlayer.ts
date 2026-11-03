@@ -2,7 +2,7 @@ import { type ArcRotateCamera, Vector3 } from "@babylonjs/core";
 import { CloseCode } from "@colyseus/sdk";
 import { Predict } from "@colyseus/sdk/predict";
 import type { MoveInput } from "../../server/src/rooms/schema";
-import { MOVE_SCALE } from "../../shared/constants";
+import { type Hand, MOVE_SCALE } from "../../shared/constants";
 import { stepMover } from "../../shared/movement";
 import { addCameraEffects } from "./graphics";
 import type { Device } from "./input";
@@ -108,10 +108,9 @@ export class LocalPlayer {
     this.status = "";
   }
 
-  /** Pick up what's in reach, or let go of what's in hand. The server decides what happens. */
-  grabOrDrop(): void {
-    const session = this.session;
-    if (session) session.room.send(session.self.carrying ? "drop" : "grab");
+  /** A hand's button: the server lets go of what it holds, or grabs something with it. */
+  useHand(hand: Hand): void {
+    this.session?.room.send("hand", hand);
   }
 
   /** One rendered frame: turn the camera, send due inputs, follow our player. */

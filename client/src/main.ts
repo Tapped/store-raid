@@ -1,4 +1,4 @@
-import type { ItemKind } from "../../shared/constants";
+import { HANDS, type ItemKind } from "../../shared/constants";
 import { createEngine } from "./graphics";
 import { addHarbour } from "./harbour";
 import { attachMouse, input } from "./input";
@@ -63,7 +63,7 @@ function pollInput() {
   // Always ask, so a press made while playing isn't saved up for later.
   const joinPressed = input.joinPressed();
   const leavePressed = input.leavePressed();
-  if (input.grabPressed()) player?.grabOrDrop();
+  for (const hand of HANDS) if (input.handPressed(hand)) player?.useHand(hand);
   if (player && leavePressed) leave();
   else if (!player && joinPressed) join();
 }
@@ -86,7 +86,9 @@ function syncViews(dt: number) {
     }
     const x = session.predict.value(state, "x");
     const z = session.predict.value(state, "z");
-    view.update(x, z, state.carrying !== "", dt);
+    // The carry pose holds things in both arms; one-handed things just hang at the side.
+    const inBothArms = state.left !== "" && state.left === state.right;
+    view.update(x, z, inBothArms, dt);
   }
 }
 
@@ -124,7 +126,7 @@ function showStatus() {
   status.textContent = player?.status ?? "";
   status.style.display = status.textContent ? "" : "none";
   hint.textContent = player
-    ? "Grab/drop: F · X on a controller | Leave: Esc · Back"
+    ? "Left hand: F · LB | Right hand: G · RB | Leave: Esc · Back"
     : "Join: Space or Enter · A or Start on a controller";
 }
 

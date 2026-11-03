@@ -2,6 +2,8 @@ import type { HP_BodyId } from "@babylonjs/havok";
 import { type Client, type CloseCode, Room, type StepContext } from "@colyseus/core";
 import { resolveCircleCircle } from "../../../shared/collision";
 import {
+  HANDS,
+  type Hand,
   ITEM_KINDS,
   type ItemKind,
   MAX_PLAYERS,
@@ -18,7 +20,11 @@ import { GameState, Item, MoveInput, Player } from "./schema";
 
 /** How far from an item's edge a player can reach to grab it, or keep holding it while it's down. */
 const REACH = 1;
+/** How high things are held: in both arms, or hanging from one hand. */
 const CARRY_HEIGHT = 1;
+const HAND_HEIGHT = 0.8;
+/** How far out to the side of the player's centre a one-handed thing hangs. */
+const HAND_SIDE = PLAYER_RADIUS + 0.15;
 /** Carried items fall if they stay this far from where they should be, say caught on a shelf. */
 const MAX_CARRY_LAG = 1.5;
 /** Seconds that takes; a box swinging round when its carrier turns gets there well within it. */
@@ -64,8 +70,10 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   messages = {
     // Movement arrives through the input buffer above. Register handlers here only for things
     // that aren't per-tick inputs (chat, emotes, abilities, …).
-    grab: (client: Client) => this.grab(client.sessionId),
-    drop: (client: Client) => this.drop(client.sessionId),
+    /** A hand's button: let go of what it holds, or else grab something with it. */
+    hand: (client: Client, hand: unknown) => {
+      if (HANDS.includes(hand as Hand)) this.useHand(client.sessionId, hand as Hand);
+    },
   };
 
   onCreate() {
@@ -95,7 +103,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
         z: spawn.z,
         vx: 0,
         vz: 0,
-        carrying: "",
+        left: "",
+        right: "",
       }),
     );
     this.playerBodies.set(client.sessionId, this.physics.addPlayer(spawn.x, spawn.z));
@@ -104,7 +113,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
 
   onLeave(client: Client, code: CloseCode) {
     console.log(client.sessionId, "left", code);
-    this.drop(client.sessionId);
+    for (const hand of HANDS) this.drop(client.sessionId, hand);
     this.facing.delete(client.sessionId);
     const player = this.state.players.get(client.sessionId);
     if (player) {
@@ -121,29 +130,46 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     this.physics.dispose();
   }
 
-  /** Take hold of the nearest item in reach that still has room for another pair of hands. */
-  private grab(sessionId: string) {
+  private useHand(sessionId: string, hand: Hand) {
     const player = this.state.players.get(sessionId);
-    if (!player || player.carrying) return;
+    if (!player) return;
+    if (player[hand]) this.drop(sessionId, hand);
+    else this.grab(player, hand);
+  }
+
+  /**
+   * Take hold of the nearest item in reach that this hand can take: a one-handed thing needs only
+   * this hand free, a two-handed one needs both. Shared items must have room for another carrier.
+   */
+  private grab(player: Player, hand: Hand) {
+    const bothFree = !player.left && !player.right;
     let nearest: string | undefined;
     let nearestGap = REACH;
     for (const [id, item] of this.state.items) {
-      if (this.carriersOf(id).length >= this.kindOf(item).carriers) continue;
+      const kind = this.kindOf(item);
+      if (kind.hands === 2 && !bothFree) continue;
+      if (this.carriersOf(id).length >= kind.carriers) continue;
       const gap = this.gapTo(player, item);
       if (gap < nearestGap) {
         nearest = id;
         nearestGap = gap;
       }
     }
-    if (nearest) player.carrying = nearest;
+    if (!nearest) return;
+    const item = this.state.items.get(nearest);
+    if (!item) return;
+    if (this.kindOf(item).hands === 2) {
+      player.left = nearest;
+      player.right = nearest;
+    } else player[hand] = nearest;
   }
 
-  /** Let go. Off the ground, that drops it for everyone: one person can't hold up a sofa. */
-  private drop(sessionId: string) {
+  /** Let go of what's in a hand. Off the ground, that drops it for everyone: one person can't hold up a sofa. */
+  private drop(sessionId: string, hand: Hand) {
     const player = this.state.players.get(sessionId);
-    if (!player?.carrying) return;
-    const id = player.carrying;
-    player.carrying = "";
+    const id = player?.[hand];
+    if (!player || !id) return;
+    for (const other of HANDS) if (player[other] === id) player[other] = "";
     const item = this.state.items.get(id);
     const body = this.itemBodies.get(id);
     if (item && body && this.lifted.delete(id)) {
@@ -156,7 +182,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
 
   private dropItem(id: string) {
     for (const [sessionId, player] of this.state.players) {
-      if (player.carrying === id) this.drop(sessionId);
+      for (const hand of HANDS) if (player[hand] === id) this.drop(sessionId, hand);
     }
   }
 
@@ -165,7 +191,9 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   }
 
   private carriersOf(id: string): [string, Player][] {
-    return [...this.state.players].filter(([, player]) => player.carrying === id);
+    return [...this.state.players].filter(
+      ([, player]) => player.left === id || player.right === id,
+    );
   }
 
   /** Distance on the ground from a player to the edge of an item, whichever way it's turned. */
@@ -204,20 +232,28 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
         this.physics.lift(body, item.kind as ItemKind);
       }
 
-      const target = this.carryTarget(carriers, kind.size[0]);
+      const target = this.carryTarget(id, carriers, kind);
       if (!target) {
         this.dropItem(id);
         continue;
       }
-      const lag = this.physics.carry(body, target.x, CARRY_HEIGHT, target.z, target.yaw);
+      const lag = this.physics.carry(body, target.x, target.y, target.z, target.yaw);
       const lagTime = lag > MAX_CARRY_LAG ? (this.lagging.get(id) ?? 0) + dt : 0;
       this.lagging.set(id, lagTime);
       if (lagTime > CARRY_LAG_TIME) this.dropItem(id);
     }
   }
 
-  /** Between two carriers, or in front of one; undefined if the carriers are too far apart. */
-  private carryTarget(carriers: [string, Player][], length: number) {
+  /**
+   * Between two carriers, in front of one carrying it in both arms, or hanging at their side from one
+   * hand; undefined if the carriers are too far apart.
+   */
+  private carryTarget(
+    id: string,
+    carriers: [string, Player][],
+    kind: (typeof ITEM_KINDS)[ItemKind],
+  ) {
+    const [length, , depth] = kind.size;
     const [[firstId, first], second] = carriers;
     if (second) {
       const dx = second[1].x - first.x;
@@ -225,15 +261,30 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       if (Math.hypot(dx, dz) > length + MAX_CARRY_SLACK) return undefined;
       return {
         x: (first.x + second[1].x) / 2,
+        y: CARRY_HEIGHT,
         z: (first.z + second[1].z) / 2,
         yaw: Math.atan2(-dz, dx),
       };
     }
     const facing = this.facing.get(firstId) ?? { x: 0, z: 1 };
-    const distance = PLAYER_RADIUS + length / 2 + 0.2;
+    if (kind.hands === 2) {
+      // Crosswise in both arms, its long side along the player's right, like a TV.
+      const distance = PLAYER_RADIUS + depth / 2 + 0.2;
+      return {
+        x: first.x + facing.x * distance,
+        y: CARRY_HEIGHT,
+        z: first.z + facing.z * distance,
+        yaw: Math.atan2(facing.x, facing.z),
+      };
+    }
+    // Hanging from one hand, its long side pointing the way the player walks.
+    const right = { x: facing.z, z: -facing.x };
+    const side = (first.right === id ? 1 : -1) * (HAND_SIDE + depth / 2);
+    const ahead = 0.15;
     return {
-      x: first.x + facing.x * distance,
-      z: first.z + facing.z * distance,
+      x: first.x + right.x * side + facing.x * ahead,
+      y: HAND_HEIGHT,
+      z: first.z + right.z * side + facing.z * ahead,
       yaw: Math.atan2(-facing.z, facing.x),
     };
   }

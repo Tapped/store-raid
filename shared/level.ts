@@ -63,6 +63,13 @@ export const ITEM_SPAWNS: { kind: ItemKind; x: number; y: number; z: number }[] 
   { kind: "box", x: -12, y: 0.6, z: 6 },
   { kind: "box", x: 0, y: 0.6, z: 6 },
   { kind: "box", x: 12, y: 0.6, z: -16 },
+  { kind: "phone", x: 5.6, y: 0.1, z: 9 },
+  { kind: "phone", x: 6.4, y: 0.1, z: 9 },
+  { kind: "phone", x: 0, y: 0.1, z: -8 },
+  { kind: "phone", x: -12, y: 0.1, z: -9 },
+  { kind: "phone", x: 12, y: 0.1, z: 2 },
+  { kind: "tv", x: -6, y: 0.5, z: 9 },
+  { kind: "tv", x: 12, y: 0.5, z: -10 },
 ];
 
 /** Spawn points along the front of the store, by the dock. */

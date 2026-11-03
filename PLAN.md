@@ -80,7 +80,7 @@ screen.
 
 ## Steps
 
-### 1. Hands
+### 1. Hands ✓
 
 - Replace `grab` and `drop` with one action per hand on `Device`, for both keyboard and controller,
   and validate them on the server.
@@ -88,6 +88,11 @@ screen.
   exists for the sofa.
 - **Done when:** a player can hold a phone in each hand, or a TV in both, and two players can carry
   a sofa.
+- **Done:** F and G on the keyboard, LB and RB on a controller, each press letting go of what that
+  hand holds or grabbing with it. Phones and TVs are placeholder boxes in the store, and
+  `scripts/hands.ts` checks all of the above with bots. Players step over one-handed things instead
+  of kicking them away, and a carried item now rights itself instead of staying tilted. The
+  triggers are kept free for using what's in each hand: the flashlight, a weapon.
 
 ### 2. Truck and the round
 

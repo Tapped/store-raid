@@ -18,8 +18,9 @@ export const Player = schema({
   z: t.number(),
   vx: t.number(),
   vz: t.number(),
-  /** Id of the item in this player's hands, or "". */
-  carrying: t.string(),
+  /** Id of the item in each hand, or "". A two-handed item is in both. */
+  left: t.string(),
+  right: t.string(),
 });
 export type Player = SchemaType<typeof Player>;
 
