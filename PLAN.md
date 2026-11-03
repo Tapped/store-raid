@@ -140,6 +140,8 @@ screen.
 
 ## Decisions
 
+- **First person:** each player sees through their own character's eyes. Grabbing takes what's in
+  front of you, and carried things stay in view.
 - **The walled store in `shared/level.ts` is temporary,** so don't polish it. It becomes the first
   building's ground floor.
 - **Online only, one player per screen.** Splitscreen has been removed.

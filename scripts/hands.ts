@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import { ColyseusSDK } from "@colyseus/sdk";
 import type server from "../server/src/app";
 import type { MoveInput } from "../server/src/rooms/schema";
-import { type Hand, MOVE_SCALE, TICK_RATE } from "../shared/constants";
+import { type Hand, MOVE_SCALE, TICK_RATE, YAW_SCALE } from "../shared/constants";
 
 const port = process.env.SERVER_PORT ?? envFilePort() ?? "2567";
 
@@ -43,6 +43,8 @@ async function joinBot(name: string) {
     const scale = distance > 0.15 ? MOVE_SCALE / distance : 0;
     input.data.moveX = Math.round(dx * scale);
     input.data.moveZ = Math.round(dz * scale);
+    // Look where it walks, so what it carries stays in front of it.
+    if (distance > 0.15) input.data.yaw = Math.round(Math.atan2(dx, dz) * YAW_SCALE);
     input.send();
     return distance <= 0.15;
   };
@@ -55,10 +57,20 @@ async function joinBot(name: string) {
       }
     }
   };
+  /** Stands still and looks towards a point, for a few ticks so the server sees it. */
+  const lookAt = async (x: number, z: number) => {
+    for (let t = 0; t < 3; t++) {
+      input.data.moveX = 0;
+      input.data.moveZ = 0;
+      input.data.yaw = Math.round(Math.atan2(x - self().x, z - self().z) * YAW_SCALE);
+      input.send();
+      await tick();
+    }
+  };
   const hand = (which: Hand) => room.send("hand", which);
   /** The kind of item in a hand, or "" when it's empty. */
   const holding = (which: Hand) => room.state.items.get(self()[which])?.kind ?? "";
-  return { room, self, walk, walkRoute, hand, holding };
+  return { room, self, walk, walkRoute, lookAt, hand, holding };
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 1000 / TICK_RATE));
@@ -98,9 +110,12 @@ await a.walkRoute([
 check(a.holding("left") === "phone" && a.holding("right") === "phone", "both phones came along");
 
 // One hand free isn't enough for the TV: grabbing takes the dropped phone back instead.
+const dropped = a.room.state.items.get(a.self().right);
 a.hand("right");
-await wait(300);
+await wait(800);
 check(a.holding("right") === "", "right hand lets go of its phone");
+// It fell at the player's side, so look at it first.
+if (dropped) await a.lookAt(dropped.x, dropped.z);
 a.hand("right");
 await wait(300);
 check(
@@ -178,6 +193,7 @@ await walkTogether(
   1.7,
 );
 const [sofaId, sofa] = findSofa((x) => Math.abs(x) < 3);
+await Promise.all([a.lookAt(sofa.x, sofa.z), b.lookAt(sofa.x, sofa.z)]);
 
 // One person can't lift it.
 a.hand("left");
@@ -221,6 +237,7 @@ await walkTogether(
   1.7,
 );
 const [otherId, other] = findSofa((x) => x < -9);
+await Promise.all([a.lookAt(other.x, other.z), b.lookAt(other.x, other.z)]);
 a.hand("left");
 b.hand("left");
 await wait(800);

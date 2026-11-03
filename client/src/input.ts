@@ -37,13 +37,31 @@ addEventListener("keydown", (e) => {
 addEventListener("keyup", (e) => held.delete(e.code));
 addEventListener("blur", () => held.clear());
 
-/** Mouse drag on the canvas looks around. */
+/** When the mouse was last captured or let go; the Esc that lets it go mustn't also leave the game. */
+let pointerLockChanged = 0;
+
+/**
+ * Clicking the canvas captures the mouse, which then looks around; Esc lets it go. Dragging looks
+ * around too, while it isn't captured.
+ */
 export function attachMouse(canvas: HTMLCanvasElement) {
+  canvas.addEventListener("click", () => {
+    if (document.pointerLockElement !== canvas) void canvas.requestPointerLock();
+  });
+  document.addEventListener("pointerlockchange", () => {
+    pointerLockChanged = performance.now();
+  });
   canvas.addEventListener("pointermove", (e) => {
-    if (e.buttons === 0) return;
+    if (document.pointerLockElement !== canvas && e.buttons === 0) return;
     dragX += e.movementX;
     dragY += e.movementY;
   });
+}
+
+/** Esc with the mouse captured only lets the mouse go. */
+function escapeLeaves(): boolean {
+  const pressed = anyPressed("Escape");
+  return pressed && !document.pointerLockElement && performance.now() - pointerLockChanged > 300;
 }
 
 /** Consumes the presses of all the given keys, so none is saved up for later. */
@@ -78,7 +96,7 @@ const keyboard: Device = {
     return controls;
   },
   joinPressed: () => anyPressed("Space", "Enter"),
-  leavePressed: () => anyPressed("Escape"),
+  leavePressed: escapeLeaves,
   handPressed: (hand) => anyPressed(KEYBOARD_HANDS[hand]),
   reloadHeld: () => false,
 };

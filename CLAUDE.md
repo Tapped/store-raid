@@ -15,7 +15,7 @@ the roadmap for the game, Night shift at the megastore.
 ```
 client/src/main.ts         render loop: input → player → views and items; join, leave and the player name
 client/src/input.ts        Device: the keyboard and mouse, controllers (Gamepad API), and `input`, all of them at once
-client/src/localPlayer.ts  LocalPlayer: the player at this screen: device + camera + connection
+client/src/localPlayer.ts  LocalPlayer: the player at this screen: device + first-person camera + connection
 client/src/players.ts      PlayerView: animated character (capsule if the model is missing) + billboard name tag
 client/src/items.ts        ItemView: a phone, TV, box or sofa (boxes for now), drawn where the server says
 client/src/props.ts        addProps(): scenery models, drawn only, with no collision
@@ -23,7 +23,7 @@ client/src/store.ts        addShelves(): stocked shelving over the shelf collisi
 client/src/harbour.ts      addHarbour(): the harbour around the store, as instanced scenery with no collision
 client/src/paving.ts       addPavingVariation(): world-space brightness and damp patches on harbour paving
 client/src/lamps.ts        addStreetLamps(): glowing lamp faces, and lamp light summed in every PBR shader (not scene lights)
-client/src/scene.ts        world, lights and fog, player camera
+client/src/scene.ts        world, lights and fog, first-person camera, lobby camera
 client/src/sky.ts          addSky(): overcast sky dome, painted at startup; HORIZON, the colour fog fades to
 client/src/graphics.ts     engine (WebGPU, else WebGL2), one pipeline of TAA with MSAA, SSAO, bloom and sharpen (`?quality=high` for finer shadows and SSAO), `surfaceMaterial()` for PBR, `gradePicture()` for the colour look, `drawInstances()` for static copies, camera effects
 client/src/reload.ts       production builds reload when a served .game-build file changes; nothing writes that file locally
@@ -47,6 +47,11 @@ scripts/hands.ts           bots check the hands: phones, a TV and a two-person s
   kinematic: they shove objects, objects don't stop them.
 - **The game is online only, with one player per screen.** Each page has one `LocalPlayer`, with
   its own connection, and its camera is `scene.activeCamera` (the lobby camera before joining).
+- **The game is first person.** The camera sits at `EYE_HEIGHT` in the player, who isn't drawn on
+  their own screen. Clicking captures the mouse to look around (Esc lets it go); the right stick
+  and Q/E look too. Where the player looks around y, their yaw, goes to the server with every
+  input: it keeps carried things in front of them, decides what they can grab, and turns their
+  character on everyone else's screen.
   Features like proximity voice and the witch depend on every player having their own screen. For
   UI, use billboards in the scene (see `PlayerView`) or a DOM overlay.
 - **The player's name** comes from `?name=`, else one is made up on the first visit and kept in
@@ -56,14 +61,14 @@ scripts/hands.ts           bots check the hands: phones, a TV and a two-person s
   them. The keyboard, mouse and every controller all drive the one player, through `input`. New
   action: add it to `Controls`/`Device`, map it for the keyboard and controllers, and combine it in
   `input`.
-- `MoveInput` is analog, in world space, whole numbers in ±`MOVE_SCALE`: `LocalPlayer.update` turns
-  stick + camera angle into it.
+- `MoveInput` is analog, in world space, whole numbers in ±`MOVE_SCALE`, plus the yaw in
+  `YAW_SCALE` units: `LocalPlayer.update` turns stick + where the player looks into it.
 - Coordinates: x = right, z = forward, y = up. 1 unit = 1 meter.
 - Non-movement actions → a message handler in `GameRoom.messages`, validated on the server.
 - **Hands:** each player has `left` and `right`, the id of the item in that hand. A two-handed item
   is in both. `ITEM_KINDS` says how many hands each kind takes and how many people it takes to
   lift. A hand's button (`hand` message) lets go of what it holds, or else grabs the nearest item
-  that fits. One-handed items are stepped over rather than shoved, so players can walk up to them.
+  in front of the player that fits. One-handed items are stepped over rather than shoved, so players can walk up to them.
 - Lasting state goes through `server/src/persist.ts`, keyed by player name, never `sessionId`.
 
 ## Running

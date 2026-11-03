@@ -4,6 +4,7 @@ import {
   Color3,
   CubeTexture,
   DirectionalLight,
+  FreeCamera,
   HemisphericLight,
   type Mesh,
   MeshBuilder,
@@ -40,11 +41,12 @@ export interface World {
   plainShelves: Mesh[];
 }
 
-/** Third-person camera behind a player (looking towards +z). Its player's device turns it. */
-export function createPlayerCamera(scene: Scene, name: string): ArcRotateCamera {
-  const camera = new ArcRotateCamera(name, -Math.PI / 2, 1.0, 16, Vector3.Zero(), scene);
-  camera.lowerBetaLimit = 0.3;
-  camera.upperBetaLimit = 1.4;
+/** First-person camera, in the player's eyes. `LocalPlayer` moves and turns it; it reads no input itself. */
+export function createPlayerCamera(scene: Scene, name: string): FreeCamera {
+  const camera = new FreeCamera(name, Vector3.Zero(), scene);
+  camera.inputs.clear();
+  camera.fov = 1.1; // vertical, in radians
+  camera.minZ = 0.05; // close enough not to cut into what's held, or a wall right in front
   return camera;
 }
 

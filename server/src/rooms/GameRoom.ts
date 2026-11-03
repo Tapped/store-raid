@@ -11,6 +11,7 @@ import {
   PLAYER_COLORS,
   PLAYER_RADIUS,
   TICK_RATE,
+  YAW_SCALE,
 } from "../../../shared/constants";
 import { DOCK, ITEM_SPAWNS, spawnPoint } from "../../../shared/level";
 import { stepMover } from "../../../shared/movement";
@@ -18,8 +19,13 @@ import { load, save } from "../persist";
 import { PhysicsWorld } from "../physics";
 import { GameState, Item, MoveInput, Player } from "./schema";
 
-/** How far from an item's edge a player can reach to grab it, or keep holding it while it's down. */
-const REACH = 1;
+/**
+ * How far from the player's centre to an item's nearest point they can reach to grab it, or keep
+ * holding it while it's down.
+ */
+const REACH = 1.2;
+/** Only what's within this angle either side of where the player looks can be grabbed. */
+const GRAB_CONE = (70 * Math.PI) / 180;
 /** How high things are held: in both arms, or hanging from one hand. */
 const CARRY_HEIGHT = 1;
 const HAND_HEIGHT = 0.8;
@@ -33,8 +39,6 @@ const CARRY_LAG_TIME = 0.4;
 const MAX_CARRY_SLACK = 2;
 /** Seconds a dropped item falls through players before it can be bumped into again. */
 const FALL_TIME = 1;
-/** Radians per second a player's facing turns, so a carried box swings round rather than whips. */
-const FACING_TURN_RATE = 6;
 
 export interface JoinOptions {
   name?: string;
@@ -47,7 +51,11 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   /** Per-client input buffer. `sanitize` clamps every field as it's decoded — never trust the wire. */
   inputs = this.defineInput(MoveInput, {
     bufferMaxSize: 64,
-    sanitize: { moveX: [-MOVE_SCALE, MOVE_SCALE], moveZ: [-MOVE_SCALE, MOVE_SCALE] },
+    sanitize: {
+      moveX: [-MOVE_SCALE, MOVE_SCALE],
+      moveZ: [-MOVE_SCALE, MOVE_SCALE],
+      yaw: [-Math.round(Math.PI * YAW_SCALE), Math.round(Math.PI * YAW_SCALE)],
+    },
   });
 
   private joinCount = 0;
@@ -61,8 +69,6 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   private readonly falling = new Map<string, number>();
   /** Lifted items out of position, and for how many seconds now. */
   private readonly lagging = new Map<string, number>();
-  /** Which way each player last walked, so a carried box stays in front of them. */
-  private readonly facing = new Map<string, { x: number; z: number }>();
 
   /** Where each player (by name) last was, so a restart or reload puts them back there. */
   private lastSeen = load("lastSeen", {} as Record<string, { x: number; z: number }>);
@@ -103,6 +109,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
         z: spawn.z,
         vx: 0,
         vz: 0,
+        yaw: 0,
         left: "",
         right: "",
       }),
@@ -114,7 +121,6 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   onLeave(client: Client, code: CloseCode) {
     console.log(client.sessionId, "left", code);
     for (const hand of HANDS) this.drop(client.sessionId, hand);
-    this.facing.delete(client.sessionId);
     const player = this.state.players.get(client.sessionId);
     if (player) {
       this.lastSeen[player.name] = { x: player.x, z: player.z };
@@ -138,8 +144,9 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   }
 
   /**
-   * Take hold of the nearest item in reach that this hand can take: a one-handed thing needs only
-   * this hand free, a two-handed one needs both. Shared items must have room for another carrier.
+   * Take hold of the nearest item in reach and in front of the player that this hand can take: a
+   * one-handed thing needs only this hand free, a two-handed one needs both. Shared items must have
+   * room for another carrier.
    */
   private grab(player: Player, hand: Hand) {
     const bothFree = !player.left && !player.right;
@@ -149,7 +156,10 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       const kind = this.kindOf(item);
       if (kind.hands === 2 && !bothFree) continue;
       if (this.carriersOf(id).length >= kind.carriers) continue;
-      const gap = this.gapTo(player, item);
+      const { gap, x, z } = this.nearestPoint(player, item);
+      // Ahead of where the player looks, unless they're already touching it.
+      const ahead = (x - player.x) * Math.sin(player.yaw) + (z - player.z) * Math.cos(player.yaw);
+      if (gap > PLAYER_RADIUS && ahead < gap * Math.cos(GRAB_CONE)) continue;
       if (gap < nearestGap) {
         nearest = id;
         nearestGap = gap;
@@ -196,20 +206,24 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     );
   }
 
-  /** Distance on the ground from a player to the edge of an item, whichever way it's turned. */
-  private gapTo(player: Player, item: Item): number {
-    const [length, , depth] = this.kindOf(item).size;
-    const dx = player.x - item.x;
-    const dz = player.z - item.z;
-    // Its long side in the world: rotating local x by the item's turn.
-    const axisX = 1 - 2 * (item.qy * item.qy + item.qz * item.qz);
-    const axisZ = 2 * (item.qx * item.qz - item.qw * item.qy);
-    const axisLength = Math.hypot(axisX, axisZ) || 1;
-    const along = (dx * axisX + dz * axisZ) / axisLength;
-    const across = (dz * axisX - dx * axisZ) / axisLength;
-    const gapAlong = Math.max(Math.abs(along) - length / 2, 0);
-    const gapAcross = Math.max(Math.abs(across) - depth / 2, 0);
-    return Math.hypot(gapAlong, gapAcross);
+  /**
+   * The point of an item nearest to the player, however it's turned or tipped over, and how far it
+   * is from the player's centre on the ground.
+   */
+  private nearestPoint(player: Player, item: Item): { gap: number; x: number; z: number } {
+    const size = this.kindOf(item).size;
+    const q = { x: item.qx, y: item.qy, z: item.qz, w: item.qw };
+    // Into the item's own frame, clamp to its box, and back out again.
+    const local = rotate({ ...q, w: -q.w }, player.x - item.x, 0, player.z - item.z);
+    const clamped = local.map((value, axis) =>
+      Math.max(-size[axis] / 2, Math.min(size[axis] / 2, value)),
+    );
+    const [x, , z] = rotate(q, clamped[0], clamped[1], clamped[2]);
+    return {
+      gap: Math.hypot(item.x + x - player.x, item.z + z - player.z),
+      x: item.x + x,
+      z: item.z + z,
+    };
   }
 
   /** Steer everything being carried, and let go of whatever can't be held any more. */
@@ -219,7 +233,9 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       const kind = this.kindOf(item);
       if (carriers.length < kind.carriers) {
         // Not enough people to lift it: they can only stand there holding on.
-        if (carriers.some(([, player]) => this.gapTo(player, item) > REACH)) this.dropItem(id);
+        if (carriers.some(([, player]) => this.nearestPoint(player, item).gap > REACH)) {
+          this.dropItem(id);
+        }
         continue;
       }
       if (carriers.length === 0) continue;
@@ -254,7 +270,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     kind: (typeof ITEM_KINDS)[ItemKind],
   ) {
     const [length, , depth] = kind.size;
-    const [[firstId, first], second] = carriers;
+    const [[, first], second] = carriers;
     if (second) {
       const dx = second[1].x - first.x;
       const dz = second[1].z - first.z;
@@ -266,7 +282,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
         yaw: Math.atan2(-dz, dx),
       };
     }
-    const facing = this.facing.get(firstId) ?? { x: 0, z: 1 };
+    // Where the player looks, so what they carry stays in view.
+    const facing = { x: Math.sin(first.yaw), z: Math.cos(first.yaw) };
     if (kind.hands === 2) {
       // Crosswise in both arms, its long side along the player's right, like a TV.
       const distance = PLAYER_RADIUS + depth / 2 + 0.2;
@@ -289,22 +306,6 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     };
   }
 
-  private turnTowardsWalking(sessionId: string, player: Player, dt: number) {
-    const speed = Math.hypot(player.vx, player.vz);
-    if (speed <= 0.1) return;
-    const x = player.vx / speed;
-    const z = player.vz / speed;
-    const facing = this.facing.get(sessionId);
-    if (!facing) {
-      this.facing.set(sessionId, { x, z });
-      return;
-    }
-    const left = Math.atan2(facing.x * z - facing.z * x, facing.x * x + facing.z * z);
-    const turn = Math.max(-FACING_TURN_RATE * dt, Math.min(FACING_TURN_RATE * dt, left));
-    const angle = Math.atan2(facing.z, facing.x) + turn;
-    this.facing.set(sessionId, { x: Math.cos(angle), z: Math.sin(angle) });
-  }
-
   private step(ctx: StepContext) {
     // 1. Apply every buffered input — the same step the client predicts with.
     for (const [sessionId, player] of this.state.players) {
@@ -312,8 +313,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       if (!channel) continue;
       for (const input of channel) {
         stepMover(player, input, ctx.dt);
+        player.yaw = input.yaw / YAW_SCALE;
       }
-      this.turnTowardsWalking(sessionId, player, ctx.dt);
     }
 
     // 2. Push overlapping players apart (server-only; clients get corrected).
@@ -358,4 +359,22 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
         item.z < DOCK.maxZ;
     }
   }
+}
+
+/** A vector turned by a unit quaternion. Negating w gives the opposite turn. */
+function rotate(
+  q: { x: number; y: number; z: number; w: number },
+  x: number,
+  y: number,
+  z: number,
+): [number, number, number] {
+  // v + 2w(u × v) + 2u × (u × v), with u the quaternion's vector part.
+  const tx = 2 * (q.y * z - q.z * y);
+  const ty = 2 * (q.z * x - q.x * z);
+  const tz = 2 * (q.x * y - q.y * x);
+  return [
+    x + q.w * tx + (q.y * tz - q.z * ty),
+    y + q.w * ty + (q.z * tx - q.x * tz),
+    z + q.w * tz + (q.x * ty - q.y * tx),
+  ];
 }

@@ -20,7 +20,7 @@ const CHARACTER = "models/characters/ch17.glb";
 const MOVING_SPEED = 0.5;
 /** How quickly the measured speed follows the real one, per second. */
 const SPEED_SMOOTHING = 10;
-/** How quickly the character turns to face where it's walking, per second. */
+/** How quickly the character turns to face where its player looks, per second. */
 const TURN_SMOOTHING = 12;
 /** Playback rate of the walk clips: players move faster than the clips were recorded walking. */
 const WALK_RATE = 2;
@@ -73,9 +73,9 @@ export class PlayerView {
     );
     world.shadows.addShadowCaster(this.capsule);
 
-    this.tag = MeshBuilder.CreatePlane(`player-${name}-tag`, { width: 2, height: 0.5 }, scene);
+    this.tag = MeshBuilder.CreatePlane(`player-${name}-tag`, { width: 1, height: 0.25 }, scene);
     this.tag.parent = this.root;
-    this.tag.position.y = PLAYER_HEIGHT + 0.5;
+    this.tag.position.y = PLAYER_HEIGHT + 0.3;
     this.tag.billboardMode = TransformNode.BILLBOARDMODE_ALL;
     this.tag.isPickable = false;
     const texture = new DynamicTexture(`player-${name}-text`, { width: 256, height: 64 }, scene);
@@ -131,8 +131,8 @@ export class PlayerView {
     else this.clip("-walk")?.start(true, 1, STAND_FRAME, STAND_FRAME + 0.01);
   }
 
-  /** Once per rendered frame, wherever the player is now, however that was worked out. */
-  update(x: number, z: number, carrying: boolean, dt: number) {
+  /** Once per rendered frame, wherever the player is now and wherever they look. */
+  update(x: number, z: number, yaw: number, carrying: boolean, dt: number) {
     const dx = x - (this.lastX ?? x);
     const dz = z - this.lastZ;
     this.lastX = x;
@@ -145,15 +145,12 @@ export class PlayerView {
     this.speed += (Math.hypot(dx, dz) / dt - this.speed) * blend;
     const moving = this.speed > MOVING_SPEED;
 
-    if (moving && (dx !== 0 || dz !== 0)) {
-      // The shortest way round, so nobody spins the long way when crossing ±180°.
-      const target = Math.atan2(dx, dz);
-      const turn = Math.atan2(
-        Math.sin(target - this.body.rotation.y),
-        Math.cos(target - this.body.rotation.y),
-      );
-      this.body.rotation.y += turn * (1 - Math.exp(-TURN_SMOOTHING * dt));
-    }
+    // Facing where they look, the shortest way round, so nobody spins the long way across ±180°.
+    const turn = Math.atan2(
+      Math.sin(yaw - this.body.rotation.y),
+      Math.cos(yaw - this.body.rotation.y),
+    );
+    this.body.rotation.y += turn * (1 - Math.exp(-TURN_SMOOTHING * dt));
 
     if (carrying) this.setPose(moving ? "carry-walk" : "carry-stand");
     else this.setPose(moving ? "walk" : "stand");

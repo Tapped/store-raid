@@ -1,8 +1,8 @@
-import { type ArcRotateCamera, Vector3 } from "@babylonjs/core";
+import type { FreeCamera } from "@babylonjs/core";
 import { CloseCode } from "@colyseus/sdk";
 import { Predict } from "@colyseus/sdk/predict";
 import type { MoveInput } from "../../server/src/rooms/schema";
-import { type Hand, MOVE_SCALE } from "../../shared/constants";
+import { EYE_HEIGHT, type Hand, MOVE_SCALE, YAW_SCALE } from "../../shared/constants";
 import { stepMover } from "../../shared/movement";
 import { addCameraEffects } from "./graphics";
 import type { Device } from "./input";
@@ -11,7 +11,8 @@ import { createPlayerCamera, type World } from "./scene";
 
 const LOOK_SPEED = 2.5; // radians per second at full stick
 const DRAG_SPEED = 0.005; // radians per pixel
-const CAMERA_FOLLOW_TIME = 0.1; // seconds to close about 63% of the gap to our player
+/** How far up or down the player can look, in radians from level. */
+const MAX_PITCH = 1.45;
 /** Two patches behind, with a little spring: a carried item stays ahead of its carrier. */
 const ITEM_SMOOTHING = { mode: "lerp", delay: 67, smoothMs: 40 } as const;
 
@@ -30,11 +31,10 @@ interface Session {
 
 /** The person at this screen: their device, their camera and their connection to the room. */
 export class LocalPlayer {
-  readonly camera: ArcRotateCamera;
+  readonly camera: FreeCamera;
   session: Session | undefined;
   status = "Connecting…";
   private left = false;
-  private readonly cameraTarget = new Vector3();
   private readonly removeCameraEffects: () => void;
 
   constructor(
@@ -113,18 +113,22 @@ export class LocalPlayer {
     this.session?.room.send("hand", hand);
   }
 
-  /** One rendered frame: turn the camera, send due inputs, follow our player. */
+  /** One rendered frame: look around, send due inputs, put the camera in our player's eyes. */
   update(dt: number): void {
     const controls = this.device.read();
-    this.camera.alpha -= controls.lookX * LOOK_SPEED * dt + controls.dragX * DRAG_SPEED;
-    this.camera.beta -= controls.lookY * LOOK_SPEED * dt + controls.dragY * DRAG_SPEED;
+    const { rotation } = this.camera;
+    // Babylon's yaw turns right as it grows, and its pitch looks down as it grows.
+    rotation.y += controls.lookX * LOOK_SPEED * dt + controls.dragX * DRAG_SPEED;
+    rotation.y = Math.atan2(Math.sin(rotation.y), Math.cos(rotation.y));
+    rotation.x -= controls.lookY * LOOK_SPEED * dt - controls.dragY * DRAG_SPEED;
+    rotation.x = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, rotation.x));
 
     const session = this.session;
     if (!session) return;
 
-    // Stick directions are relative to the camera; the simulation wants world directions.
-    const forwardX = -Math.cos(this.camera.alpha);
-    const forwardZ = -Math.sin(this.camera.alpha);
+    // Stick directions are relative to where we look; the simulation wants world directions.
+    const forwardX = Math.sin(rotation.y);
+    const forwardZ = Math.cos(rotation.y);
     const worldX = controls.moveX * forwardZ + controls.moveY * forwardX;
     const worldZ = -controls.moveX * forwardX + controls.moveY * forwardZ;
 
@@ -133,17 +137,15 @@ export class LocalPlayer {
     for (let i = 0; i < steps; i++) {
       session.input.data.moveX = Math.round(worldX * MOVE_SCALE);
       session.input.data.moveZ = Math.round(worldZ * MOVE_SCALE);
+      session.input.data.yaw = Math.round(rotation.y * YAW_SCALE);
       session.input.send();
     }
 
-    this.cameraTarget.set(
+    this.camera.position.set(
       session.predict.value(session.self, "x"),
-      1,
+      EYE_HEIGHT,
       session.predict.value(session.self, "z"),
     );
-    // In place: assigning `camera.target` would keep the camera where it is and change its angles.
-    const follow = 1 - Math.exp(-dt / CAMERA_FOLLOW_TIME);
-    Vector3.LerpToRef(this.camera.target, this.cameraTarget, follow, this.camera.target);
   }
 
   leave(): void {

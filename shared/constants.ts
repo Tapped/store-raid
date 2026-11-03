@@ -10,6 +10,9 @@ export const PLAYER_RADIUS = 0.3;
 /** Player collision height, about that of the character model. */
 export const PLAYER_HEIGHT = 1.8;
 
+/** Where the first-person camera sits: the player's eyes. */
+export const EYE_HEIGHT = 1.65;
+
 /**
  * What can be carried: its size (x = long side), how many hands each carrier needs for it, and how
  * many people it takes to lift it.
@@ -33,6 +36,12 @@ export const MAX_PLAYERS = 16;
 
 /** Full deflection of a MoveInput axis; inputs are whole numbers so prediction stays exact. */
 export const MOVE_SCALE = 100;
+
+/**
+ * MoveInput's yaw is radians times this, a whole number in ±π × YAW_SCALE. Yaw is the way the player
+ * looks around y, as in Babylon: 0 looks along +z, π/2 along +x.
+ */
+export const YAW_SCALE = 10000;
 
 /** Player colours, assigned by join order. */
 export const PLAYER_COLORS = [

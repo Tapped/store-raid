@@ -8,6 +8,8 @@ import { type SchemaType, schema, t } from "@colyseus/schema";
 export const MoveInput = schema({
   moveX: t.int8(),
   moveZ: t.int8(),
+  /** Where the player looks, in YAW_SCALE units. Movement ignores it; carrying and others' views use it. */
+  yaw: t.int16(),
 });
 export type MoveInput = SchemaType<typeof MoveInput>;
 
@@ -18,6 +20,8 @@ export const Player = schema({
   z: t.number(),
   vx: t.number(),
   vz: t.number(),
+  /** Where the player looks around y, in radians. */
+  yaw: t.number(),
   /** Id of the item in each hand, or "". A two-handed item is in both. */
   left: t.string(),
   right: t.string(),

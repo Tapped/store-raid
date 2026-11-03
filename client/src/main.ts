@@ -54,6 +54,7 @@ function join() {
 function leave() {
   player?.leave();
   player = undefined;
+  document.exitPointerLock();
   world.scene.activeCamera = world.lobbyCamera;
   sessionStorage.removeItem(JOINED_KEY);
 }
@@ -68,17 +69,18 @@ function pollInput() {
   else if (!player && joinPressed) join();
 }
 
-/** Everyone in the room: our own player from prediction, the rest interpolated. */
+/** Everyone else in the room, interpolated. Our own player is the camera, and isn't drawn. */
 function syncViews(dt: number) {
   const session = player?.session;
   const players = session ? session.room.state.players : new Map();
   for (const [sessionId, view] of views) {
-    if (players.has(sessionId)) continue;
+    if (players.has(sessionId) && sessionId !== session?.sessionId) continue;
     view.dispose();
     views.delete(sessionId);
   }
   if (!session) return;
   for (const [sessionId, state] of session.room.state.players) {
+    if (sessionId === session.sessionId) continue;
     let view = views.get(sessionId);
     if (!view) {
       view = new PlayerView(world, state.name, state.color);
@@ -88,7 +90,7 @@ function syncViews(dt: number) {
     const z = session.predict.value(state, "z");
     // The carry pose holds things in both arms; one-handed things just hang at the side.
     const inBothArms = state.left !== "" && state.left === state.right;
-    view.update(x, z, inBothArms, dt);
+    view.update(x, z, state.yaw, inBothArms, dt);
   }
 }
 
@@ -126,7 +128,7 @@ function showStatus() {
   status.textContent = player?.status ?? "";
   status.style.display = status.textContent ? "" : "none";
   hint.textContent = player
-    ? "Left hand: F · LB | Right hand: G · RB | Leave: Esc · Back"
+    ? "Click to look with the mouse | Left hand: F · LB | Right hand: G · RB | Leave: Esc · Back"
     : "Join: Space or Enter · A or Start on a controller";
 }
 
