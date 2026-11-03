@@ -12,10 +12,16 @@ The goal is a playable game after every step, with each step shipped separately.
    time.
 2. **Raid:** they go into the building, a maze of shelving over several floors. It's lit near the
    entrance and quickly gets dark further in.
-3. **Load:** loot counts once it's inside the truck. Players can make as many trips as they dare.
-4. **Leave:** the crew drives off when everyone is in the truck. Anyone left behind is lost for
-   the round, along with what they were carrying.
+3. **Load:** loot counts once it's inside the truck. Players can make as many trips as they dare
+   before dawn.
+4. **Leave:** the crew drives off when everyone alive is in the truck, or at dawn at the latest.
+   Anyone left behind at dawn is lost, along with what they were carrying.
 5. **Results and shop:** the loot is sold, the crew sees what it earned, and spends it on gear.
+   Money is shared by the crew.
+
+**A timer counts down to dawn, and the building gets harder as it runs out:** more enemies, faster
+and more aggressive, and lights failing. The first trips are fairly safe; the last ones are where
+crews die for a TV that wasn't worth it.
 
 **To clear a level, the truck must hold loot worth at least the level's quota.** That's the "X"
 players must pick up: a sum of money, not a specific item, so every item counts and the crew
@@ -48,7 +54,13 @@ of the building.
 ## Shop
 
 Flashlight, shovel, grenade, pistol, and a camera whose flash kills ghosts. More to come. Gear
-bought in the shop is kept between rounds unless its owner is lost in a building.
+bought in the shop is kept between rounds, as long as someone brings it back to the truck.
+
+## Death
+
+A dead player leaves a ragdoll, with everything they held lying beside it for anyone to pick up.
+Whatever killed them doesn't die with them and is still nearby, so getting the gear back is a risk
+of its own. Dead players are out for the rest of the round and can only talk to each other.
 
 ## Enemies
 
@@ -81,7 +93,8 @@ screen.
 
 - Add the truck in the harbour and the route to the building, with collision.
 - Add server-side phases: truck, raid, results. Loot inside the truck counts towards the quota.
-- Show the quota, the loot so far and the results in a DOM overlay.
+- A timer to dawn ends the raid. Players outside the truck at dawn are lost.
+- Show the quota, the loot so far, the time left and the results in a DOM overlay.
 - **Done when:** a round can be cleared or failed, and the "one more trip?" decision exists.
 
 ### 3. The dark building and proximity voice
@@ -103,9 +116,9 @@ screen.
 
 ### 5. First enemies
 
-- Health, and what happens when a player dies: they drop everything and are out for the round.
-  Dead players can only talk to each other.
+- Health, and death: a ragdoll on the server, with the player's items dropped beside it.
 - Ticks and worms on the server, with simple pathfinding through the shelving.
+- More and faster enemies, and failing lights, as dawn approaches.
 - The shovel as the first weapon, found in the building.
 - **Done when:** players get scared, and someone dies for a TV that wasn't worth it.
 
@@ -130,9 +143,7 @@ screen.
   prediction.
 - **No enemies until step 5:** carrying and the round need to be fun without them. Otherwise,
   enemies could hide a weak core loop.
-
-## Open questions
-
-- Is money shared by the crew or earned per player? Shared is simpler and keeps the crew
-  cooperating; per player makes the witch and betrayal more interesting.
-- Is gear lost when its owner dies, or only when they're left behind at the end of the round?
+- **Money is shared by the crew.** `persist.ts` keys state by player name, so the crew needs a
+  name of its own to save money under.
+- **Gear survives death:** it stays by the ragdoll until someone picks it up. It's only lost if
+  nobody brings it back to the truck before dawn.
