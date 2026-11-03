@@ -8,12 +8,8 @@ export interface Controls {
   dragY: number;
 }
 
-/** Something one person plays with: a controller, or one half of the keyboard. */
+/** Something the player plays with: the keyboard and mouse, or a controller. */
 export interface Device {
-  readonly id: string;
-  readonly label: string;
-  /** False while a controller is unplugged; its player keeps their seat. */
-  connected(): boolean;
   read(): Controls;
   /** True once per press. */
   joinPressed(): boolean;
@@ -39,7 +35,7 @@ addEventListener("keydown", (e) => {
 addEventListener("keyup", (e) => held.delete(e.code));
 addEventListener("blur", () => held.clear());
 
-/** Mouse drag on the canvas looks around for the WASD player. */
+/** Mouse drag on the canvas looks around. */
 export function attachMouse(canvas: HTMLCanvasElement) {
   canvas.addEventListener("pointermove", (e) => {
     if (e.buttons === 0) return;
@@ -48,90 +44,39 @@ export function attachMouse(canvas: HTMLCanvasElement) {
   });
 }
 
-function takePressed(code: string): boolean {
-  return pressed.delete(code);
+/** Consumes the presses of all the given keys, so none is saved up for later. */
+function anyPressed(...codes: string[]): boolean {
+  return codes.map((code) => pressed.delete(code)).some(Boolean);
 }
 
-function axis(negative: string, positive: string): number {
-  return (held.has(positive) ? 1 : 0) - (held.has(negative) ? 1 : 0);
+/** Either set of keys moves and turns, so it doesn't matter where the player's hands are. */
+function keys(...codes: string[]): boolean {
+  return codes.some((code) => held.has(code));
 }
 
-function keyboard(
-  id: string,
-  label: string,
-  keys: {
-    left: string;
-    right: string;
-    back: string;
-    forward: string;
-    lookLeft: string;
-    lookRight: string;
-    join: string;
-    leave: string;
-    grab: string;
+function axis(negative: number | boolean, positive: number | boolean): number {
+  return Number(positive) - Number(negative);
+}
+
+const keyboard: Device = {
+  read() {
+    const controls: Controls = {
+      moveX: axis(keys("KeyA", "ArrowLeft"), keys("KeyD", "ArrowRight")),
+      moveY: axis(keys("KeyS", "ArrowDown"), keys("KeyW", "ArrowUp")),
+      lookX: axis(keys("KeyQ", "Comma"), keys("KeyE", "Period")),
+      lookY: 0,
+      dragX,
+      dragY,
+    };
+    dragX = 0;
+    dragY = 0;
+    return controls;
   },
-  mouse: boolean,
-): Device {
-  return {
-    id,
-    label,
-    connected: () => true,
-    read() {
-      const controls: Controls = {
-        moveX: axis(keys.left, keys.right),
-        moveY: axis(keys.back, keys.forward),
-        lookX: axis(keys.lookLeft, keys.lookRight),
-        lookY: 0,
-        dragX: mouse ? dragX : 0,
-        dragY: mouse ? dragY : 0,
-      };
-      if (mouse) {
-        dragX = 0;
-        dragY = 0;
-      }
-      return controls;
-    },
-    joinPressed: () => takePressed(keys.join),
-    leavePressed: () => takePressed(keys.leave),
-    grabPressed: () => takePressed(keys.grab),
-    reloadHeld: () => false,
-  };
-}
-
-const keyboards = [
-  keyboard(
-    "wasd",
-    "WASD",
-    {
-      left: "KeyA",
-      right: "KeyD",
-      back: "KeyS",
-      forward: "KeyW",
-      lookLeft: "KeyQ",
-      lookRight: "KeyE",
-      join: "Space",
-      leave: "Escape",
-      grab: "KeyF",
-    },
-    true,
-  ),
-  keyboard(
-    "arrows",
-    "Arrows",
-    {
-      left: "ArrowLeft",
-      right: "ArrowRight",
-      back: "ArrowDown",
-      forward: "ArrowUp",
-      lookLeft: "Comma",
-      lookRight: "Period",
-      join: "Enter",
-      leave: "Backspace",
-      grab: "ShiftRight",
-    },
-    false,
-  ),
-];
+  joinPressed: () => anyPressed("Space", "Enter"),
+  leavePressed: () => anyPressed("Escape"),
+  grabPressed: () => anyPressed("KeyF"),
+  reloadHeld: () => false,
+};
 
 const DEADZONE = 0.15;
 
@@ -167,9 +112,6 @@ function controller(index: number): Device {
   let reloadArmed = false;
   let reloadHeldSince: number | undefined;
   return {
-    id: `pad${index}`,
-    label: `Controller ${index + 1}`,
-    connected: () => pad()?.connected ?? false,
     read() {
       const axes = pad()?.axes ?? [];
       const [moveX, moveY] = stick(axes[0] ?? 0, axes[1] ?? 0);
@@ -201,11 +143,37 @@ function controller(index: number): Device {
 
 const controllers = new Map<number, Device>();
 
-/** Both halves of the keyboard and every controller the browser can see. */
-export function listDevices(): Device[] {
-  // Browsers only reveal a controller after a button press on it, which is also how you join.
+function devices(): Device[] {
+  // Browsers only reveal a controller after a button press on it.
   for (const pad of navigator.getGamepads?.() ?? []) {
     if (pad && !controllers.has(pad.index)) controllers.set(pad.index, controller(pad.index));
   }
-  return [...keyboards, ...controllers.values()];
+  return [keyboard, ...controllers.values()];
 }
+
+/** Asks every device, without stopping at the first yes: each call also updates its own state. */
+function any(ask: (device: Device) => boolean): boolean {
+  return devices().map(ask).some(Boolean);
+}
+
+const clamp = (value: number) => Math.max(-1, Math.min(1, value));
+
+/** The keyboard, the mouse and every controller at once: all of them control the one player. */
+export const input: Device = {
+  read() {
+    const total: Controls = { moveX: 0, moveY: 0, lookX: 0, lookY: 0, dragX: 0, dragY: 0 };
+    for (const device of devices()) {
+      const controls = device.read();
+      for (const key of Object.keys(total) as (keyof Controls)[]) total[key] += controls[key];
+    }
+    total.moveX = clamp(total.moveX);
+    total.moveY = clamp(total.moveY);
+    total.lookX = clamp(total.lookX);
+    total.lookY = clamp(total.lookY);
+    return total;
+  },
+  joinPressed: () => any((device) => device.joinPressed()),
+  leavePressed: () => any((device) => device.leavePressed()),
+  grabPressed: () => any((device) => device.grabPressed()),
+  reloadHeld: () => any((device) => device.reloadHeld()),
+};

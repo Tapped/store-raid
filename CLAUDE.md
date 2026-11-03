@@ -13,10 +13,9 @@ the roadmap for the game, Night shift at the megastore.
 ## Layout
 
 ```
-client/src/main.ts         render loop: devices → local players → views → panes
-client/src/input.ts        Device: controllers (Gamepad API) and the keyboard (still split in two halves)
-client/src/localPlayer.ts  LocalPlayer: one device + camera + connection
-client/src/splitscreen.ts  panes(count): leftover screen layout for 1–4 players, to be removed
+client/src/main.ts         render loop: input → player → views and items; join, leave and the player name
+client/src/input.ts        Device: the keyboard and mouse, controllers (Gamepad API), and `input`, all of them at once
+client/src/localPlayer.ts  LocalPlayer: the player at this screen: device + camera + connection
 client/src/players.ts      PlayerView: animated character (capsule if the model is missing) + billboard name tag
 client/src/items.ts        ItemView: a box or sofa, drawn where the server says
 client/src/props.ts        addProps(): scenery models, drawn only, with no collision
@@ -46,16 +45,17 @@ scripts/carry.ts           two bots carry a sofa to the dock, and report what wo
 - **Physics runs on the server only** (`PhysicsWorld`, Havok). Clients interpolate the poses it
   syncs and never run it; player movement stays in `stepMover`, not in physics. Players are
   kinematic: they shove objects, objects don't stop them.
-- **The game is online only, with one player per screen.** New features don't need to work in
-  splitscreen, and shouldn't add to it. Players each have their own screen and connection, which
-  features like proximity voice depend on.
-- **The client still contains the old splitscreen code,** until someone removes it: `locals` can
-  hold up to four `LocalPlayer`s, each with its own room connection and a camera in
-  `scene.activeCameras`, laid out by `layoutPanes`. Per-player logic still belongs in `LocalPlayer`,
-  not in globals. Use the player's own camera rather than `scene.activeCamera`, which assumes there's only
-  one. For UI, use billboards in the scene (see `PlayerView`) or a DOM overlay.
+- **The game is online only, with one player per screen.** Each page has one `LocalPlayer`, with
+  its own connection, and its camera is `scene.activeCamera` (the lobby camera before joining).
+  Features like proximity voice and the witch depend on every player having their own screen. For
+  UI, use billboards in the scene (see `PlayerView`) or a DOM overlay.
+- **The player's name** comes from `?name=`, else one is made up on the first visit and kept in
+  `localStorage`. Tabs in the same browser share it, so give each test player its own `?name=` or
+  an isolated browser context.
 - **Input goes through `Device`**, never raw keys or gamepads, so every feature works on all of
-  them. New action: add it to `Controls`/`Device` and map it for the keyboard and controllers.
+  them. The keyboard, mouse and every controller all drive the one player, through `input`. New
+  action: add it to `Controls`/`Device`, map it for the keyboard and controllers, and combine it in
+  `input`.
 - `MoveInput` is analog, in world space, whole numbers in ±`MOVE_SCALE`: `LocalPlayer.update` turns
   stick + camera angle into it.
 - Coordinates: x = right, z = forward, y = up. 1 unit = 1 meter.
@@ -71,7 +71,7 @@ This is a solo, local project. Start everything with **`pnpm run dev`** (require
 - Both reload on file changes (Vite HMR for the client, `tsx watch` for the server; players rejoin
   by themselves). Logs go to that terminal, and Ctrl+C stops both.
 - `PORT`, `SERVER_PORT` and `BASE` environment variables override the defaults.
-- Console (dev only): `window.__game` → `{ locals, views, world, engine }`.
+- Console (dev only): `window.__game` → `{ player(), views, items, world, engine }`.
 - Controllers need a secure page (HTTPS or localhost), and a button press before they show up.
   Holding both sticks down for a second reloads the page.
 

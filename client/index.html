@@ -20,27 +20,21 @@
         outline: none;
         touch-action: none;
       }
-      .pane {
-        position: fixed;
-        box-sizing: border-box;
-        border: 1px solid #000;
-        pointer-events: none;
-      }
-      .pane span,
+      #status,
       #hint {
-        position: absolute;
+        position: fixed;
         padding: 6px 10px;
         border-radius: 6px;
         background: rgb(0 0 0 / 0.55);
         color: #fff;
         font-size: 13px;
       }
-      .pane span {
+      #status {
         top: 12px;
         left: 12px;
+        pointer-events: none;
       }
       #hint {
-        position: fixed;
         bottom: 12px;
         left: 50%;
         transform: translateX(-50%);
@@ -51,6 +45,7 @@
   </head>
   <body>
     <canvas id="game"></canvas>
+    <div id="status"></div>
     <div id="hint"></div>
     <script type="module" src="./src/main.ts"></script>
   </body>

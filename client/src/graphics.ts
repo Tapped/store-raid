@@ -103,7 +103,7 @@ const AMBIENT_OCCLUSION =
 /**
  * Post-processing for one camera; returns how to remove it, which must happen before the camera is
  * disposed. Each camera has its own pipelines because TAA keeps a history of the previous frames,
- * and split panes sharing one would blend each other's pictures.
+ * which the lobby camera and the player's camera must not share.
  */
 export function addCameraEffects(scene: Scene, camera: Camera): () => void {
   // Before TAA, so ambient occlusion gets smoothed over frames along with the rest of the picture.

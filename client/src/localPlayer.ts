@@ -28,10 +28,7 @@ interface Session {
   self: GameConnection["state"]["players"] extends Map<string, infer P> ? P : never;
 }
 
-/**
- * One person on this screen: a device, a camera and their own connection to the room. To the
- * server they are an ordinary player, so sharing a screen and playing online work the same way.
- */
+/** The person at this screen: their device, their camera and their connection to the room. */
 export class LocalPlayer {
   readonly camera: ArcRotateCamera;
   session: Session | undefined;

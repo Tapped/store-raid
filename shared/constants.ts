@@ -22,9 +22,6 @@ export const PLAYER_SPEED = 6;
 
 export const MAX_PLAYERS = 16;
 
-/** Players sharing one screen. */
-export const MAX_LOCAL_PLAYERS = 4;
-
 /** Full deflection of a MoveInput axis; inputs are whole numbers so prediction stays exact. */
 export const MOVE_SCALE = 100;
 

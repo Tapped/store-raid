@@ -137,8 +137,7 @@ screen.
 
 - **The walled store in `shared/level.ts` is temporary,** so don't polish it. It becomes the first
   building's ground floor.
-- **Online first:** each new feature only needs to work for one player per screen. The splitscreen
-  code stays until Emil confirms, and removing it is a small cleanup at any point.
+- **Online only, one player per screen.** Splitscreen has been removed.
 - **Custom movement stays:** players keep using `stepMover`, not Havok, because that protects
   prediction.
 - **No enemies until step 5:** carrying and the round need to be fun without them. Otherwise,
