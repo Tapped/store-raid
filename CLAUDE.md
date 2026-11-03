@@ -34,6 +34,7 @@ server/src/physics.ts      PhysicsWorld: Havok bodies for one room
 server/src/persist.ts      load()/save(): state that survives server restarts
 scripts/bot.ts             headless player
 scripts/hands.ts           bots check the hands: phones, a TV and a two-person sofa, and report what worked
+scripts/unity-import/      prefabs from a Unity .unitypackage → textured .glb in assets/, through Blender
 ```
 
 ## How the game works

@@ -29,8 +29,12 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.3",
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
     "@types/node": "^26.6.5",
     "concurrently": "^10.0.6",
+    "sharp": "^0.35.5",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "^8.3.5"
