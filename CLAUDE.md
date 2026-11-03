@@ -113,8 +113,14 @@ store-raid/
 ```
 
 `client/vite.config.ts` links each checkout's `public/assets` to that folder when Vite starts, so
-they're served at `/assets/...` in dev and copied into builds. A fresh clone needs `assets/` copied
-in by hand. `assets/manifest.json` is a snapshot from the old server: nothing regenerates it.
+they're served at `/assets/...` in dev and copied into builds. A fresh clone gets `assets/` from
+the Google Drive backup with `pnpm run assets:restore -- --yes`.
+
+- **Backup:** `pnpm run assets:backup` makes `gdrive:store-raid` match `assets/`, through rclone
+  (`scripts/assets.ts`). Run it after adding or changing assets. Anything it overwrites or deletes
+  on Drive moves to `store-raid-old/<time>/`, and a restore moves local files to `assets-old/`.
+- `pnpm run assets:restore` alone only previews. The rclone remote `gdrive` (scope `drive.file`)
+  lives in the user's rclone config, not the repo. `assets/manifest.json` is a snapshot from the old server: nothing regenerates it.
 
 - `loadModel(scene, "models/props/crate.glb", placeholder)` shows the placeholder until the file
   exists, so use the final path from day one. Vite answers a missing asset with `200` and its HTML

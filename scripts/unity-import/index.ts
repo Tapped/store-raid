@@ -18,10 +18,10 @@
  * The package is unpacked once into node_modules/.cache/unity-import/<pack>/, and kept for reruns.
  */
 
-import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { sharedAssets } from "../sharedAssets";
 import { convert, findBlender, type Job } from "./blender";
 import { finish } from "./gltf";
 import { type Material, type Prefab, readMaterial, readPrefab, textureGuids } from "./unity";
@@ -71,12 +71,7 @@ const kebab = (s: string) =>
     .replace(/^-|-$/g, "")
     .toLowerCase();
 
-/** Assets are shared by every checkout, in `assets/` next to `main/` (see client/vite.config.ts). */
-const gitDir = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
-  cwd: root,
-  encoding: "utf8",
-}).trim();
-const outDir = resolve(dirname(dirname(gitDir)), "assets", values.out);
+const outDir = resolve(sharedAssets(), values.out);
 
 // Prefabs, then the models and textures they need.
 const picked: { prefab: Prefab; out: string; materials: Material[] }[] = [];
