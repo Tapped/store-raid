@@ -102,13 +102,12 @@ export function drawInstances(mesh: Mesh, matrices: Float32Array): void {
 
 /**
  * Screen-space ambient occlusion darkens where things meet, such as a box on the floor or a shelf
- * against a wall: models carry their own occlusion, baked by scripts/models/. At 1.5 m it smeared
- * noisy blotches over flat faces.
+ * against a wall, on top of the occlusion models carry, baked by scripts/models/.
  */
 const AMBIENT_OCCLUSION =
   quality === "high"
-    ? { ratio: 1, samples: 32, radius: 0.6 }
-    : { ratio: 0.5, samples: 16, radius: 0.6 };
+    ? { ratio: 1, samples: 32, radius: 1.5 }
+    : { ratio: 0.5, samples: 16, radius: 1.5 };
 
 /**
  * Post-processing for one camera; returns how to remove it, which must happen before the camera is
