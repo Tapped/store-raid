@@ -4,6 +4,7 @@ import {
   type Color3,
   Color4,
   ColorCurves,
+  Constants,
   DefaultRenderingPipeline,
   Engine,
   ImageProcessingConfiguration,
@@ -105,11 +106,15 @@ const AMBIENT_OCCLUSION =
  * in past frames smeared the picture whenever it did. Multisampling smooths edges instead.
  */
 export function addCameraEffects(scene: Scene, camera: Camera): () => void {
+  // Half floats: ambient occlusion copies the picture before tone mapping, still linear and dark, and
+  // in 8 bits its few dark levels show as bands once grading stretches the contrast.
   const ssao = new SSAO2RenderingPipeline(
     `ssao-${camera.name}`,
     scene,
     { ssaoRatio: AMBIENT_OCCLUSION.ratio, blurRatio: AMBIENT_OCCLUSION.ratio },
     [camera],
+    false,
+    Constants.TEXTURETYPE_HALF_FLOAT,
   );
   ssao.samples = AMBIENT_OCCLUSION.samples;
   ssao.radius = AMBIENT_OCCLUSION.radius;
