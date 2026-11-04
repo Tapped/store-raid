@@ -18,6 +18,7 @@
     "format": "biome check --write .",
     "assets:backup": "tsx scripts/assets.ts backup",
     "assets:restore": "tsx scripts/assets.ts restore",
+    "model": "tsx scripts/models/index.ts",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run build:verify"
   },
   "dependencies": {

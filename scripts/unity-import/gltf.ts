@@ -41,7 +41,7 @@ function rebuildNormalZ(data: Buffer, channels: number) {
 }
 
 /** Blender leaves a zero tangent on vertices with degenerate UVs, so give those any valid one. */
-function fixTangents(doc: Document): number {
+export function fixTangents(doc: Document): number {
   let fixed = 0;
   const tangents = new Set(
     doc

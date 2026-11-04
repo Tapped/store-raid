@@ -1,5 +1,13 @@
-import { Color3, type Mesh, MeshBuilder, Quaternion, TransformNode } from "@babylonjs/core";
+import {
+  Color3,
+  type Material,
+  type Mesh,
+  MeshBuilder,
+  Quaternion,
+  TransformNode,
+} from "@babylonjs/core";
 import { ITEM_KINDS, type ItemKind } from "../../shared/constants";
+import { loadContainer } from "./assets";
 import { surfaceMaterial } from "./graphics";
 import type { World } from "./scene";
 
@@ -19,16 +27,28 @@ const SOFA_PARTS = [
   [0.25, 0.4, 0.65, 1.075, 0.25, -0.125],
 ];
 
-/** The visual for one physics item, a box for now; the server decides where it is. */
+/** A material that can glow, as the plain one and glTF's are. */
+type Glowing = Material & { emissiveColor: Color3 };
+const glows = (m: Material | null): m is Glowing => !!m && "emissiveColor" in m;
+
+/**
+ * The visual for one physics item: its model, `models/props/<kind>.glb` (built by
+ * scripts/models/), else boxes until it loads or if there's none. The server decides where it is.
+ */
 export class ItemView {
   private readonly root: TransformNode;
-  private readonly material;
+  private materials: Glowing[];
+  private readonly ownGlow = new Map<Glowing, Color3>();
+  private boxes: Mesh[] = [];
+  private delivered = false;
+  private disposed = false;
 
   constructor(world: World, id: string, kind: ItemKind) {
     const { scene } = world;
     this.root = new TransformNode(id, scene);
     this.root.rotationQuaternion = new Quaternion();
-    this.material = surfaceMaterial(`${id}-mat`, scene, COLORS[kind], { roughness: 0.7 });
+    const material = surfaceMaterial(`${id}-mat`, scene, COLORS[kind], { roughness: 0.7 });
+    this.materials = [material];
 
     const [width, height, depth] = ITEM_KINDS[kind].size;
     const parts = kind === "sofa" ? SOFA_PARTS : [[width, height, depth, 0, 0, 0]];
@@ -40,10 +60,34 @@ export class ItemView {
       );
       part.parent = this.root;
       part.position.set(x, y, z);
-      part.material = this.material;
+      part.material = material;
       part.receiveShadows = true;
       world.shadows.addShadowCaster(part);
+      this.boxes.push(part);
     }
+    void this.loadModel(world, id, kind);
+  }
+
+  private async loadModel(world: World, id: string, kind: ItemKind) {
+    const container = await loadContainer(world.scene, `models/props/${kind}.glb`);
+    if (!container || this.disposed) return;
+    // Models face +z, and an item's front faces whoever carries it, behind it at -z. A glTF root
+    // carries its own handedness transform, so turn a parent instead.
+    const holder = new TransformNode(`${id}-model`, world.scene);
+    holder.parent = this.root;
+    holder.rotation.y = Math.PI;
+    // Materials are copied, so each item glows on its own when delivered.
+    const { rootNodes } = container.instantiateModelsToScene((name) => `${id}-${name}`, true);
+    for (const node of rootNodes) node.parent = holder;
+    for (const box of this.boxes) box.dispose(false, true);
+    this.boxes = [];
+    const meshes = holder.getChildMeshes();
+    this.materials = [...new Set(meshes.map((m) => m.material))].filter(glows);
+    for (const mesh of meshes) {
+      mesh.receiveShadows = true;
+      world.shadows.addShadowCaster(mesh);
+    }
+    this.setDelivered(this.delivered);
   }
 
   setPose(x: number, y: number, z: number, qx: number, qy: number, qz: number, qw: number) {
@@ -53,10 +97,16 @@ export class ItemView {
   }
 
   setDelivered(delivered: boolean) {
-    this.material.emissiveColor = delivered ? DELIVERED_GLOW : Color3.Black();
+    this.delivered = delivered;
+    for (const m of this.materials) {
+      // Lit parts, like a TV's LED, get their own glow back afterwards.
+      if (!this.ownGlow.has(m)) this.ownGlow.set(m, m.emissiveColor.clone());
+      m.emissiveColor = delivered ? DELIVERED_GLOW : (this.ownGlow.get(m) ?? Color3.Black());
+    }
   }
 
   dispose() {
+    this.disposed = true;
     this.root.dispose(false, true);
   }
 }

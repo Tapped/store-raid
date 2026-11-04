@@ -17,7 +17,7 @@ client/src/main.ts         render loop: input → player → views and items; jo
 client/src/input.ts        Device: the keyboard and mouse, controllers (Gamepad API), and `input`, all of them at once
 client/src/localPlayer.ts  LocalPlayer: the player at this screen: device + first-person camera + connection
 client/src/players.ts      PlayerView: animated character (capsule if the model is missing) + billboard name tag
-client/src/items.ts        ItemView: a phone, TV, box or sofa (boxes for now), drawn where the server says
+client/src/items.ts        ItemView: a phone, TV, box or sofa, drawn where the server says: models/props/<kind>.glb, else boxes
 client/src/props.ts        addProps(): scenery models, drawn only, with no collision
 client/src/store.ts        addShelves(): stocked shelving over the shelf collision boxes; storeSurface(): textured walls and floor
 client/src/harbour.ts      addHarbour(): the harbour around the store, as instanced scenery with no collision
@@ -35,6 +35,7 @@ server/src/persist.ts      load()/save(): state that survives server restarts
 scripts/bot.ts             headless player
 scripts/hands.ts           bots check the hands: phones, a TV and a two-person sofa, and report what worked
 scripts/unity-import/      prefabs from a Unity .unitypackage → textured .glb in assets/, through Blender
+scripts/models/            models made in code: one Python script per model, built in Blender (`pnpm run model`)
 ```
 
 ## How the game works
@@ -122,6 +123,14 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
 - `pnpm run assets:restore` alone only previews. The rclone remote `gdrive` (scope `drive.file`)
   lives in the user's rclone config, not the repo. `assets/manifest.json` is a snapshot from the old server: nothing regenerates it.
 
+- **Models made in code:** `scripts/models/<name>.py` builds a model with the helpers in
+  `scripts/models/lib.py`, whose docstring has the conventions (front faces Blender's -y, meters,
+  `ITEM`, `OUT`, `ORIGIN`, `TRIS`). `pnpm run model <name>` runs it in Blender in the background,
+  bakes its `procedural()` materials into textures, writes the `.glb` to `assets/` with WebP
+  textures, checks it against `ITEM_KINDS` and its triangle budget, and renders
+  `node_modules/.cache/models/<name>/preview.png` from four sides. Look at the preview, then at the
+  model in the game, whose lighting differs. The scripts are in git and the models aren't, so run
+  `pnpm run assets:backup` after building.
 - `loadModel(scene, "models/props/crate.glb", placeholder)` shows the placeholder until the file
   exists, so use the final path from day one. Vite answers a missing asset with `200` and its HTML
   page, so check the content type, not only the status, when testing a URL with curl.
