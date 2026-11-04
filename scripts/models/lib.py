@@ -18,6 +18,8 @@ Optional constants in a model script:
   ORIGIN = "bottom"      "bottom" (centre of the base) or "center"; items default to "center"
   TRIS = 3000            triangle budget, warned about when over
   SMOOTH_ANGLE = 35      faces meeting at less than this many degrees are shaded smooth
+  AO = 512               baked ambient occlusion texture size; 0 bakes none
+  AO_DISTANCE = 0.3      meters a crease can be across and still darken
 """
 
 import math
@@ -38,6 +40,32 @@ def item_size(kind):
 
 def reset():
     bpy.ops.wm.read_factory_settings(use_empty=True)
+
+
+def cycles(scene=None):
+    """
+    Switch the scene to Cycles, on the GPU when Blender finds one (OptiX, CUDA, HIP, oneAPI or
+    Metal), else the CPU. Returns what it runs on. Factory settings start without a GPU chosen,
+    so every run looks again.
+    """
+    scene = scene or bpy.context.scene
+    scene.render.engine = "CYCLES"
+    prefs = bpy.context.preferences.addons["cycles"].preferences
+    for kind in ("OPTIX", "CUDA", "HIP", "ONEAPI", "METAL"):
+        try:
+            prefs.compute_device_type = kind
+        except TypeError:
+            continue  # not built into this Blender
+        prefs.refresh_devices()
+        gpus = [d for d in prefs.devices if d.type == kind]
+        if gpus:
+            for d in prefs.devices:
+                d.use = d.type == kind
+            scene.cycles.device = "GPU"
+            return f"{kind}: {', '.join(d.name for d in gpus)}"
+    prefs.compute_device_type = "NONE"
+    scene.cycles.device = "CPU"
+    return "CPU"
 
 
 def _link(obj):
@@ -85,8 +113,23 @@ def cylinder(name, radius, depth, at=(0, 0, 0), axis="z", mat=None, sides=24, be
     return assign(_bevel(_mesh_object(name, bm), bevel, 1), mat)
 
 
+_TURNS = {"-y": 0, "x": math.pi / 2, "y": math.pi, "-x": -math.pi / 2}
+
+
+def _facing(facing):
+    """Turns a flat thing drawn in x (right) and y (up), facing +z, to face `facing`."""
+    if facing == "z":
+        return Matrix.Identity(4)
+    if facing not in _TURNS:
+        raise ValueError(f'facing must be "-y", "y", "x", "-x" or "z", not {facing!r}')
+    return Matrix.Rotation(_TURNS[facing], 4, "Z") @ Matrix.Rotation(math.pi / 2, 4, "X")
+
+
 def text(name, body, size, at=(0, 0, 0), depth=0.001, mat=None, facing="-y"):
-    """Raised letters centred on `at`, readable from `facing` ("-y" is the front, "y" the back)."""
+    """
+    Raised letters centred on `at`, readable from `facing`: "-y" (the front), "y", "x", "-x" or
+    "z" (from above, top of the letters towards +y).
+    """
     curve = bpy.data.curves.new(name, "FONT")
     curve.body = body
     curve.size = size
@@ -95,9 +138,24 @@ def text(name, body, size, at=(0, 0, 0), depth=0.001, mat=None, facing="-y"):
     curve.align_y = "CENTER"
     curve.resolution_u = 3
     obj = _link(bpy.data.objects.new(name, curve))
-    obj.rotation_euler = (math.pi / 2, 0, math.pi if facing == "y" else 0)
-    obj.location = at
+    obj.matrix_world = Matrix.Translation(Vector(at)) @ _facing(facing)
     return assign(obj, mat)
+
+
+def shape(name, points, at=(0, 0, 0), depth=0.001, mat=None, facing="-y"):
+    """
+    A flat outline, raised `depth` meters, such as an arrow or a sign. `points` go round it as
+    (right, up) in meters from `at`, as seen from `facing` (see text()).
+    """
+    bm = bmesh.new()
+    face = bm.faces.new([bm.verts.new((u, v, -depth / 2)) for u, v in points])
+    top = bmesh.ops.extrude_face_region(bm, geom=[face])["geom"]
+    bmesh.ops.translate(
+        bm, vec=(0, 0, depth), verts=[g for g in top if isinstance(g, bmesh.types.BMVert)]
+    )
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bmesh.ops.transform(bm, matrix=Matrix.Translation(Vector(at)) @ _facing(facing), verts=bm.verts)
+    return assign(_mesh_object(name, bm), mat)
 
 
 def assign(obj, mat):
@@ -158,6 +216,10 @@ class Nodes:
     def coord(self):
         """Position in meters, in the coordinates the model was built in."""
         return self.add("ShaderNodeTexCoord").outputs["Object"]
+
+    def vec(self, x=0.0, y=0.0, z=0.0):
+        """A vector from three numbers or sockets."""
+        return self.add("ShaderNodeCombineXYZ", {"X": x, "Y": y, "Z": z}).outputs["Vector"]
 
     def xyz(self, vector=None):
         node = self.add("ShaderNodeSeparateXYZ", {"Vector": vector or self.coord()})
@@ -258,6 +320,18 @@ def join(name, smooth_angle):
     return obj
 
 
+def _unwrap(margin):
+    """
+    Lay out the selected faces in the texture, none overlapping. Smart projection alone stacks
+    parts that face the same way on top of each other, like letters on the face behind them.
+    """
+    # With UV sync selection, on by default, packing works around every other face's UVs too.
+    bpy.context.scene.tool_settings.use_uv_select_sync = False
+    bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=margin)
+    bpy.ops.uv.select_all(action="SELECT")
+    bpy.ops.uv.pack_islands(rotate=True, margin=margin)
+
+
 def bake_all(obj, work, model):
     """Bake every procedural material on obj into textures. Returns their names and sizes."""
     baked = []
@@ -281,7 +355,7 @@ def _bake(obj, index, size, work, model):
     bpy.ops.mesh.select_all(action="DESELECT")
     obj.active_material_index = index
     bpy.ops.object.material_slot_select()
-    bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.004)
+    _unwrap(0.004)
     bpy.ops.object.mode_set(mode="OBJECT")
 
     # Baked on a copy holding only those faces, so other materials need no image.
@@ -299,8 +373,7 @@ def _bake(obj, index, size, work, model):
     tmp.data.materials.append(mat)
     _select(tmp)
 
-    scene.render.engine = "CYCLES"
-    scene.cycles.device = "CPU"
+    cycles(scene)
     scene.cycles.samples = 16
     scene.render.bake.margin = max(2, size // 128)
     tree = mat.node_tree
@@ -341,17 +414,66 @@ def _bake(obj, index, size, work, model):
     tree.links.new(n.bsdf.outputs["BSDF"], out.inputs["Surface"])
     for k, v in keep.items():
         n.bsdf.inputs[k].default_value = v
-    base = n.add("ShaderNodeTexImage", image=images["base"])
-    rough = n.add("ShaderNodeTexImage", image=images["rough"])
-    normal = n.add("ShaderNodeTexImage", image=images["normal"])
+    # Named, or the exporter can't tell which UV layout to use once bake_ao adds a second.
+    uv = n.add("ShaderNodeUVMap", uv_map=obj.data.uv_layers[0].name).outputs["UV"]
+    base = n.add("ShaderNodeTexImage", {"Vector": uv}, image=images["base"])
+    rough = n.add("ShaderNodeTexImage", {"Vector": uv}, image=images["rough"])
+    normal = n.add("ShaderNodeTexImage", {"Vector": uv}, image=images["normal"])
+    normal_map_uv = obj.data.uv_layers[0].name
     green = n.add("ShaderNodeSeparateColor", {"Color": rough.outputs["Color"]})
-    normal_map = n.add("ShaderNodeNormalMap", {"Color": normal.outputs["Color"]})
+    normal_map = n.add(
+        "ShaderNodeNormalMap", {"Color": normal.outputs["Color"]}, uv_map=normal_map_uv
+    )
     n.out(**{
         "Base Color": base.outputs["Color"],
         "Roughness": green.outputs["Green"],
         "Normal": normal_map.outputs["Normal"],
     })
     del mat["bake"]
+
+
+def bake_ao(obj, size, distance, work):
+    """
+    Bake how much of the sky each point of the model sees, rays reaching `distance` meters, into
+    <work>/ao.png on a second UV layout, "AO", of the whole model. It's the model's own shading,
+    so it moves with it; index.ts makes it the glTF occlusion texture of every material.
+    """
+    mesh = obj.data
+    main = mesh.uv_layers.active
+    ao = mesh.uv_layers.new(name="AO")
+    mesh.uv_layers.active = ao
+    _select(obj)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    _unwrap(0.02)
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+    scene = bpy.context.scene
+    if scene.world is None:
+        scene.world = bpy.data.worlds.new("bake")
+    scene.world.light_settings.distance = distance
+    print("MODEL", obj.name, "bakes ambient occlusion on", cycles(scene))
+    scene.cycles.samples = 128
+    scene.render.bake.margin = max(2, size // 128)
+
+    # Unused texels stay white, unoccluded, so filtering never bleeds darkness into an island.
+    image = bpy.data.images.new("ao", size, size, is_data=True)
+    image.generated_color = (1, 1, 1, 1)
+    targets = []
+    for slot in obj.material_slots:
+        tree = slot.material.node_tree
+        node = tree.nodes.new("ShaderNodeTexImage")
+        node.image = image
+        tree.nodes.active = node
+        targets.append((tree, node))
+    bpy.ops.object.bake(type="AO", use_clear=False)
+    image.filepath_raw = f"{work}/ao.png"
+    image.file_format = "PNG"
+    image.save()
+    for tree, node in targets:
+        tree.nodes.remove(node)
+    mesh.uv_layers.active = main
+    main.active_render = True
 
 
 def place_origin(obj, origin):

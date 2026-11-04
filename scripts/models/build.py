@@ -34,6 +34,9 @@ for model in job["models"]:
         mod.build()
         obj = lib.join(name, getattr(mod, "SMOOTH_ANGLE", 35))
         baked = lib.bake_all(obj, out_dir, name)
+        ao = getattr(mod, "AO", 512)
+        if ao:
+            lib.bake_ao(obj, ao, getattr(mod, "AO_DISTANCE", 0.3), out_dir)
         dims = lib.place_origin(obj, getattr(mod, "ORIGIN", "center" if item else "bottom"))
         bpy.ops.export_scene.gltf(
             filepath=os.path.join(out_dir, "raw.glb"), export_format="GLB", export_yup=True,
@@ -48,6 +51,7 @@ for model in job["models"]:
             "dims": dims,
             "materials": [s.material.name for s in obj.material_slots if s.material],
             "baked": baked,
+            "ao": bool(ao),
         }
     except Exception:
         for line in traceback.format_exc().splitlines():

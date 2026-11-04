@@ -25,7 +25,7 @@ client/src/paving.ts       addPavingVariation(): world-space brightness and damp
 client/src/lamps.ts        addStreetLamps(): glowing lamp faces, and lamp light summed in every PBR shader (not scene lights)
 client/src/scene.ts        world, lights and fog, first-person camera, lobby camera
 client/src/sky.ts          addSky(): overcast sky dome, painted at startup; HORIZON, the colour fog fades to
-client/src/graphics.ts     engine (WebGPU, else WebGL2), one pipeline of TAA with MSAA, SSAO, bloom and sharpen (`?quality=high` for finer shadows and SSAO), `surfaceMaterial()` for PBR, `gradePicture()` for the colour look, `drawInstances()` for static copies, camera effects
+client/src/graphics.ts     engine (WebGPU, else WebGL2), one pipeline of MSAA, contact-only SSAO and bloom, no TAA (`?quality=high` for finer shadows and SSAO), `surfaceMaterial()` for PBR, `gradePicture()` for the colour look, `drawInstances()` for static copies, camera effects
 client/src/reload.ts       production builds reload when a served .game-build file changes; nothing writes that file locally
 client/src/net.ts          Colyseus client, joinGame(), waitForServer()
 client/src/assets.ts       assetUrl(), loadModel() with placeholder fallback
@@ -125,11 +125,13 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
 
 - **Models made in code:** `scripts/models/<name>.py` builds a model with the helpers in
   `scripts/models/lib.py`, whose docstring has the conventions (front faces Blender's -y, meters,
-  `ITEM`, `OUT`, `ORIGIN`, `TRIS`). `pnpm run model <name>` runs it in Blender in the background,
-  bakes its `procedural()` materials into textures, writes the `.glb` to `assets/` with WebP
+  `ITEM`, `OUT`, `ORIGIN`, `TRIS`, `AO`). `pnpm run model <name>` runs it in Blender in the
+  background, bakes its `procedural()` materials into textures and its ambient occlusion onto a
+  second UV set (Cycles, on the GPU if there is one), writes the `.glb` to `assets/` with WebP
   textures, checks it against `ITEM_KINDS` and its triangle budget, and renders
   `node_modules/.cache/models/<name>/preview.png` from four sides. Look at the preview, then at the
-  model in the game, whose lighting differs. The scripts are in git and the models aren't, so run
+  model in the game, whose lighting differs. Screen-space AO only adds contact shadows between
+  things, so a model's own creases come from its bake. The scripts are in git and the models aren't, so run
   `pnpm run assets:backup` after building.
 - `loadModel(scene, "models/props/crate.glb", placeholder)` shows the placeholder until the file
   exists, so use the final path from day one. Vite answers a missing asset with `200` and its HTML

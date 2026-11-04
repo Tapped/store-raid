@@ -40,6 +40,7 @@ interface Built {
   dims: [number, number, number];
   materials: string[];
   baked: { material: string; size: number }[];
+  ao: boolean;
 }
 
 const { values, positionals } = parseArgs({
@@ -123,6 +124,17 @@ for (const name of wanted) {
   const output = resolve(sharedAssets(), b.out);
   const doc = await io.read(`${work}/${name}/raw.glb`);
   fixTangents(doc);
+  if (b.ao) {
+    // The baked occlusion is on the second UV layout, TEXCOORD_1, shared by every material.
+    const ao = doc
+      .createTexture("ao")
+      .setMimeType("image/png")
+      .setImage(readFileSync(`${work}/${name}/ao.png`));
+    for (const m of doc.getRoot().listMaterials()) {
+      m.setOcclusionTexture(ao).setOcclusionStrength(1);
+      m.getOcclusionTextureInfo()?.setTexCoord(1);
+    }
+  }
   await doc.transform(
     dedup(),
     prune(),

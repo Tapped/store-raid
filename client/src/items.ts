@@ -3,6 +3,7 @@ import {
   type Material,
   type Mesh,
   MeshBuilder,
+  PBRMaterial,
   Quaternion,
   TransformNode,
 } from "@babylonjs/core";
@@ -83,6 +84,12 @@ export class ItemView {
     this.boxes = [];
     const meshes = holder.getChildMeshes();
     this.materials = [...new Set(meshes.map((m) => m.material))].filter(glows);
+    for (const m of this.materials) {
+      // Occlusion baked by scripts/models/ darkens the sky light and sun too, not only reflections:
+      // in this dim overcast light that's nearly all the light. Imported models' occlusion maps are
+      // too strong for that, so they keep the default.
+      if (m instanceof PBRMaterial) m.ambientTextureImpactOnAnalyticalLights = 1;
+    }
     for (const mesh of meshes) {
       mesh.receiveShadows = true;
       world.shadows.addShadowCaster(mesh);

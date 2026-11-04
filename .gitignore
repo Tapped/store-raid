@@ -4,3 +4,4 @@ dist/
 .DS_Store
 .data/
 public/assets
+__pycache__/
