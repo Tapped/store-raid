@@ -13,6 +13,7 @@ import {
   type Scene,
   ShadowGenerator,
   SSAO2RenderingPipeline,
+  TAARenderingPipeline,
   WebGPUEngine,
 } from "@babylonjs/core";
 
@@ -88,26 +89,31 @@ export function gradePicture(config: ImageProcessingConfiguration): void {
 
 export const SHADOW_MAP_SIZE = quality === "high" ? 4096 : 2048;
 
-/** Draws a mesh at many fixed places. */
+/**
+ * Draws a mesh at many fixed places. The copies never move, so last frame's matrices are the same
+ * ones. Saying so up front matters: left to itself, Babylon only adds them after the first draw,
+ * which WebGPU rejects once TAA asks for motion vectors.
+ */
 export function drawInstances(mesh: Mesh, matrices: Float32Array): void {
   mesh.thinInstanceSetBuffer("matrix", matrices, 16, true);
+  mesh.thinInstanceSetBuffer("previousMatrix", matrices, 16, true);
   mesh.thinInstanceRefreshBoundingInfo();
 }
 
 /**
- * Screen-space ambient occlusion only darkens where things meet, such as a box on the floor or a
- * shelf against a wall: models carry their own occlusion, baked by scripts/models/. A wide radius
- * smears noisy blotches over flat faces.
+ * Screen-space ambient occlusion darkens where things meet, such as a box on the floor or a shelf
+ * against a wall: models carry their own occlusion, baked by scripts/models/. At 1.5 m it smeared
+ * noisy blotches over flat faces.
  */
 const AMBIENT_OCCLUSION =
   quality === "high"
-    ? { ratio: 1, samples: 32, radius: 0.4 }
-    : { ratio: 0.5, samples: 16, radius: 0.4 };
+    ? { ratio: 1, samples: 32, radius: 0.6 }
+    : { ratio: 0.5, samples: 16, radius: 0.6 };
 
 /**
  * Post-processing for one camera; returns how to remove it, which must happen before the camera is
- * disposed. No temporal anti-aliasing: in first person the camera nearly always moves, and blending
- * in past frames smeared the picture whenever it did. Multisampling smooths edges instead.
+ * disposed. Each camera has its own pipelines because TAA keeps a history of the previous frames,
+ * which the lobby camera and the player's camera must not share.
  */
 export function addCameraEffects(scene: Scene, camera: Camera): () => void {
   // Half floats: ambient occlusion copies the picture before tone mapping, still linear and dark, and
@@ -125,18 +131,34 @@ export function addCameraEffects(scene: Scene, camera: Camera): () => void {
   ssao.totalStrength = 1;
   ssao.expensiveBlur = true;
 
-  // Ambient occlusion draws the scene into the pre-pass target, so that's where multisampling goes.
+  // After ambient occlusion, so its noise is smoothed over frames along with the rest. Half floats
+  // for the same reason as ambient occlusion. Its history can smear a moving picture: `factor`, how
+  // much of each new frame it takes (default 0.05), is the setting to tune.
+  const taa = new TAARenderingPipeline(
+    `taa-${camera.name}`,
+    scene,
+    [camera],
+    Constants.TEXTURETYPE_HALF_FLOAT,
+  );
+  taa.samples = 16;
+  taa.reprojectHistory = true;
+  taa.clampHistory = true;
+  taa.disableOnCameraMove = false;
+
+  // The scene is drawn into the pre-pass target, so that's where multisampling goes.
   const prePass = scene.enablePrePassRenderer();
   if (prePass) prePass.samples = 4;
 
   const post = new DefaultRenderingPipeline(`post-${camera.name}`, true, scene, [camera]);
-  post.samples = 4;
   post.bloomEnabled = true;
   post.bloomThreshold = 0.9;
   post.bloomWeight = 0.15;
+  post.sharpenEnabled = true; // TAA softens the picture a little
+  post.sharpen.edgeAmount = 0.2;
 
   return () => {
     post.dispose();
+    taa.dispose();
     ssao.dispose();
   };
 }
