@@ -80,6 +80,10 @@ export function gradePicture(config: ImageProcessingConfiguration): void {
   config.vignetteWeight = 0.8;
   config.vignetteColor = new Color4(0, 0, 0, 0);
   config.vignetteBlendMode = ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY;
+
+  // The screen has 8 bits per channel: noise below one level keeps dark gradients, like the sky,
+  // fog and vignette, from stepping.
+  config.ditheringEnabled = true;
 }
 
 export const SHADOW_MAP_SIZE = quality === "high" ? 4096 : 2048;
