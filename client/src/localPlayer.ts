@@ -41,7 +41,7 @@ export class LocalPlayer {
   private readonly removeCameraEffects: () => void;
 
   constructor(
-    world: World,
+    private readonly world: World,
     readonly device: Device,
     readonly name: string,
   ) {
@@ -55,7 +55,7 @@ export class LocalPlayer {
   private async connect(): Promise<void> {
     while (!this.left) {
       try {
-        const room = await joinGame(this.name);
+        const room = await joinGame(this.name, this.world.level.name);
         if (this.left) {
           await room.leave();
           return;
@@ -105,7 +105,8 @@ export class LocalPlayer {
     predict.reconciler(self, {
       input,
       fields: ["x", "z", "vx", "vz"],
-      step: (ctx, predicted, command) => stepMover(predicted, command, ctx.dt),
+      step: (ctx, predicted, command) =>
+        stepMover(predicted, command, ctx.dt, this.world.level.boxes),
     });
 
     this.session = { room, predict, input, sessionId: room.sessionId, self };

@@ -3,8 +3,9 @@
  *
  *   pnpm exec tsx scripts/bot.ts [name] [seconds]     (defaults: bot, 10)
  *
- * Joins your game server (SERVER_PORT, else 2567), walks in a square and prints every
- * player's position once a second. Run several at once for several players.
+ * Joins your game server (SERVER_PORT, else 2567) in the store (LEVEL=playground for the hall),
+ * walks in a square and prints every player's position once a second. Run several at once for
+ * several players.
  */
 import { ColyseusSDK } from "@colyseus/sdk";
 import type server from "../server/src/app";
@@ -16,7 +17,7 @@ const seconds = Number(process.argv[3] ?? 10);
 const port = process.env.SERVER_PORT ?? "2567";
 
 const client = new ColyseusSDK<typeof server>(`ws://127.0.0.1:${port}`);
-const room = await client.joinOrCreate("game", { name });
+const room = await client.joinOrCreate("game", { name, level: process.env.LEVEL ?? "store" });
 const input = room.input<MoveInput>({ mode: "reliable" });
 room.onLeave((code) => console.log(`left (code ${code})`));
 console.log(`${name} joined as ${room.sessionId} on port ${port}`);

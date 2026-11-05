@@ -14,8 +14,7 @@ import {
   Vector3,
   Vector4,
 } from "@babylonjs/core";
-import { ARENA_SIZE } from "../../shared/constants";
-import { DOCK, LEVEL_BOXES } from "../../shared/level";
+import type { Level } from "../../shared/level";
 import { assetUrl } from "./assets";
 import {
   addCameraEffects,
@@ -34,6 +33,8 @@ const DUSK_REFLECTION = new Color3(0.7, 0.72, 0.8);
 
 export interface World {
   scene: Scene;
+  /** The building this page plays in, from `?level=`. */
+  level: Level;
   /** Slowly circles a spot in the harbour while nobody has joined. */
   lobbyCamera: ArcRotateCamera;
   shadows: ShadowGenerator;
@@ -50,8 +51,8 @@ export function createPlayerCamera(scene: Scene, name: string): FreeCamera {
   return camera;
 }
 
-/** Static world: lights, ground and the level boxes from shared/level.ts. */
-export function createWorld(engine: AbstractEngine): World {
+/** Static world: lights, ground and the level's boxes from shared/level.ts. */
+export function createWorld(engine: AbstractEngine, level: Level): World {
   const scene = new Scene(engine);
   scene.clearColor = HORIZON.toColor4().toLinearSpace();
   addSky(scene);
@@ -59,7 +60,9 @@ export function createWorld(engine: AbstractEngine): World {
   scene.fogDensity = 0.003;
   scene.fogColor = HORIZON;
 
-  const lobbyCamera = new ArcRotateCamera("lobby", -Math.PI / 2, 1.45, 7, LOBBY_TARGET, scene);
+  const lobbyCamera = level.roof
+    ? new ArcRotateCamera("lobby", -Math.PI / 2, 1.2, 9, new Vector3(0, 2, 0), scene)
+    : new ArcRotateCamera("lobby", -Math.PI / 2, 1.45, 7, LOBBY_TARGET, scene);
   addCameraEffects(scene, lobbyCamera);
 
   // Image-based lighting: what PBR surfaces reflect and most of their soft ambient light.
@@ -91,10 +94,10 @@ export function createWorld(engine: AbstractEngine): World {
 
   const ground = MeshBuilder.CreateGround(
     "ground",
-    { width: ARENA_SIZE, height: ARENA_SIZE },
+    { width: level.size, height: level.size },
     scene,
   );
-  const floorTiles = ARENA_SIZE / FLOOR_TILE;
+  const floorTiles = level.size / FLOOR_TILE;
   const floorMat = storeSurface("floor", scene, [floorTiles, floorTiles]);
   // Dark and damp, like wet asphalt: the sky glances off it.
   floorMat.albedoColor = new Color3(0.32, 0.33, 0.36);
@@ -102,19 +105,23 @@ export function createWorld(engine: AbstractEngine): World {
   ground.material = floorMat;
   ground.receiveShadows = true;
 
-  const dock = MeshBuilder.CreateGround(
-    "dock",
-    { width: DOCK.maxX - DOCK.minX, height: DOCK.maxZ - DOCK.minZ },
-    scene,
-  );
-  dock.position.set((DOCK.minX + DOCK.maxX) / 2, 0, (DOCK.minZ + DOCK.maxZ) / 2);
-  const dockMaterial = storeSurface("dock", scene, [
-    (DOCK.maxX - DOCK.minX) / FLOOR_TILE,
-    (DOCK.maxZ - DOCK.minZ) / FLOOR_TILE,
-  ]);
-  dockMaterial.albedoColor = new Color3(0.85, 0.58, 0.08);
-  dock.material = dockMaterial;
-  dock.receiveShadows = true;
+  if (level.dock) {
+    const { minX, maxX, minZ, maxZ } = level.dock;
+    const dock = MeshBuilder.CreateGround(
+      "dock",
+      { width: maxX - minX, height: maxZ - minZ },
+      scene,
+    );
+    // A hair above the floor, which covers the dock in the playground.
+    dock.position.set((minX + maxX) / 2, 0.002, (minZ + maxZ) / 2);
+    const dockMaterial = storeSurface("dock", scene, [
+      (maxX - minX) / FLOOR_TILE,
+      (maxZ - minZ) / FLOOR_TILE,
+    ]);
+    dockMaterial.albedoColor = new Color3(0.85, 0.58, 0.08);
+    dock.material = dockMaterial;
+    dock.receiveShadows = true;
+  }
 
   const wallMat = storeSurface("wall", scene);
   wallMat.albedoColor = new Color3(0.85, 0.82, 0.82);
@@ -122,7 +129,7 @@ export function createWorld(engine: AbstractEngine): World {
   const shelfMat = surfaceMaterial("shelfMat", scene, new Color3(0.2, 0.3, 0.45), {
     roughness: 0.5,
   });
-  for (const [i, box] of LEVEL_BOXES.entries()) {
+  for (const [i, box] of level.boxes.entries()) {
     const width = box.maxX - box.minX;
     const depth = box.maxZ - box.minZ;
     const tiled = (u: number, v: number) => new Vector4(0, 0, u / WALL_TILE, v / WALL_TILE);
@@ -152,5 +159,5 @@ export function createWorld(engine: AbstractEngine): World {
     if (box.kind === "shelf") plainShelves.push(mesh);
   }
 
-  return { scene, lobbyCamera, shadows, plainShelves };
+  return { scene, level, lobbyCamera, shadows, plainShelves };
 }

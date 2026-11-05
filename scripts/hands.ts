@@ -16,7 +16,7 @@ const port = process.env.SERVER_PORT ?? "2567";
 const client = new ColyseusSDK<typeof server>(`ws://127.0.0.1:${port}`);
 
 async function joinBot(name: string) {
-  const room = await client.joinOrCreate("game", { name });
+  const room = await client.joinOrCreate("game", { name, level: process.env.LEVEL ?? "store" });
   const input = room.input<MoveInput>({ mode: "reliable" });
   await new Promise<void>((resolve) => room.onStateChange.once(() => resolve()));
   const self = () => {

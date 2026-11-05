@@ -1,4 +1,5 @@
 import { HANDS, type ItemKind } from "../../shared/constants";
+import { levelNamed } from "../../shared/level";
 import { createEngine } from "./graphics";
 import { POSES } from "./hands";
 import { addHarbour } from "./harbour";
@@ -6,6 +7,7 @@ import { attachMouse, input } from "./input";
 import { ItemView } from "./items";
 import { LocalPlayer } from "./localPlayer";
 import { PlayerView } from "./players";
+import { addPlayground } from "./playground";
 import { addProps } from "./props";
 import { reloadOnNewBuild } from "./reload";
 import { createWorld } from "./scene";
@@ -16,10 +18,14 @@ const hint = document.getElementById("hint") as HTMLDivElement;
 const status = document.getElementById("status") as HTMLDivElement;
 
 const engine = await createEngine(canvas);
-const world = createWorld(engine);
-void addProps(world);
-void addShelves(world);
-void addHarbour(world.scene);
+// The building to play in: `?level=playground` for the hall to try things out in, else the store.
+const world = createWorld(engine, levelNamed(new URLSearchParams(location.search).get("level")));
+if (world.level.name === "playground") void addPlayground(world);
+else {
+  void addProps(world);
+  void addShelves(world);
+  void addHarbour(world.scene);
+}
 attachMouse(canvas);
 addEventListener("resize", () => engine.resize());
 

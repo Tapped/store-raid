@@ -1,5 +1,4 @@
 import { Mesh, PBRMaterial, type Scene, Texture } from "@babylonjs/core";
-import { LEVEL_BOXES } from "../../shared/level";
 import { assetUrl, loadContainer } from "./assets";
 import { drawInstances } from "./graphics";
 import type { World } from "./scene";
@@ -69,7 +68,7 @@ async function drawCopies(world: World, model: string, matrices: number[], shado
 
 /** Replace the plain shelf boxes with stocked shelving, once the models have loaded. */
 export async function addShelves(world: World): Promise<void> {
-  const shelves = LEVEL_BOXES.filter((box) => box.kind === "shelf");
+  const shelves = world.level.boxes.filter((box) => box.kind === "shelf");
   const bays: number[] = [];
   const boxes: number[] = [];
   const next = random(7);

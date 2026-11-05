@@ -20,6 +20,7 @@ client/src/hands.ts        FirstPersonHands: the player's own gloved hands at th
 client/src/players.ts      PlayerView: animated character (capsule if the model is missing) + billboard name tag
 client/src/items.ts        ItemView: a phone, TV, box or sofa, drawn where the server says: models/props/<kind>.glb, else boxes
 client/src/props.ts        addProps(): scenery models, drawn only, with no collision
+client/src/playground.ts   addPlayground(): the hall at `?level=playground`: roof, beams, lights, and CONCEPTS on show
 client/src/store.ts        addShelves(): stocked shelving over the shelf collision boxes; storeSurface(): textured walls and floor
 client/src/harbour.ts      addHarbour(): the harbour around the store, as instanced scenery with no collision
 client/src/paving.ts       addPavingVariation(): world-space brightness and damp patches on harbour paving
@@ -84,6 +85,10 @@ This is a solo, local project. Start everything with **`pnpm run dev`** (require
 - Both reload on file changes (Vite HMR for the client, `tsx watch` for the server; players rejoin
   by themselves). Logs go to that terminal, and Ctrl+C stops both.
 - `PORT`, `SERVER_PORT` and `BASE` environment variables override the defaults.
+- **Levels** are in `shared/level.ts`: the store, and the playground at
+  `http://127.0.0.1:5173/?level=playground`, a brick hall with each item kind and a dock, to try
+  things out in. New models go on show there through `CONCEPTS` in `client/src/playground.ts`.
+  Each level has its own rooms; bots join the store unless `LEVEL` says otherwise.
 - Console (dev only): `window.__game` → `{ player(), views, items, world, engine }`.
 - Controllers need a secure page (HTTPS or localhost), and a button press before they show up.
   Holding both sticks down for a second reloads the page.

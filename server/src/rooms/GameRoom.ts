@@ -13,7 +13,7 @@ import {
   TICK_RATE,
   YAW_SCALE,
 } from "../../../shared/constants";
-import { DOCK, ITEM_SPAWNS, spawnPoint } from "../../../shared/level";
+import { type Level, levelNamed } from "../../../shared/level";
 import { stepMover } from "../../../shared/movement";
 import { load, save } from "../persist";
 import { PhysicsWorld } from "../physics";
@@ -42,6 +42,8 @@ const FALL_TIME = 1;
 
 export interface JoinOptions {
   name?: string;
+  /** Which building, from shared/level.ts: each has rooms of its own. */
+  level?: string;
 }
 
 export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
@@ -60,7 +62,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
 
   private joinCount = 0;
 
-  private readonly physics = new PhysicsWorld();
+  private level!: Level;
+  private physics!: PhysicsWorld;
   private readonly playerBodies = new Map<string, HP_BodyId>();
   private readonly itemBodies = new Map<string, HP_BodyId>();
   /** Items off the ground: enough people have hold of them. */
@@ -82,8 +85,10 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     },
   };
 
-  onCreate() {
-    for (const [i, { kind, x, y, z }] of ITEM_SPAWNS.entries()) {
+  onCreate(options: JoinOptions) {
+    this.level = levelNamed(options?.level);
+    this.physics = new PhysicsWorld(this.level.boxes);
+    for (const [i, { kind, x, y, z }] of this.level.items.entries()) {
       const id = `item${i}`;
       this.state.items.set(
         id,
@@ -99,7 +104,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   onJoin(client: Client, options: JoinOptions) {
     const index = this.joinCount++;
     const name = (options?.name ?? "").trim().slice(0, 16) || `player-${index + 1}`;
-    const spawn = this.lastSeen[name] ?? spawnPoint(index);
+    const spawn = this.lastSeen[this.seenKey(name)] ?? this.level.spawnPoint(index);
     this.state.players.set(
       client.sessionId,
       new Player({
@@ -123,13 +128,18 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     for (const hand of HANDS) this.drop(client.sessionId, hand);
     const player = this.state.players.get(client.sessionId);
     if (player) {
-      this.lastSeen[player.name] = { x: player.x, z: player.z };
+      this.lastSeen[this.seenKey(player.name)] = { x: player.x, z: player.z };
       save("lastSeen", this.lastSeen);
     }
     this.state.players.delete(client.sessionId);
     const body = this.playerBodies.get(client.sessionId);
     if (body) this.physics.removeBody(body);
     this.playerBodies.delete(client.sessionId);
+  }
+
+  /** Where players were is kept per building; the store's keys are plain names, from before levels. */
+  private seenKey(name: string) {
+    return this.level.name === "store" ? name : `${this.level.name}:${name}`;
   }
 
   onDispose() {
@@ -312,7 +322,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       const channel = this.inputs.get(sessionId);
       if (!channel) continue;
       for (const input of channel) {
-        stepMover(player, input, ctx.dt);
+        stepMover(player, input, ctx.dt, this.level.boxes);
         player.yaw = input.yaw / YAW_SCALE;
       }
     }
@@ -351,12 +361,14 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     for (const [id, item] of this.state.items) {
       const body = this.itemBodies.get(id);
       if (body) this.physics.readPose(body, item);
+      const dock = this.level.dock;
       item.delivered =
+        !!dock &&
         !this.lifted.has(id) &&
-        item.x > DOCK.minX &&
-        item.x < DOCK.maxX &&
-        item.z > DOCK.minZ &&
-        item.z < DOCK.maxZ;
+        item.x > dock.minX &&
+        item.x < dock.maxX &&
+        item.z > dock.minZ &&
+        item.z < dock.maxZ;
     }
   }
 }

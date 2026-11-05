@@ -35,8 +35,10 @@ with `pnpm run model <name>`. Read these first. This skill doesn't repeat them:
 5. **Build and look.** Run `pnpm run model <name>` and Read `node_modules/.cache/models/<name>/preview.png`.
    Compare it with the reference side by side and list what's off, then fix the biggest things
    first. Two or three rounds is normal.
-6. **Check it in the game** with the `mcp__chrome__*` tools: the store is dark, graded and fogged,
-   so a model that reads in the preview can disappear or look flat there.
+6. **Check it in the game** with the `mcp__chrome__*` tools. Put it on show in the playground
+   (`CONCEPTS` in `client/src/playground.ts`, at `?level=playground`) to see it in even light, then
+   in the store, which is dark, graded and fogged, so a model that reads in the preview can
+   disappear or look flat there.
 7. Commit the script and tell the user to run `pnpm run assets:backup` (the .glb isn't in git).
 
 ## Lessons so far

@@ -13,7 +13,7 @@ import {
   PLAYER_RADIUS,
   TICK_RATE,
 } from "../../shared/constants";
-import { LEVEL_BOXES } from "../../shared/level";
+import type { LevelBox } from "../../shared/level";
 
 const GRAVITY = -9.81;
 const ITEM_DENSITY = 25; // kg per cubic meter
@@ -65,12 +65,12 @@ export class PhysicsWorld {
   private readonly shapes: HP_ShapeId[] = [];
   private readonly bodies = new Set<HP_BodyId>();
 
-  constructor() {
+  constructor(walls: readonly LevelBox[]) {
     havok.HP_World_SetGravity(this.world, [0, GRAVITY, 0]);
     havok.HP_World_SetIdealStepTime(this.world, 1 / TICK_RATE);
 
     this.addStatic([0, -0.5, 0], [GROUND_SIZE, 1, GROUND_SIZE]);
-    for (const box of LEVEL_BOXES) {
+    for (const box of walls) {
       this.addStatic(
         [(box.minX + box.maxX) / 2, box.height / 2, (box.minZ + box.maxZ) / 2],
         [box.maxX - box.minX, box.height, box.maxZ - box.minZ],
