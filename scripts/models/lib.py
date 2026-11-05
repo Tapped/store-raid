@@ -158,6 +158,80 @@ def shape(name, points, at=(0, 0, 0), depth=0.001, mat=None, facing="-y"):
     return assign(_mesh_object(name, bm), mat)
 
 
+def ellipsoid(name, half, at=(0, 0, 0), mat=None, segments=24, rings=16, poles="z", deform=None):
+    """
+    A smooth blob: a sphere `half` = (x, y, z) half sizes across, centred on `at`. `poles` is the
+    axis its rings run around: put it along the length of a long body, so there are rings where
+    you shape it. `deform(p)` can move each point instead of the plain scale: it gets the point on
+    a unit sphere and returns it in meters from `at`, e.g. to make an egg or pinch in grooves.
+    """
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=segments, v_segments=rings, radius=1)
+    turn = {"x": Matrix.Rotation(math.pi / 2, 3, "Y"), "y": Matrix.Rotation(math.pi / 2, 3, "X")}
+    if poles in turn:
+        bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=turn[poles])
+    at, half = Vector(at), Vector(half)
+    for v in bm.verts:
+        p = deform(v.co.copy()) if deform else v.co * half
+        v.co = Vector(p) + at
+    return assign(_mesh_object(name, bm), mat)
+
+
+def tube(name, points, radii, mat=None, sides=8):
+    """
+    A tube through `points` (in meters), `radii[i]` thick at each, closed at both ends: tentacles,
+    pipes, cables, horns. A radius near 0 at the end makes a point, such as a claw or a barb.
+    """
+    bm = bmesh.new()
+    pts = [Vector(p) for p in points]
+    rings = []
+    normal = None
+    for i, p in enumerate(pts):
+        t = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
+        if normal is None:
+            normal = t.cross(Vector((0, 0, 1)))
+            if normal.length < 1e-4:
+                normal = t.cross(Vector((1, 0, 0)))
+        # Carry the ring's orientation along the tube, so it doesn't twist.
+        normal = (normal - t * normal.dot(t)).normalized()
+        binormal = t.cross(normal)
+        rings.append([
+            bm.verts.new(p + radii[i] * (math.cos(a) * normal + math.sin(a) * binormal))
+            for a in (2 * math.pi * s / sides for s in range(sides))
+        ])
+    for a, b in zip(rings, rings[1:]):
+        for s in range(sides):
+            bm.faces.new((a[s], a[(s + 1) % sides], b[(s + 1) % sides], b[s]))
+    for ring, flip in ((rings[0], True), (rings[-1], False)):
+        tip = bm.verts.new(sum((v.co for v in ring), Vector()) / sides)
+        for s in range(sides):
+            face = (ring[s], ring[(s + 1) % sides], tip)
+            bm.faces.new(face[::-1] if flip else face)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return assign(_mesh_object(name, bm), mat)
+
+
+def jointed(name, joints, radii, mat=None, sides=8):
+    """
+    A jointed limb through `joints`, segment i `radii[i]` thick, swelling a little in the middle
+    of each segment and pinched at the joints, so the segments read as separate pieces of shell:
+    insect and spider legs, antennae, robot arms. The last segment tapers to a point.
+    """
+    points, widths = [], []
+    for i, (a, b) in enumerate(zip(joints, joints[1:])):
+        a, b = Vector(a), Vector(b)
+        r = radii[i]
+        if i == 0:
+            points.append(a)
+            widths.append(r * 0.9)
+        for t, k in ((0.18, 1.0), (0.55, 1.08), (0.85, 0.95)):
+            points.append(a.lerp(b, t))
+            widths.append(r * k)
+        points.append(b)
+        widths.append(min(r, radii[i + 1] if i + 1 < len(radii) else r * 0.4) * 0.75)
+    return tube(name, points, widths, mat, sides)
+
+
 def assign(obj, mat):
     if mat is not None:
         obj.data.materials.append(mat)

@@ -124,7 +124,7 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
 - `pnpm run assets:restore` alone only previews. The rclone remote `gdrive` (scope `drive.file`)
   lives in the user's rclone config, not the repo. `assets/manifest.json` is a snapshot from the old server: nothing regenerates it.
 
-- **Models made in code:** `scripts/models/<name>.py` builds a model with the helpers in
+- **Models made in code** (the `model` skill has the workflow): `scripts/models/<name>.py` builds a model with the helpers in
   `scripts/models/lib.py`, whose docstring has the conventions (front faces Blender's -y, meters,
   `ITEM`, `OUT`, `ORIGIN`, `TRIS`, `AO`). `pnpm run model <name>` runs it in Blender in the
   background, bakes its `procedural()` materials into textures and its ambient occlusion onto a
