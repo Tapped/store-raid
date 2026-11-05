@@ -36,6 +36,7 @@ scripts/bot.ts             headless player
 scripts/hands.ts           bots check the hands: phones, a TV and a two-person sofa, and report what worked
 scripts/unity-import/      prefabs from a Unity .unitypackage → textured .glb in assets/, through Blender
 scripts/models/            models made in code: one Python script per model, built in Blender (`pnpm run model`)
+scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`pnpm run image`, see the `image` skill)
 ```
 
 ## How the game works

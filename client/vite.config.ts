@@ -26,7 +26,7 @@ function linkSharedAssets() {
 
 linkSharedAssets();
 
-// Set by the server (see ~/.config/game.env); defaults are for running on a laptop.
+// From the environment, e.g. to run two checkouts at once; defaults are for running on a laptop.
 const port = Number(process.env.PORT ?? 5173);
 const base = process.env.BASE ?? "/";
 const serverPort = Number(process.env.SERVER_PORT ?? 2567);

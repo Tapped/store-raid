@@ -2,27 +2,16 @@
  * Checks the hands: a bot holds a phone in each hand, can't take a TV with a hand busy, delivers the
  * phones and lifts the TV in both arms. Then two bots carry a sofa to the loading dock, and lift
  * another and walk apart so it falls. Exits non-zero if any of that doesn't happen. Needs your game
- * server running, in a fresh room (SERVER_PORT, else from ~/.config/game.env, else 2567).
+ * server running, in a fresh room (SERVER_PORT, else 2567).
  *
  *   pnpm exec tsx scripts/hands.ts
  */
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { ColyseusSDK } from "@colyseus/sdk";
 import type server from "../server/src/app";
 import type { MoveInput } from "../server/src/rooms/schema";
 import { type Hand, MOVE_SCALE, TICK_RATE, YAW_SCALE } from "../shared/constants";
 
-const port = process.env.SERVER_PORT ?? envFilePort() ?? "2567";
-
-function envFilePort(): string | undefined {
-  try {
-    const env = readFileSync(`${homedir()}/.config/game.env`, "utf8");
-    return /^SERVER_PORT=(\d+)$/m.exec(env)?.[1];
-  } catch {
-    return undefined;
-  }
-}
+const port = process.env.SERVER_PORT ?? "2567";
 
 const client = new ColyseusSDK<typeof server>(`ws://127.0.0.1:${port}`);
 

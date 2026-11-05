@@ -5,3 +5,4 @@ dist/
 .data/
 public/assets
 __pycache__/
+.env
