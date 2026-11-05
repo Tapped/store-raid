@@ -1,12 +1,15 @@
 import {
+  CreateSoundAsync,
   Matrix,
   Quaternion,
   type Scene,
   type ShadowGenerator,
+  type StaticSound,
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
 import { loadContainer } from "./assets";
+import { audioEngine, OneShots, SPATIAL, soundBuffer } from "./audio";
 
 /**
  * A large tick, walked procedurally on the rig scripts/models/tick.py gives it: every frame each
@@ -23,6 +26,7 @@ import { loadContainer } from "./assets";
  *   plane (FABRIK, starting from its rest shape, so knees stay high) and the plane turns about the
  *   hip to face the foot.
  * - Standing still, it raises its front legs and waves them, questing: ticks smell with them.
+ * - Each foot taps where it lands, and it hisses as it starts questing, now and then after that.
  *
  * Bone matrices here are in the rig's frame, the glTF armature node under the model's root, and
  * use Babylon's row vectors: a child's matrix is its local matrix times its parent's.
@@ -52,6 +56,14 @@ const SETTLE = 0.02;
 const QUEST_AFTER = 1.2;
 const QUEST_RATE = 2;
 const IK_ITERATIONS = 10;
+
+/** A claw tapping the floor, one of these at random each time a foot lands. */
+const TAPS = ["audio/sfx/tick-tap-1.wav", "audio/sfx/tick-tap-2.wav", "audio/sfx/tick-tap-3.wav"];
+const TAP_VOLUME = 0.3;
+const HISS = "audio/sfx/tick-hiss.wav";
+const HISS_VOLUME = 0.9;
+/** Seconds of quiet between hisses while it keeps questing, at least and at most. */
+const HISS_GAP = { min: 1.5, max: 4 };
 
 const UP = new Vector3(0, 1, 0);
 
@@ -95,6 +107,10 @@ export class TickView {
   private turnRate = 0;
   private cycle = 0;
   private disposed = false;
+  private taps?: OneShots;
+  private hiss?: StaticSound;
+  /** When it may hiss next, on its own clock. */
+  private nextHiss = 0;
 
   constructor(
     private scene: Scene,
@@ -208,6 +224,30 @@ export class TickView {
         });
       }
     }
+    void this.loadSounds(name, headNode);
+  }
+
+  private async loadSounds(name: string, head: TransformNode) {
+    const [taps, audio, hiss] = await Promise.all([
+      OneShots.load(this.scene, TAPS),
+      audioEngine(this.scene),
+      soundBuffer(this.scene, HISS),
+    ]);
+    if (this.disposed) {
+      taps?.dispose();
+      return;
+    }
+    this.taps = taps;
+    if (hiss) {
+      this.hiss = await CreateSoundAsync(
+        `${name}-hiss`,
+        hiss,
+        { ...SPATIAL, volume: HISS_VOLUME },
+        audio,
+      );
+      // From its mouth, wherever that goes.
+      this.hiss.spatial.attach(head);
+    }
   }
 
   /** Where the rig's frame is in the world now. */
@@ -250,6 +290,16 @@ export class TickView {
     this.still = moving ? 0 : this.still + dt;
     const questing = this.still > QUEST_AFTER;
     this.quest = Math.max(0, Math.min(1, this.quest + (questing ? dt : -dt) * QUEST_RATE));
+    // A hiss as it rears up to quest, then now and then while it goes on.
+    if (this.hiss && questing && this.quest > 0.3 && this.clock >= this.nextHiss) {
+      const rate = 0.85 + 0.2 * Math.random();
+      this.hiss.playbackRate = rate;
+      this.hiss.play();
+      this.nextHiss =
+        this.clock +
+        this.hiss.buffer.duration / rate +
+        lerp(HISS_GAP.min, HISS_GAP.max, Math.random());
+    }
 
     this.stepLegs(x, z, yaw, speed, moving, dt);
 
@@ -358,7 +408,10 @@ export class TickView {
       const across = smoother(Math.min(1, Math.max(0, (step.t - 0.12) / 0.76)));
       leg.foot = Vector3.Lerp(step.from, to, across);
       leg.foot.y = this.root.position.y + STEP_HEIGHT * Math.sin(Math.PI * step.t) ** 2;
-      if (step.t >= 1) leg.step = undefined;
+      if (step.t >= 1) {
+        leg.step = undefined;
+        this.taps?.play(leg.foot, TAP_VOLUME);
+      }
     }
 
     // Standing still, the foot furthest out of place steps back, one at a time.
@@ -417,6 +470,8 @@ export class TickView {
 
   dispose() {
     this.disposed = true;
+    this.taps?.dispose();
+    this.hiss?.dispose();
     this.root.dispose();
   }
 }
@@ -475,6 +530,10 @@ function toward(from: Flat, to: Flat, length: number): Flat {
   const dz = to.z - from.z;
   const d = Math.hypot(ds, dz) || 1;
   return { s: from.s + (ds / d) * length, z: from.z + (dz / d) * length };
+}
+
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
 }
 
 /** Eases in and out with no jolt: speed and acceleration are zero at both ends. */
