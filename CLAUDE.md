@@ -74,7 +74,8 @@ scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`p
   is in both. `ITEM_KINDS` says how many hands each kind takes and how many people it takes to
   lift. Grab (E, RB; `grab` message) takes the nearest item in front of the player that fits, with
   the right hand if it's free, else the left. Drop (Q, LB; `drop` message) lets go of the last thing
-  grabbed. `grabbingHand()`/`droppingHand()` in `shared/constants.ts` decide which hand. One-handed items are stepped over rather than shoved, so players can walk up to them.
+  grabbed. `grabbingHand()`/`droppingHand()` in `shared/constants.ts` decide which hand.
+  One-handed items are stepped over rather than shoved, so players can walk up to them.
 - Lasting state goes through `server/src/persist.ts`, keyed by player name, never `sessionId`.
 
 ## Running
