@@ -37,17 +37,23 @@ const glows = (m: Material | null): m is Glowing => !!m && "emissiveColor" in m;
  * scripts/models/), else boxes until it loads or if there's none. The server decides where it is.
  */
 export class ItemView {
-  private readonly root: TransformNode;
+  /** Where the server puts it, or in a hand on its holder's own screen (see hold()). */
+  readonly node: TransformNode;
+  private holder: TransformNode | undefined;
   private materials: Glowing[];
   private readonly ownGlow = new Map<Glowing, Color3>();
   private boxes: Mesh[] = [];
   private delivered = false;
   private disposed = false;
 
-  constructor(world: World, id: string, kind: ItemKind) {
+  constructor(
+    world: World,
+    id: string,
+    readonly kind: ItemKind,
+  ) {
     const { scene } = world;
-    this.root = new TransformNode(id, scene);
-    this.root.rotationQuaternion = new Quaternion();
+    this.node = new TransformNode(id, scene);
+    this.node.rotationQuaternion = new Quaternion();
     const material = surfaceMaterial(`${id}-mat`, scene, COLORS[kind], { roughness: 0.7 });
     this.materials = [material];
 
@@ -59,7 +65,7 @@ export class ItemView {
         { width: w, height: h, depth: d },
         scene,
       );
-      part.parent = this.root;
+      part.parent = this.node;
       part.position.set(x, y, z);
       part.material = material;
       part.receiveShadows = true;
@@ -75,7 +81,7 @@ export class ItemView {
     // Models face +z, and an item's front faces whoever carries it, behind it at -z. A glTF root
     // carries its own handedness transform, so turn a parent instead.
     const holder = new TransformNode(`${id}-model`, world.scene);
-    holder.parent = this.root;
+    holder.parent = this.node;
     holder.rotation.y = Math.PI;
     // Materials are copied, so each item glows on its own when delivered.
     const { rootNodes } = container.instantiateModelsToScene((name) => `${id}-${name}`, true);
@@ -98,9 +104,26 @@ export class ItemView {
   }
 
   setPose(x: number, y: number, z: number, qx: number, qy: number, qz: number, qw: number) {
-    this.root.position.set(x, y, z);
+    if (this.holder) return;
+    this.node.position.set(x, y, z);
     // Interpolated field by field, so no longer exactly unit length.
-    this.root.rotationQuaternion?.set(qx, qy, qz, qw).normalize();
+    this.node.rotationQuaternion?.set(qx, qy, qz, qw).normalize();
+  }
+
+  /**
+   * Draw it at `holder` instead of where the server says, or back there with undefined: a
+   * one-handed thing sits in its holder's first-person hand on their own screen.
+   */
+  hold(holder: TransformNode | undefined) {
+    if (holder === this.holder) return;
+    this.holder = holder;
+    this.node.parent = holder ?? null;
+    // The hands draw what they hold over the world; back in it, it's drawn with the rest.
+    if (!holder) for (const mesh of this.node.getChildMeshes()) mesh.renderingGroupId = 0;
+    if (holder) {
+      this.node.position.setAll(0);
+      this.node.rotationQuaternion?.copyFrom(Quaternion.Identity());
+    }
   }
 
   setDelivered(delivered: boolean) {
@@ -114,6 +137,6 @@ export class ItemView {
 
   dispose() {
     this.disposed = true;
-    this.root.dispose(false, true);
+    this.node.dispose(false, true);
   }
 }

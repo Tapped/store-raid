@@ -1,5 +1,6 @@
 import { HANDS, type ItemKind } from "../../shared/constants";
 import { createEngine } from "./graphics";
+import { POSES } from "./hands";
 import { addHarbour } from "./harbour";
 import { attachMouse, input } from "./input";
 import { ItemView } from "./items";
@@ -146,7 +147,9 @@ addEventListener("pageshow", (event) => {
 
 // Debug handle for the browser console and automated smoke tests (dev builds only).
 if (import.meta.env.DEV)
-  Object.assign(window, { __game: { player: () => player, views, items, world, engine } });
+  Object.assign(window, {
+    __game: { player: () => player, views, items, world, engine, handPoses: POSES },
+  });
 
 engine.runRenderLoop(() => {
   const dt = engine.getDeltaTime() / 1000;
@@ -155,6 +158,7 @@ engine.runRenderLoop(() => {
   world.lobbyCamera.alpha += dt * 0.1;
   syncViews(dt);
   syncItems();
+  player?.updateHands(dt, items);
   showStatus();
   world.scene.render();
 });

@@ -15,7 +15,8 @@ Optional constants in a model script:
 
   ITEM = "tv"            a game item: its size comes from ITEM_KINDS, and the model must match it
   OUT = "models/props/x.glb"   under assets/; default models/props/<name>.glb
-  ORIGIN = "bottom"      "bottom" (centre of the base) or "center"; items default to "center"
+  ORIGIN = "bottom"      "bottom" (centre of the base), "center", or "model" (where the script built
+                         it); items default to "center"
   TRIS = 3000            triangle budget, warned about when over
   SMOOTH_ANGLE = 35      faces meeting at less than this many degrees are shaded smooth
   AO = 512               baked ambient occlusion texture size; 0 bakes none
@@ -551,15 +552,20 @@ def bake_ao(obj, size, distance, work):
 
 
 def place_origin(obj, origin):
-    """Move the mesh so the origin is at the centre of its base, or of its bounds."""
+    """
+    Move the mesh so the origin is at the centre of its base or of its bounds, or leave it where
+    the script built it ("model"), e.g. at a wrist or a hinge the game turns it around.
+    """
     corners = [Vector(c) for c in obj.bound_box]
     lo = Vector(min(c[i] for c in corners) for i in range(3))
     hi = Vector(max(c[i] for c in corners) for i in range(3))
     centre = (lo + hi) / 2
     if origin == "bottom":
         centre.z = lo.z
+    elif origin == "model":
+        centre = Vector()
     elif origin != "center":
-        raise ValueError(f'ORIGIN must be "bottom" or "center", not {origin!r}')
+        raise ValueError(f'ORIGIN must be "bottom", "center" or "model", not {origin!r}')
     obj.data.transform(Matrix.Translation(-centre))
     return [round(v, 4) for v in hi - lo]
 

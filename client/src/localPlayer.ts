@@ -2,10 +2,12 @@ import type { FreeCamera } from "@babylonjs/core";
 import { CloseCode } from "@colyseus/sdk";
 import { Predict } from "@colyseus/sdk/predict";
 import type { MoveInput } from "../../server/src/rooms/schema";
-import { EYE_HEIGHT, type Hand, MOVE_SCALE, YAW_SCALE } from "../../shared/constants";
+import { EYE_HEIGHT, HANDS, type Hand, MOVE_SCALE, YAW_SCALE } from "../../shared/constants";
 import { stepMover } from "../../shared/movement";
 import { addCameraEffects } from "./graphics";
+import { FirstPersonHands, type Held } from "./hands";
 import type { Device } from "./input";
+import type { ItemView } from "./items";
 import { type GameConnection, joinGame, waitForServer } from "./net";
 import { createPlayerCamera, type World } from "./scene";
 
@@ -32,6 +34,7 @@ interface Session {
 /** The person at this screen: their device, their camera and their connection to the room. */
 export class LocalPlayer {
   readonly camera: FreeCamera;
+  readonly hands: FirstPersonHands;
   session: Session | undefined;
   status = "Connecting…";
   private left = false;
@@ -44,6 +47,7 @@ export class LocalPlayer {
   ) {
     this.camera = createPlayerCamera(world.scene, `camera-${name}`);
     this.removeCameraEffects = addCameraEffects(world.scene, this.camera);
+    this.hands = new FirstPersonHands(world, this.camera);
     void this.connect();
   }
 
@@ -110,7 +114,33 @@ export class LocalPlayer {
 
   /** A hand's button: the server lets go of what it holds, or grabs something with it. */
   useHand(hand: Hand): void {
+    this.hands.reach(hand);
     this.session?.room.send("hand", hand);
+  }
+
+  /**
+   * After the items have moved: our hands hold what the server says they hold, one-handed things
+   * drawn in them and big things gripped where they are.
+   */
+  updateHands(dt: number, items: Map<string, ItemView>): void {
+    const self = this.session?.self;
+    const held = {} as Record<Hand, Held | undefined>;
+    for (const hand of HANDS) {
+      const view = self?.[hand] ? items.get(self[hand]) : undefined;
+      held[hand] = view && { id: self?.[hand] ?? "", kind: view.kind, node: view.node };
+    }
+    for (const view of items.values()) {
+      const hand = HANDS.find((h) => self?.[h] && items.get(self[h]) === view);
+      view.hold(hand && this.hands.anchorFor(hand, held[hand]));
+    }
+    const session = this.session;
+    const speed = session
+      ? Math.hypot(
+          session.predict.value(session.self, "vx"),
+          session.predict.value(session.self, "vz"),
+        )
+      : 0;
+    this.hands.update(dt, held, speed);
   }
 
   /** One rendered frame: look around, send due inputs, put the camera in our player's eyes. */
@@ -152,6 +182,7 @@ export class LocalPlayer {
     this.left = true;
     void this.session?.room.leave();
     this.removeCameraEffects();
+    this.hands.dispose();
     this.camera.dispose();
   }
 }
