@@ -40,6 +40,16 @@ export interface Floor extends Box {
   rise?: { toward: Side; height: number };
 }
 
+/**
+ * Where a ladder can be climbed: the strip in front of it, from its foot at `y` up to the floor it
+ * leads to at `top`. Players climb it by walking `toward` the wall it's on and go down by backing away.
+ */
+export interface Ladder extends Box {
+  y: number;
+  top: number;
+  toward: Side;
+}
+
 /** How high a floor's top is at a point over it. */
 export function floorHeight(floor: Floor, x: number, z: number): number {
   const { rise } = floor;
@@ -70,6 +80,7 @@ export interface Level {
   size: number;
   boxes: LevelBox[];
   floors: Floor[];
+  ladders: Ladder[];
   /** Players who fall below this die, and things that fall below it go back where they started. */
   killY: number;
   /** A dimmer on the wall for the lights, where there is one: hold grab on it to fade them. */
@@ -144,6 +155,7 @@ const STORE: Level = {
     { minX: -HALF, maxX: HALF, minZ: -HALF, maxZ: HALF, y: 0, thickness: 0.3, kind: "floor" },
     { ...DOCK, y: 0, thickness: 0.3, kind: "floor" },
   ],
+  ladders: [],
   killY: -10,
   dimmer: undefined,
   dock: DOCK,
@@ -155,19 +167,25 @@ const STORE: Level = {
 
 // The playground: one brick hall under a roof on steel beams, to try things out in, built from tiles
 // (shared/tiles.ts) inside four walls. Items wait in a row along the west wall, with a dock to
-// deliver to in the north-west corner; a pit with a plank across fills the east side; stairs go up
-// to a mezzanine along the north wall, and on to a platform above that; new things to look at
-// stand in the south-east corner (client/src/playground.ts).
+// deliver to in the north-west corner; a pit with a plank across fills the east side; stairs and a
+// ladder go up to a mezzanine along the north wall, and stairs on to a platform above that; stairs
+// and a ladder go down to a basement under the middle; new things to look at stand in the
+// south-east corner (client/src/playground.ts).
 const HALL_X = 16; // half the hall's width (x) and length (z), inside the walls
 const HALL_Z = 12;
 const HALL_HEIGHT = 9;
 
-/** Eight cells across and six deep, three storeys. Each storey's northern row comes first. */
+/**
+ * Eight cells across and six deep, on a basement, the ground and two storeys above. Each storey's
+ * northern row comes first; the basement is dug out of rock, and open under the pit.
+ */
 const PLAYGROUND_TILES = composeTiles({
   x: -HALL_X,
   z: -HALL_Z,
+  basements: 1,
   storeys: [
-    ["FFFFFFFF", "FFFFFP|P", "FFF^FP|P", "FFFFFP|P", "FFFFFFFF", "FFFFFFFF"],
+    ["########", "#####...", "#####...", "#F^F#...", "#FFFe###", "########"],
+    ["FFFFFFFF", "FFFFFP|P", "FFF^nP|P", "FF.FFP|P", "FFFF.FFF", "FFFFFFFF"],
     [".F<FF...", ".FFFF..."],
     ["FF......"],
   ],
@@ -186,7 +204,9 @@ const PLAYGROUND: Level = {
     ...PLAYGROUND_TILES.boxes,
   ],
   floors: PLAYGROUND_TILES.floors,
-  killY: -4,
+  ladders: PLAYGROUND_TILES.ladders,
+  // A storey below the basement: in the pit, and nowhere else.
+  killY: -STOREY - 4,
   // On the south wall, behind where players start.
   dimmer: { x: -6, y: 1.3, z: -HALL_Z, turn: 0 },
   dock: { minX: -HALL_X, maxX: -HALL_X + CELL, minZ: HALL_Z - 3, maxZ: HALL_Z },
@@ -200,7 +220,7 @@ const PLAYGROUND: Level = {
     { kind: "box", x: -6, y: STOREY + 0.6, z: 6 },
   ],
   // In the middle of the south side, facing north.
-  spawnPoint: (index) => ({ x: -3 + (index % 4) * 2, z: -9 + (Math.floor(index / 4) % 2) }),
+  spawnPoint: (index) => ({ x: -3 + (index % 4) * 2, z: -10.5 + (Math.floor(index / 4) % 2) }),
   roof: HALL_HEIGHT,
 };
 

@@ -52,6 +52,9 @@ export const PLAYER_SPEED = 6;
 /** How high a player steps up without noticing, and how far down they follow the floor before falling. */
 export const STEP_UP = 0.35;
 export const STEP_DOWN = 0.3;
+/** How fast players climb a ladder, in meters per second. */
+export const CLIMB_SPEED = 2.5;
+
 /** How fast players fall, in meters per second per second. */
 export const GRAVITY = 20;
 

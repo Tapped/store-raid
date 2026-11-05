@@ -1,7 +1,8 @@
 /**
  * Checks the playground with a bot: the dimmer fades the lights while held, the stairs go up to the
- * mezzanine and on to the platform, the railing stops it at the edge, the plank crosses the pit, and
- * stepping off it falls to a respawn. Exits non-zero if any of that doesn't happen. Needs your game
+ * mezzanine and on to the platform, the railing stops it at the edge, stairs go down to the
+ * basement, ladders go up and down, the plank crosses the pit, and stepping off it falls to a
+ * respawn. Exits non-zero if any of that doesn't happen. Needs your game
  * server running (SERVER_PORT, else 2567).
  *
  *   pnpm exec tsx scripts/playground.ts
@@ -122,10 +123,43 @@ await walk([
 ]);
 check(near(self().y, 0), `and back down to the ground (${where()})`);
 
+// Down the stairs to the basement, x -8..-4 under the hole at z -4..0, round the railings.
+await walk([
+  [-2, -10],
+  [-10, -10],
+  [-10, 2],
+  [-6, 2],
+  [-6, -6],
+]);
+check(near(self().y, -3), `the stairs lead down to the basement (${where()})`);
+
+// Up the basement's ladder, on its east wall at x = 4, and back down it, and up again.
+await walk([[1, -6]]);
+await push(6, -6, 3);
+check(near(self().y, 0) && self().x > 4, `the ladder leads up out of the basement (${where()})`);
+await push(1, -6, 3);
+check(near(self().y, -3), `backing off the top climbs back down it (${where()})`);
+await push(6, -6, 3);
+check(near(self().y, 0) && self().x > 4, `and up again (${where()})`);
+
+// Up the ladder to the mezzanine, on the north wall at z = 4, and back down.
+await walk([
+  [6, -10],
+  [-2, -10],
+  [-2, -2],
+  [2, -2],
+]);
+await push(2, 6, 4);
+check(near(self().y, 3) && self().z > 4, `a ladder leads up to the mezzanine (${where()})`);
+await push(2, 0, 3);
+check(near(self().y, 0), `and back down (${where()})`);
+
 // Across the pit on the plank at x = 10, from z -4 to 8.
 const lowest = await walk([
-  [-2, -6],
-  [10, -6],
+  [2, -2],
+  [-2, -2],
+  [-2, -10],
+  [10, -10],
   [10, -4.5],
   [10, 10],
 ]);
@@ -140,7 +174,7 @@ for (let t = 0; t < TICK_RATE * 2; t++) {
   input.send();
   await tick();
 }
-check(self().z < -7 && near(self().y, 0), `falling in respawns the bot at the start (${where()})`);
+check(self().z < -9 && near(self().y, 0), `falling in respawns the bot at the start (${where()})`);
 
 await room.leave();
 process.exit(process.exitCode ?? 0);

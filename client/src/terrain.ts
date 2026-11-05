@@ -9,7 +9,14 @@ import {
   Vector3,
   VertexBuffer,
 } from "@babylonjs/core";
-import { type Floor, floorHeight, type Level, type LevelBox } from "../../shared/level";
+import {
+  type Floor,
+  floorHeight,
+  type Ladder,
+  type Level,
+  type LevelBox,
+} from "../../shared/level";
+import { LADDER_WALL, LADDER_WIDTH, OFFSET } from "../../shared/tiles";
 import { surfaceMaterial } from "./graphics";
 
 /** Meters that one repeat of a surface texture covers, on floors and walls. */
@@ -47,8 +54,8 @@ export function worldBox(name: string, min: Vector3, max: Vector3, scene: Scene)
 }
 
 /**
- * The level's floors, planks, stairs, railings and pits, from shared/level.ts. Walls and shelves are
- * drawn by createWorld.
+ * The level's floors, planks, stairs, ladders, railings and pits, from shared/level.ts. Walls, shelves
+ * and solid tiles are drawn by createWorld.
  */
 export function addTerrain(
   scene: Scene,
@@ -81,16 +88,20 @@ export function addTerrain(
     (floor.kind === "plank" ? planks : floors).push(box);
   }
 
+  for (const [i, ladder] of level.ladders.entries())
+    railings.push(...ladderMeshes(scene, ladder, i));
+
   const pits: Mesh[] = [];
   for (const [i, box] of level.boxes.entries()) {
     if (box.kind === "rail") railings.push(...railing(scene, box, i));
-    // Pit walls stop a hair below the floor on top of them.
+    // Pit walls stop a hair below the floor on top of them, and stand a little proud of any
+    // basement wall in the same place.
     if (box.kind === "pit") {
       pits.push(
         worldBox(
           `pit${i}`,
-          new Vector3(box.minX, box.y, box.minZ),
-          new Vector3(box.maxX, box.y + box.height - 0.01, box.maxZ),
+          new Vector3(box.minX - 0.02, box.y, box.minZ - 0.02),
+          new Vector3(box.maxX + 0.02, box.y + box.height - 0.01, box.maxZ + 0.02),
           scene,
         ),
       );
@@ -198,6 +209,41 @@ function railing(scene: Scene, box: LevelBox, index: number): Mesh[] {
   for (let i = 0; i <= count; i++) {
     const p = at(start + ((end - start) * i) / count, top);
     meshes.push(post(scene, p.x, box.y, top, p.z));
+  }
+  return meshes;
+}
+
+/** A ladder against its wall: two rails, reaching a meter above the top to hold on to, and rungs. */
+function ladderMeshes(scene: Scene, ladder: Ladder, index: number): Mesh[] {
+  const [dx, dz] = OFFSET[ladder.toward];
+  const middle = { x: (ladder.minX + ladder.maxX) / 2, z: (ladder.minZ + ladder.maxZ) / 2 };
+  // Out from the wall's face by a hand's width.
+  const out = LADDER_WALL + 0.12;
+  const along = dx
+    ? { x: dx > 0 ? ladder.maxX - out : ladder.minX + out, z: middle.z }
+    : { x: middle.x, z: dz > 0 ? ladder.maxZ - out : ladder.minZ + out };
+  // Across the ladder, the way its rungs run.
+  const [ax, az] = [Math.abs(dz), Math.abs(dx)];
+  const meshes: Mesh[] = [];
+  const top = ladder.top + 1;
+  for (const side of [-1, 1]) {
+    const rail = MeshBuilder.CreateBox(
+      `ladder${index}-rail`,
+      { width: 0.05, depth: 0.05, height: top - ladder.y },
+      scene,
+    );
+    const offset = (side * LADDER_WIDTH) / 2;
+    rail.position.set(along.x + ax * offset, (ladder.y + top) / 2, along.z + az * offset);
+    meshes.push(rail);
+  }
+  for (let y = ladder.y + 0.3; y < ladder.top; y += 0.3) {
+    const rung = MeshBuilder.CreateBox(
+      `ladder${index}-rung`,
+      { width: ax * LADDER_WIDTH + 0.03, depth: az * LADDER_WIDTH + 0.03, height: 0.03 },
+      scene,
+    );
+    rung.position.set(along.x, y, along.z);
+    meshes.push(rung);
   }
   return meshes;
 }

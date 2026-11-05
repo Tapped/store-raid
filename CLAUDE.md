@@ -21,7 +21,7 @@ client/src/players.ts      PlayerView: animated character (capsule if the model 
 client/src/items.ts        ItemView: a phone, TV, box or sofa, drawn where the server says: models/props/<kind>.glb, else boxes
 client/src/props.ts        addProps(): scenery models, drawn only, with no collision
 client/src/playground.ts   addPlayground(): the playground hall: roof, beams, lights on the dimmer, and CONCEPTS on show
-client/src/terrain.ts      addTerrain(): a level's floors, planks, stairs, railings and pits; worldBox() for seamless tiling
+client/src/terrain.ts      addTerrain(): a level's floors, planks, stairs, ladders, railings and pits; worldBox() for seamless tiling
 client/src/store.ts        addShelves(): stocked shelving over the shelf collision boxes; storeSurface(): textured walls and floor
 client/src/harbour.ts      addHarbour(): the harbour around the store, as instanced scenery with no collision
 client/src/paving.ts       addPavingVariation(): world-space brightness and damp patches on harbour paving
@@ -37,7 +37,7 @@ server/src/physics.ts      PhysicsWorld: Havok bodies for one room
 server/src/persist.ts      load()/save(): state that survives server restarts
 scripts/bot.ts             headless player
 scripts/hands.ts           bots check the hands in the store: phones, a TV and a two-person sofa, and report what worked
-scripts/playground.ts      a bot checks the playground: dimmer, stairs, railing, plank and falling into the pit
+scripts/playground.ts      a bot checks the playground: dimmer, stairs up and down, ladders, railing, plank and the pit
 scripts/unity-import/      prefabs from a Unity .unitypackage → textured .glb in assets/, through Blender
 scripts/models/            models made in code: one Python script per model, built in Blender (`pnpm run model`)
 scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`pnpm run image`, see the `image` skill)
@@ -90,18 +90,22 @@ This is a solo, local project. Start everything with **`pnpm run dev`** (require
   by themselves). Logs go to that terminal, and Ctrl+C stops both.
 - `PORT`, `SERVER_PORT` and `BASE` environment variables override the defaults.
 - **Levels** are in `shared/level.ts`. The playground is the default: a brick hall with each item
-  kind, a dock, a pit with a plank across, stairs up two storeys and a dimmer for the lights, to
-  try things out in. The store is at `http://127.0.0.1:5173/?level=store`. New models go on show
+  kind, a dock, a pit with a plank across, stairs and ladders up two storeys and down to a
+  basement, and a dimmer for the lights, to try things out in. The store is at `http://127.0.0.1:5173/?level=store`. New models go on show
   in the playground through `CONCEPTS` in `client/src/playground.ts`. Each level has its own
   rooms; bots join the playground unless `LEVEL` says otherwise.
 - **Tiles** (`shared/tiles.ts`): the playground is a grid of 4 m cells on storeys 3 m apart,
-  written as characters (`F` floor, `P` pit, `|`/`=` plank bridge, `^>v<` stairs, `.` open air).
-  `composeTiles` checks that neighbours' sockets fit and turns the grid into floors and boxes.
+  written as characters (`F` floor, `#` solid, `P` pit, `|`/`=` plank bridge, `^>v<` stairs and
+  `nesw` ladders, both up towards that side, `.` open air). Storeys below ground are basements,
+  dug out of `#`; stairs going down are stairs on the storey below. `composeTiles` checks that
+  neighbours' sockets fit and what each tile needs above and below, and turns the grid into
+  floors, boxes and ladders.
   They're the pieces a wave function collapse generator will place later, so new kinds of room
   should be tiles too.
 - **Height:** players stand on `floors` (flat, or ramps for stairs), step up `STEP_UP`, follow
   the floor down `STEP_DOWN`, and fall under `GRAVITY`; boxes only block where they overlap in
-  height. Falling below the level's `killY` respawns a player, and puts an item back where it started.
+  height. On a ladder, walking into it climbs and backing away climbs down. Falling below the
+  level's `killY` respawns a player, and puts an item back where it started.
 - Console (dev only): `window.__game` → `{ player(), views, items, world, engine }`.
 - Controllers need a secure page (HTTPS or localhost), and a button press before they show up.
   Holding both sticks down for a second reloads the page.
