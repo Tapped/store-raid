@@ -29,6 +29,23 @@ export type ItemKind = keyof typeof ITEM_KINDS;
 export const HANDS = ["left", "right"] as const;
 export type Hand = (typeof HANDS)[number];
 
+/** What a player holds: the id of the item in each hand, "" when it's empty. */
+export type Holding = Record<Hand, string>;
+
+/** The hand a grab uses: the right if it's free, else the left; undefined when both are full. */
+export function grabbingHand(holding: Holding): Hand | undefined {
+  if (!holding.right) return "right";
+  if (!holding.left) return "left";
+  return undefined;
+}
+
+/** The hand a drop empties: the last one to grab, so the left if it holds anything. */
+export function droppingHand(holding: Holding): Hand | undefined {
+  if (holding.left) return "left";
+  if (holding.right) return "right";
+  return undefined;
+}
+
 /** Units per second at full input. */
 export const PLAYER_SPEED = 6;
 

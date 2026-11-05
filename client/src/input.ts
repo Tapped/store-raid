@@ -1,5 +1,3 @@
-import type { Hand } from "../../shared/constants";
-
 /** One frame of what a device wants. Sticks are -1..1; drag is mouse pixels since the last read. */
 export interface Controls {
   moveX: number; // right
@@ -16,8 +14,10 @@ export interface Device {
   /** True once per press. */
   joinPressed(): boolean;
   leavePressed(): boolean;
-  /** True once per press of a hand's button: let go of what it holds, or else grab with it. */
-  handPressed(hand: Hand): boolean;
+  /** True once per press: grab what's in front, with the right hand if it's free, else the left. */
+  grabPressed(): boolean;
+  /** True once per press: let go of the last thing grabbed. */
+  dropPressed(): boolean;
   /** True once the reload combo has been held long enough. Keyboards have F5 instead. */
   reloadHeld(): boolean;
 }
@@ -69,7 +69,7 @@ function anyPressed(...codes: string[]): boolean {
   return codes.map((code) => pressed.delete(code)).some(Boolean);
 }
 
-/** Either set of keys moves and turns, so it doesn't matter where the player's hands are. */
+/** Either set of keys moves, so it doesn't matter where the player's hands are. */
 function keys(...codes: string[]): boolean {
   return codes.some((code) => held.has(code));
 }
@@ -78,15 +78,12 @@ function axis(negative: number | boolean, positive: number | boolean): number {
   return Number(positive) - Number(negative);
 }
 
-/** The hands sit side by side, left of right, next to WASD. */
-const KEYBOARD_HANDS: Record<Hand, string> = { left: "KeyF", right: "KeyG" };
-
 const keyboard: Device = {
   read() {
     const controls: Controls = {
       moveX: axis(keys("KeyA", "ArrowLeft"), keys("KeyD", "ArrowRight")),
       moveY: axis(keys("KeyS", "ArrowDown"), keys("KeyW", "ArrowUp")),
-      lookX: axis(keys("KeyQ", "Comma"), keys("KeyE", "Period")),
+      lookX: axis(keys("Comma"), keys("Period")),
       lookY: 0,
       dragX,
       dragY,
@@ -97,7 +94,8 @@ const keyboard: Device = {
   },
   joinPressed: () => anyPressed("Space", "Enter"),
   leavePressed: escapeLeaves,
-  handPressed: (hand) => anyPressed(KEYBOARD_HANDS[hand]),
+  grabPressed: () => anyPressed("KeyE"),
+  dropPressed: () => anyPressed("KeyQ"),
   reloadHeld: () => false,
 };
 
@@ -150,7 +148,8 @@ function controller(index: number): Device {
       return south || start;
     },
     leavePressed: () => edge(BUTTON_BACK),
-    handPressed: (hand) => edge(hand === "left" ? BUTTON_LEFT_BUMPER : BUTTON_RIGHT_BUMPER),
+    grabPressed: () => edge(BUTTON_RIGHT_BUMPER),
+    dropPressed: () => edge(BUTTON_LEFT_BUMPER),
     reloadHeld() {
       const buttons = pad()?.buttons;
       if (!buttons?.[BUTTON_LEFT_STICK]?.pressed || !buttons[BUTTON_RIGHT_STICK]?.pressed) {
@@ -190,14 +189,19 @@ export const input: Device = {
       const controls = device.read();
       for (const key of Object.keys(total) as (keyof Controls)[]) total[key] += controls[key];
     }
-    total.moveX = clamp(total.moveX);
-    total.moveY = clamp(total.moveY);
+    // A diagonal is no faster than straight ahead.
+    const move = Math.hypot(total.moveX, total.moveY);
+    if (move > 1) {
+      total.moveX /= move;
+      total.moveY /= move;
+    }
     total.lookX = clamp(total.lookX);
     total.lookY = clamp(total.lookY);
     return total;
   },
   joinPressed: () => any((device) => device.joinPressed()),
   leavePressed: () => any((device) => device.leavePressed()),
-  handPressed: (hand) => any((device) => device.handPressed(hand)),
+  grabPressed: () => any((device) => device.grabPressed()),
+  dropPressed: () => any((device) => device.dropPressed()),
   reloadHeld: () => any((device) => device.reloadHeld()),
 };

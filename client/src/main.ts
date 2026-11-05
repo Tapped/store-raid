@@ -1,4 +1,4 @@
-import { HANDS, type ItemKind } from "../../shared/constants";
+import type { ItemKind } from "../../shared/constants";
 import { levelNamed } from "../../shared/level";
 import { createEngine } from "./graphics";
 import { POSES } from "./hands";
@@ -71,7 +71,8 @@ function pollInput() {
   // Always ask, so a press made while playing isn't saved up for later.
   const joinPressed = input.joinPressed();
   const leavePressed = input.leavePressed();
-  for (const hand of HANDS) if (input.handPressed(hand)) player?.useHand(hand);
+  if (input.grabPressed()) player?.grab();
+  if (input.dropPressed()) player?.drop();
   if (player && leavePressed) leave();
   else if (!player && joinPressed) join();
 }
@@ -135,7 +136,7 @@ function showStatus() {
   status.textContent = player?.status ?? "";
   status.style.display = status.textContent ? "" : "none";
   hint.textContent = player
-    ? "Click to look with the mouse | Left hand: F · LB | Right hand: G · RB | Leave: Esc · Back"
+    ? "Click to look with the mouse | Grab: E · RB | Drop: Q · LB | Leave: Esc · Back"
     : "Join: Space or Enter · A or Start on a controller";
 }
 

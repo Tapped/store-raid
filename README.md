@@ -22,8 +22,9 @@ Join with the device you want to play on.
 | Join | A or Start | Space |
 | Leave | Back | Esc |
 | Move | left stick | W A S D |
-| Look | right stick | Q / E, or drag the mouse |
-| Grab / drop | X | F |
+| Look | right stick | the mouse (click to capture it) |
+| Grab | RB | E |
+| Drop | LB | Q |
 
 Browsers only reveal a controller once a button has been pressed on it, and the tab must have focus.
 They also need a secure page: HTTPS or localhost.

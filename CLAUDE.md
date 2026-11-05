@@ -54,7 +54,7 @@ scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`p
   its own connection, and its camera is `scene.activeCamera` (the lobby camera before joining).
 - **The game is first person.** The camera sits at `EYE_HEIGHT` in the player, who isn't drawn on
   their own screen. Clicking captures the mouse to look around (Esc lets it go); the right stick
-  and Q/E look too. Where the player looks around y, their yaw, goes to the server with every
+  looks too. Where the player looks around y, their yaw, goes to the server with every
   input: it keeps carried things in front of them, decides what they can grab, and turns their
   character on everyone else's screen.
   Features like proximity voice and the witch depend on every player having their own screen. For
@@ -72,8 +72,9 @@ scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`p
 - Non-movement actions → a message handler in `GameRoom.messages`, validated on the server.
 - **Hands:** each player has `left` and `right`, the id of the item in that hand. A two-handed item
   is in both. `ITEM_KINDS` says how many hands each kind takes and how many people it takes to
-  lift. A hand's button (`hand` message) lets go of what it holds, or else grabs the nearest item
-  in front of the player that fits. One-handed items are stepped over rather than shoved, so players can walk up to them.
+  lift. Grab (E, RB; `grab` message) takes the nearest item in front of the player that fits, with
+  the right hand if it's free, else the left. Drop (Q, LB; `drop` message) lets go of the last thing
+  grabbed. `grabbingHand()`/`droppingHand()` in `shared/constants.ts` decide which hand. One-handed items are stepped over rather than shoved, so players can walk up to them.
 - Lasting state goes through `server/src/persist.ts`, keyed by player name, never `sessionId`.
 
 ## Running

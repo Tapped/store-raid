@@ -1,5 +1,5 @@
 /**
- * Checks the hands: a bot holds a phone in each hand, can't take a TV with a hand busy, delivers the
+ * Checks the hands: a bot grabs a phone with each hand, right first, can't take a TV with a hand busy, delivers the
  * phones and lifts the TV in both arms. Then two bots carry a sofa to the loading dock, and lift
  * another and walk apart so it falls. Exits non-zero if any of that doesn't happen. Needs your game
  * server running, in a fresh room (SERVER_PORT, else 2567).
@@ -56,10 +56,13 @@ async function joinBot(name: string) {
       await tick();
     }
   };
-  const hand = (which: Hand) => room.send("hand", which);
+  /** Grabs with the right hand if it's free, else the left. */
+  const grab = () => room.send("grab");
+  /** Lets go of the last thing grabbed. */
+  const drop = () => room.send("drop");
   /** The kind of item in a hand, or "" when it's empty. */
   const holding = (which: Hand) => room.state.items.get(self()[which])?.kind ?? "";
-  return { room, self, walk, walkRoute, lookAt, hand, holding };
+  return { room, self, walk, walkRoute, lookAt, grab, drop, holding };
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 1000 / TICK_RATE));
@@ -81,12 +84,12 @@ await a.walkRoute([
   [6, 13],
   [6, 9.7],
 ]);
-a.hand("left");
+a.grab();
 await wait(300);
-a.hand("right");
+check(a.holding("right") === "phone" && a.holding("left") === "", "the right hand grabs first");
+a.grab();
 await wait(800);
-check(a.holding("left") === "phone", "left hand takes a phone");
-check(a.holding("right") === "phone", "right hand takes the other phone");
+check(a.holding("left") === "phone", "with the right hand full, the left takes the other phone");
 check(a.self().left !== a.self().right, "they are two different phones");
 check(heightIn(a, "left") > 0.5 && heightIn(a, "right") > 0.5, "both phones are lifted");
 
@@ -99,17 +102,20 @@ await a.walkRoute([
 check(a.holding("left") === "phone" && a.holding("right") === "phone", "both phones came along");
 
 // One hand free isn't enough for the TV: grabbing takes the dropped phone back instead.
-const dropped = a.room.state.items.get(a.self().right);
-a.hand("right");
+const dropped = a.room.state.items.get(a.self().left);
+a.drop();
 await wait(800);
-check(a.holding("right") === "", "right hand lets go of its phone");
+check(
+  a.holding("left") === "" && a.holding("right") === "phone",
+  "a drop lets go of the last phone grabbed",
+);
 // It fell at the player's side, so look at it first.
 if (dropped) await a.lookAt(dropped.x, dropped.z);
-a.hand("right");
+a.grab();
 await wait(300);
 check(
-  a.holding("right") === "phone",
-  "with the left hand busy, the right takes a phone, not the TV",
+  a.holding("left") === "phone",
+  "with the right hand busy, the left takes a phone, not the TV",
 );
 
 // Deliver the phones.
@@ -119,8 +125,8 @@ await a.walkRoute([
   [0, 23],
 ]);
 const phones = [a.self().left, a.self().right];
-a.hand("left");
-a.hand("right");
+a.drop();
+a.drop();
 await wait(1500);
 check(
   phones.every((id) => a.room.state.items.get(id)?.delivered),
@@ -133,13 +139,13 @@ await a.walkRoute([
   [-6, 13],
   [-6, 9.7],
 ]);
-a.hand("left");
+a.grab();
 await wait(800);
 check(a.holding("left") === "tv" && a.self().left === a.self().right, "the TV takes both hands");
 check(heightIn(a, "left") > 0.8, `the TV is lifted (y ${heightIn(a, "left").toFixed(2)})`);
-a.hand("right");
+a.drop();
 await wait(300);
-check(a.self().left === "" && a.self().right === "", "either hand lets go of the TV");
+check(a.self().left === "" && a.self().right === "", "one drop lets go of the TV");
 
 // The sofa needs a second bot.
 const b = await joinBot("hands-b");
@@ -185,12 +191,12 @@ const [sofaId, sofa] = findSofa((x) => Math.abs(x) < 3);
 await Promise.all([a.lookAt(sofa.x, sofa.z), b.lookAt(sofa.x, sofa.z)]);
 
 // One person can't lift it.
-a.hand("left");
+a.grab();
 await wait(500);
 check(a.self().left === sofaId && a.self().right === sofaId, "first bot has hold of the sofa");
 check(sofa.y < 0.7, `one bot can't lift it (y ${sofa.y.toFixed(2)})`);
 
-b.hand("right");
+b.grab();
 await wait(800);
 check(b.self().left === sofaId && b.self().right === sofaId, "second bot has hold of it too");
 check(sofa.y > 0.8, `two bots lift it (y ${sofa.y.toFixed(2)})`);
@@ -206,7 +212,7 @@ check(a.self().left === sofaId, "they got it through the aisle without dropping 
 check(sofa.z > 21, `it came along to the dock (z ${sofa.z.toFixed(1)})`);
 check(!sofa.delivered, "it isn't delivered while still carried");
 
-a.hand("left");
+a.drop();
 await wait(1500);
 check(sofa.delivered, "dropped on the dock, it counts as delivered");
 check(b.self().left === "", "letting go at one end drops it for both");
@@ -227,8 +233,8 @@ await walkTogether(
 );
 const [otherId, other] = findSofa((x) => x < -9);
 await Promise.all([a.lookAt(other.x, other.z), b.lookAt(other.x, other.z)]);
-a.hand("left");
-b.hand("left");
+a.grab();
+b.grab();
 await wait(800);
 check(other.y > 0.8, `the other sofa is lifted (y ${other.y.toFixed(2)})`);
 for (let t = 0; t < TICK_RATE * 1.5; t++) {

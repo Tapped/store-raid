@@ -93,6 +93,8 @@ screen.
   `scripts/hands.ts` checks all of the above with bots. Players step over one-handed things instead
   of kicking them away, and a carried item now rights itself instead of staying tilted. The
   triggers are kept free for using what's in each hand: the flashlight, a weapon.
+- **Changed:** one grab (E, RB) and one drop (Q, LB) instead of a button per hand. A grab uses the
+  right hand if it's free, else the left; a drop lets go of the last thing grabbed.
 
 ### 2. Truck and the round
 

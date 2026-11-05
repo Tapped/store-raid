@@ -2,7 +2,14 @@ import type { FreeCamera } from "@babylonjs/core";
 import { CloseCode } from "@colyseus/sdk";
 import { Predict } from "@colyseus/sdk/predict";
 import type { MoveInput } from "../../server/src/rooms/schema";
-import { EYE_HEIGHT, HANDS, type Hand, MOVE_SCALE, YAW_SCALE } from "../../shared/constants";
+import {
+  EYE_HEIGHT,
+  grabbingHand,
+  HANDS,
+  type Hand,
+  MOVE_SCALE,
+  YAW_SCALE,
+} from "../../shared/constants";
 import { stepMover } from "../../shared/movement";
 import { addCameraEffects } from "./graphics";
 import { FirstPersonHands, type Held } from "./hands";
@@ -113,10 +120,19 @@ export class LocalPlayer {
     this.status = "";
   }
 
-  /** A hand's button: the server lets go of what it holds, or grabs something with it. */
-  useHand(hand: Hand): void {
+  /** Grab what's in front, with the right hand if it's free, else the left. */
+  grab(): void {
+    const self = this.session?.self;
+    if (!self) return;
+    const hand = grabbingHand(self);
+    if (!hand) return;
     this.hands.reach(hand);
-    this.session?.room.send("hand", hand);
+    this.session?.room.send("grab");
+  }
+
+  /** Let go of the last thing grabbed. */
+  drop(): void {
+    this.session?.room.send("drop");
   }
 
   /**

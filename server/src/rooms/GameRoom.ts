@@ -2,6 +2,8 @@ import type { HP_BodyId } from "@babylonjs/havok";
 import { type Client, type CloseCode, Room, type StepContext } from "@colyseus/core";
 import { resolveCircleCircle } from "../../../shared/collision";
 import {
+  droppingHand,
+  grabbingHand,
   HANDS,
   type Hand,
   ITEM_KINDS,
@@ -79,9 +81,17 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   messages = {
     // Movement arrives through the input buffer above. Register handlers here only for things
     // that aren't per-tick inputs (chat, emotes, abilities, …).
-    /** A hand's button: let go of what it holds, or else grab something with it. */
-    hand: (client: Client, hand: unknown) => {
-      if (HANDS.includes(hand as Hand)) this.useHand(client.sessionId, hand as Hand);
+    /** Grab what's in front, with the right hand if it's free, else the left. */
+    grab: (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      const hand = player && grabbingHand(player);
+      if (player && hand) this.grab(player, hand);
+    },
+    /** Let go of the last thing grabbed. */
+    drop: (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      const hand = player && droppingHand(player);
+      if (hand) this.drop(client.sessionId, hand);
     },
   };
 
@@ -144,13 +154,6 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
 
   onDispose() {
     this.physics.dispose();
-  }
-
-  private useHand(sessionId: string, hand: Hand) {
-    const player = this.state.players.get(sessionId);
-    if (!player) return;
-    if (player[hand]) this.drop(sessionId, hand);
-    else this.grab(player, hand);
   }
 
   /**
