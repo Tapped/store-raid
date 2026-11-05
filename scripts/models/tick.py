@@ -2,8 +2,12 @@
 Large tick: the dog-sized enemy of the first building, from assets/concept/large-tick-sheet.png.
 
 A bloated, segmented abdomen under a dorsal shield, a small head with hooked mouthparts and palps,
-and eight jointed legs ending in claws. One static mesh for now; animating it will need the legs
-as separate parts.
+and eight jointed legs ending in claws.
+
+Rigged for client/src/tick.ts, which walks it: "body" at the body's centre, "head" under it, a
+"hook.L"/"hook.R" per mouthpart and a chain per palp ("palp.L.0" ...) and per leg ("leg.L0.0" to
+"leg.L0.5", front leg 0 to back leg 3), each ending in a ".tip". L and R are the tick's own left and
+right: it faces -y, so its left is +x. Each leg's joints lie in one upright plane through its hip.
 """
 
 import math
@@ -32,11 +36,16 @@ def build():
     mouth = lib.material("tick-mouth", (0.26, 0.11, 0.08), roughness=0.35)
     shade_body(*body)
     shade_chitin(*chitin)
-    body_mesh(body[0])
+    lib.bone("body", CENTER, CENTER + Vector((0, -0.12, 0)))
+    lib.bind(body_mesh(body[0]), "body")
     head(chitin[0], mouth)
     for side in (-1, 1):
         for i, (y, angle, reach, lift) in enumerate(LEGS):
-            leg(f"leg{side}{i}", side, y, angle, reach, lift, chitin[0])
+            leg(f"leg.{SIDE[side]}{i}", side, y, angle, reach, lift, chitin[0])
+
+
+# Bone names for each side of the tick: it faces -y, so +x is its left.
+SIDE = {-1: "R", 1: "L"}
 
 
 def groove(y):
@@ -68,7 +77,7 @@ def body_mesh(mat):
         return p
 
     # Poles along y, so the rings run across the body where the grooves are.
-    lib.ellipsoid("body", HALF, CENTER, mat, segments=48, rings=56, poles="y", deform=egg)
+    return lib.ellipsoid("body", HALF, CENTER, mat, segments=48, rings=56, poles="y", deform=egg)
 
 
 # Legs, front to back: where they leave the body (y), which way they point (degrees from +x,
@@ -92,12 +101,15 @@ def leg(name, side, y, angle, reach, lift, mat):
     foot = hip + out * reach + Vector((0, 0, -0.185))
     claw = foot + out * 0.035 + Vector((0, 0, -0.015))
     joints = [hip, coxa, knee, patella, ankle, foot, claw]
-    lib.jointed(name, joints, [0.05, 0.042, 0.036, 0.03, 0.021, 0.012], mat, sides=10)
+    radii = [0.05, 0.042, 0.036, 0.03, 0.021, 0.012]
+    lib.jointed(name, joints, radii, mat, sides=10, bone=name, parent="body")
 
 
 def head(chitin, mouth):
     # The capitulum: a small shell in front of the shield.
-    lib.ellipsoid("head", (0.085, 0.08, 0.055), (0, -0.43, 0.27), chitin, segments=20, rings=14)
+    lib.bone("head", (0, -0.37, 0.27), (0, -0.5, 0.27), parent="body")
+    capitulum = (0.085, 0.08, 0.055)
+    lib.bind(lib.ellipsoid("head", capitulum, (0, -0.43, 0.27), chitin, segments=20, rings=14), "head")
 
     for side in (-1, 1):
         # Hooked mouthparts, curling down and in, with barbs on the inside.
@@ -108,11 +120,13 @@ def head(chitin, mouth):
             (side * 0.02, -0.625, 0.18),
             (side * 0.008, -0.61, 0.15),
         ]
-        lib.tube(f"hook{side}", hook, [0.022, 0.019, 0.014, 0.008, 0.002], mouth)
+        hook_bone = lib.bone(f"hook.{SIDE[side]}", hook[0], hook[2], parent="head")
+        lib.bind(lib.tube(f"hook{side}", hook, [0.022, 0.019, 0.014, 0.008, 0.002], mouth), hook_bone)
         for i, (y, z) in enumerate(((-0.53, 0.25), (-0.575, 0.235), (-0.605, 0.205))):
             base = Vector((side * 0.025, y, z))
             tip = base + Vector((-side * 0.022, 0.006, -0.012))
-            lib.tube(f"barb{side}{i}", [base, tip], [0.006, 0.0006], mouth, sides=5)
+            barb = lib.tube(f"barb{side}{i}", [base, tip], [0.006, 0.0006], mouth, sides=5)
+            lib.bind(barb, hook_bone)
         # Palps beside them, short and jointed.
         palp = [
             (side * 0.06, -0.47, 0.26),
@@ -120,7 +134,8 @@ def head(chitin, mouth):
             (side * 0.08, -0.57, 0.2),
             (side * 0.065, -0.585, 0.165),
         ]
-        lib.jointed(f"palp{side}", palp, [0.016, 0.014, 0.011], chitin, sides=6)
+        name = f"palp.{SIDE[side]}"
+        lib.jointed(name, palp, [0.016, 0.014, 0.011], chitin, sides=6, bone=name, parent="head")
 
 
 def abdomen_groove(n, y):

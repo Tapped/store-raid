@@ -37,11 +37,15 @@ for model in job["models"]:
         ao = getattr(mod, "AO", 512)
         if ao:
             lib.bake_ao(obj, ao, getattr(mod, "AO_DISTANCE", 0.3), out_dir)
-        dims = lib.place_origin(obj, getattr(mod, "ORIGIN", "center" if item else "bottom"))
+        dims, offset = lib.place_origin(obj, getattr(mod, "ORIGIN", "center" if item else "bottom"))
+        if lib.BONES:
+            lib.rig(obj, offset)
+        # Applying modifiers leaves the armature's alone, so the mesh exports skinned in its rest pose.
         bpy.ops.export_scene.gltf(
             filepath=os.path.join(out_dir, "raw.glb"), export_format="GLB", export_yup=True,
             export_apply=True, export_tangents=True, export_materials="EXPORT",
             export_image_format="AUTO", export_animations=False, export_extras=False,
+            export_skins=bool(lib.BONES), export_def_bones=False,
         )
         result[name] = {
             "out": getattr(mod, "OUT", f"models/props/{name}.glb"),

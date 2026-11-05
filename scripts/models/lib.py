@@ -21,6 +21,10 @@ Optional constants in a model script:
   SMOOTH_ANGLE = 35      faces meeting at less than this many degrees are shaded smooth
   AO = 512               baked ambient occlusion texture size; 0 bakes none
   AO_DISTANCE = 0.3      meters a crease can be across and still darken
+
+A model that moves declares bones with bone() and binds parts to them with bind(), or passes
+bone= to jointed(); build.py then adds the armature and exports the mesh skinned to it. Weights are
+rigid, one bone per vertex except where segments of a limb meet: shells and machines, not skin.
 """
 
 import math
@@ -32,6 +36,9 @@ from mathutils import Matrix, Vector
 # Item sizes from shared/constants.ts, as game (width, height, depth); build.py fills this in.
 ITEMS = {}
 
+# Bones declared by the script, in order: (name, head, tail, parent name or None).
+BONES = []
+
 
 def item_size(kind):
     """An item's size in Blender axes: (x, y, z) = (width, depth, height)."""
@@ -41,6 +48,7 @@ def item_size(kind):
 
 def reset():
     bpy.ops.wm.read_factory_settings(use_empty=True)
+    BONES.clear()
 
 
 def cycles(scene=None):
@@ -178,10 +186,11 @@ def ellipsoid(name, half, at=(0, 0, 0), mat=None, segments=24, rings=16, poles="
     return assign(_mesh_object(name, bm), mat)
 
 
-def tube(name, points, radii, mat=None, sides=8):
+def tube(name, points, radii, mat=None, sides=8, weights=None):
     """
     A tube through `points` (in meters), `radii[i]` thick at each, closed at both ends: tentacles,
     pipes, cables, horns. A radius near 0 at the end makes a point, such as a claw or a barb.
+    `weights[i]`, if given, is {bone: weight} for the ring at point i; each end cap goes with its ring.
     """
     bm = bmesh.new()
     pts = [Vector(p) for p in points]
@@ -209,28 +218,94 @@ def tube(name, points, radii, mat=None, sides=8):
             face = (ring[s], ring[(s + 1) % sides], tip)
             bm.faces.new(face[::-1] if flip else face)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    return assign(_mesh_object(name, bm), mat)
+    # Vertex indices: the rings in order, then the two cap tips.
+    ring_of = [i for i in range(len(pts)) for _ in range(sides)] + [0, len(pts) - 1]
+    obj = assign(_mesh_object(name, bm), mat)
+    if weights:
+        for index, ring in enumerate(ring_of):
+            for bone_name, weight in weights[ring].items():
+                _group(obj, bone_name).add([index], weight, "REPLACE")
+    return obj
 
 
-def jointed(name, joints, radii, mat=None, sides=8):
+def jointed(name, joints, radii, mat=None, sides=8, bone=None, parent=None):
     """
     A jointed limb through `joints`, segment i `radii[i]` thick, swelling a little in the middle
     of each segment and pinched at the joints, so the segments read as separate pieces of shell:
     insect and spider legs, antennae, robot arms. The last segment tapers to a point.
+
+    With `bone`, the limb gets a bone per segment, "<bone>.0" onwards from joints[i] to
+    joints[i + 1], each the child of the one before and the first the child of `parent`, plus a
+    "<bone>.tip" at the last joint that moves nothing but tells the game where the limb ends.
     """
-    points, widths = [], []
+    points, widths, weights = [], [], []
+    names = [f"{bone}.{i}" for i in range(len(joints) - 1)]
     for i, (a, b) in enumerate(zip(joints, joints[1:])):
         a, b = Vector(a), Vector(b)
         r = radii[i]
         if i == 0:
             points.append(a)
             widths.append(r * 0.9)
+            weights.append({names[0]: 1.0})
         for t, k in ((0.18, 1.0), (0.55, 1.08), (0.85, 0.95)):
             points.append(a.lerp(b, t))
             widths.append(r * k)
+            weights.append({names[i]: 1.0})
         points.append(b)
         widths.append(min(r, radii[i + 1] if i + 1 < len(radii) else r * 0.4) * 0.75)
-    return tube(name, points, widths, mat, sides)
+        # The pinch at a joint bends with both segments.
+        last = i + 1 == len(names)
+        weights.append({names[i]: 1.0} if last else {names[i]: 0.5, names[i + 1]: 0.5})
+    if bone is None:
+        return tube(name, points, widths, mat, sides)
+    for i, n in enumerate(names):
+        BONES.append((n, Vector(joints[i]), Vector(joints[i + 1]), names[i - 1] if i else parent))
+    end = Vector(joints[-1])
+    BONES.append((f"{bone}.tip", end, end + (end - Vector(joints[-2])).normalized() * 0.01, names[-1]))
+    return tube(name, points, widths, mat, sides, weights)
+
+
+def bone(name, head, tail, parent=None):
+    """Declare a bone from `head` to `tail` (meters), the child of bone `parent`. Returns its name."""
+    BONES.append((name, Vector(head), Vector(tail), parent))
+    return name
+
+
+def bind(obj, bone_name):
+    """Make the whole of `obj` move with one bone."""
+    _group(obj, bone_name).add(list(range(len(obj.data.vertices))), 1.0, "REPLACE")
+    return obj
+
+
+def _group(obj, name):
+    return obj.vertex_groups.get(name) or obj.vertex_groups.new(name=name)
+
+
+def rig(obj, offset):
+    """
+    Build the armature from BONES, moved by `offset` as place_origin() moved the mesh, and skin obj
+    to it through the vertex groups that bind() and jointed() made, one per bone.
+    """
+    data = bpy.data.armatures.new("rig")
+    arm = _link(bpy.data.objects.new("rig", data))
+    _select(arm)
+    bpy.ops.object.mode_set(mode="EDIT")
+    for name, head, tail, parent in BONES:
+        eb = data.edit_bones.new(name)
+        eb.head, eb.tail = head + offset, tail + offset
+        if parent is not None:
+            eb.parent = data.edit_bones[parent]
+        eb.use_deform = not name.endswith(".tip")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    unbound = {g.name for g in obj.vertex_groups} - {b[0] for b in BONES}
+    if unbound:
+        raise ValueError(f"vertex groups without a bone: {sorted(unbound)}")
+    loose = sum(1 for v in obj.data.vertices if not v.groups)
+    if loose:
+        raise ValueError(f"{loose} vertices are bound to no bone: bind() every part")
+    obj.parent = arm
+    obj.modifiers.new("rig", "ARMATURE").object = arm
+    return arm
 
 
 def assign(obj, mat):
@@ -554,7 +629,8 @@ def bake_ao(obj, size, distance, work):
 def place_origin(obj, origin):
     """
     Move the mesh so the origin is at the centre of its base or of its bounds, or leave it where
-    the script built it ("model"), e.g. at a wrist or a hinge the game turns it around.
+    the script built it ("model"), e.g. at a wrist or a hinge the game turns it around. Returns the
+    size, and how far the mesh moved, which the bones must move too.
     """
     corners = [Vector(c) for c in obj.bound_box]
     lo = Vector(min(c[i] for c in corners) for i in range(3))
@@ -567,7 +643,7 @@ def place_origin(obj, origin):
     elif origin != "center":
         raise ValueError(f'ORIGIN must be "bottom", "center" or "model", not {origin!r}')
     obj.data.transform(Matrix.Translation(-centre))
-    return [round(v, 4) for v in hi - lo]
+    return [round(v, 4) for v in hi - lo], -centre
 
 
 def triangles(obj):

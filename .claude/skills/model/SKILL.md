@@ -56,5 +56,7 @@ with `pnpm run model <name>`. Read these first. This skill doesn't repeat them:
   give it enough rings that every groove spans two or three of them.
 - **Budget:** set `TRIS`. A prop is a few thousand triangles. A creature that several of can be on
   screen at once should stay around 10k.
-- **Animation:** `build.py` joins everything into one static mesh. If the model will move (legs,
-  doors, a jaw), say so to the user and plan the separate parts before building.
+- **Animation:** a model that moves declares bones with `lib.bone()`, binds each part with
+  `lib.bind()`, and gives limbs a chain with `jointed(..., bone=...)`; `build.py` then exports it
+  skinned (rigid weights). `tick.py` is the example, and `client/src/tick.ts` moves its bones in
+  code. Put each limb's joints in one plane through its root so the game can bend it in 2D.

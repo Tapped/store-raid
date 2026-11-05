@@ -22,6 +22,7 @@ client/src/items.ts        ItemView: a phone, TV, box or sofa, drawn where the s
 client/src/props.ts        addProps(): scenery models, drawn only, with no collision
 client/src/playground.ts   addPlayground(): the playground hall: roof, beams, lights on the dimmer, and CONCEPTS on show
 client/src/terrain.ts      addTerrain(): a level's floors, planks, stairs, ladders, railings and pits; worldBox() for seamless tiling
+client/src/tick.ts         TickView: the large tick, walked in code: leg IK, a tetrapod gait, questing front legs
 client/src/store.ts        addShelves(): stocked shelving over the shelf collision boxes; storeSurface(): textured walls and floor
 client/src/harbour.ts      addHarbour(): the harbour around the store, as instanced scenery with no collision
 client/src/paving.ts       addPavingVariation(): world-space brightness and damp patches on harbour paving
