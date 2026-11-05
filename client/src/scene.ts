@@ -119,12 +119,16 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
   const wallMat = storeSurface("wall", scene);
   wallMat.albedoColor = new Color3(0.85, 0.82, 0.82);
   const plainShelves: Mesh[] = [];
+  // Painted plaster between rooms, so a building's inside doesn't look like its outside.
+  const plaster = surfaceMaterial("plaster", scene, new Color3(0.72, 0.7, 0.66), {
+    roughness: 0.9,
+  });
   const shelfMat = surfaceMaterial("shelfMat", scene, new Color3(0.2, 0.3, 0.45), {
     roughness: 0.5,
   });
   for (const [i, box] of level.boxes.entries()) {
     // Railings, pits and stairs are drawn by addTerrain.
-    if (box.kind !== "wall" && box.kind !== "shelf") continue;
+    if (box.kind !== "wall" && box.kind !== "partition" && box.kind !== "shelf") continue;
     const width = box.maxX - box.minX;
     const depth = box.maxZ - box.minZ;
     const tiled = (u: number, v: number) => new Vector4(0, 0, u / WALL_TILE, v / WALL_TILE);
@@ -148,7 +152,7 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
       scene,
     );
     mesh.position.set((box.minX + box.maxX) / 2, box.y + box.height / 2, (box.minZ + box.maxZ) / 2);
-    mesh.material = box.kind === "shelf" ? shelfMat : wallMat;
+    mesh.material = { shelf: shelfMat, partition: plaster, wall: wallMat }[box.kind];
     mesh.receiveShadows = true;
     shadows.addShadowCaster(mesh);
     if (box.kind === "shelf") plainShelves.push(mesh);

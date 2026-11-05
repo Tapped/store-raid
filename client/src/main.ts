@@ -18,9 +18,10 @@ const hint = document.getElementById("hint") as HTMLDivElement;
 const status = document.getElementById("status") as HTMLDivElement;
 
 const engine = await createEngine(canvas);
-// The building to play in: `?level=store` for the store, else the playground, the hall to try things out in.
+// The building to play in: `?level=store` for the store, `?level=generated-<seed>` for a generated
+// one, else the playground, the hall to try things out in. Roofed levels are halls like the playground.
 const world = createWorld(engine, levelNamed(new URLSearchParams(location.search).get("level")));
-const playground = world.level.name === "playground" ? addPlayground(world) : undefined;
+const playground = world.level.roof !== undefined ? addPlayground(world) : undefined;
 if (!playground) {
   void addProps(world);
   void addShelves(world);

@@ -134,7 +134,8 @@ export function addPlayground(world: World): Playground {
   const lights = Mesh.MergeMeshes(strips, true);
   if (lights) lights.material = glow;
 
-  for (const concept of CONCEPTS) void addConcept(world, concept);
+  // Concepts are on show in the playground, not in generated halls.
+  if (level.name === "playground") for (const concept of CONCEPTS) void addConcept(world, concept);
 
   const showDimmer = addDimmer(world);
   let shown = 1;

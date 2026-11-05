@@ -1,5 +1,6 @@
 import type { Box } from "./collision";
 import { ARENA_SIZE, type ItemKind } from "./constants";
+import { type GenerateOptions, generate } from "./generate";
 import { CELL, composeTiles, type Side, STOREY } from "./tiles";
 
 const HALF = ARENA_SIZE / 2;
@@ -25,7 +26,8 @@ const SHELF_SPANS = [
 export type LevelBox = Box & {
   y: number;
   height: number;
-  kind: "wall" | "shelf" | "rail" | "pit" | "stairs";
+  /** A partition is a wall between rooms, inside a building. */
+  kind: "wall" | "partition" | "shelf" | "rail" | "pit" | "stairs";
 };
 
 /**
@@ -224,11 +226,70 @@ const PLAYGROUND: Level = {
   roof: HALL_HEIGHT,
 };
 
+/** How big generated levels are, in cells and storeys. */
+export const GENERATED_SIZE: Omit<GenerateOptions, "seed"> = {
+  cols: 8,
+  rows: 6,
+  storeys: 3,
+  basements: 1,
+};
+
+/**
+ * A level generated from a seed (shared/generate.ts): rooms on a basement, the ground and a storey
+ * above, under a roof. Players come in on the south side, where the dock and the dimmer are, and
+ * the items are spread over floors they can walk to.
+ */
+function generatedLevel(seed: number): Level {
+  const generated = generate({ ...GENERATED_SIZE, seed });
+  const { cols, rows, storeys, basements } = GENERATED_SIZE;
+  const x = (-cols * CELL) / 2;
+  const z = (-rows * CELL) / 2;
+  const tiles = composeTiles({ ...generated.grid, x, z });
+  const centre = (cell: { col: number; row: number }) => ({
+    x: x + (cell.col + 0.5) * CELL,
+    z: z + (cell.row + 0.5) * CELL,
+  });
+  const entrance = centre(generated.entrance);
+  // The same items on the same floors every time for a seed.
+  const kinds: ItemKind[] = ["phone", "phone", "phone", "box", "box", "tv", "sofa"];
+  const others = generated.floors.filter((cell) => cell !== generated.floors[0]);
+  const spots = others.filter(
+    (_, i) => i % Math.max(1, Math.floor(others.length / kinds.length)) === 0,
+  );
+  return {
+    name: `generated-${seed}`,
+    size: Math.max(cols, rows) * CELL + 2,
+    boxes: tiles.boxes,
+    floors: tiles.floors,
+    ladders: tiles.ladders,
+    killY: -basements * STOREY - 4,
+    dimmer: { x: entrance.x - 1.2, y: 1.3, z: z + 0.1, turn: 0 },
+    dock: { minX: entrance.x - 1.5, maxX: entrance.x + 1.5, minZ: z + 0.2, maxZ: z + 1.6 },
+    items: spots.slice(0, kinds.length).map((cell, i) => ({
+      kind: kinds[i],
+      ...centre(cell),
+      y: cell.storey * STOREY + 0.6,
+    })),
+    spawnPoint: (index) => ({ x: entrance.x - 1 + (index % 3), z: entrance.z + 0.5 }),
+    roof: (storeys - basements) * STOREY,
+  };
+}
+
 /** Every level, by the name a room and `?level=` use. */
 export const LEVELS = { store: STORE, playground: PLAYGROUND } satisfies Record<string, Level>;
 export type LevelName = keyof typeof LEVELS;
 
-/** The level of that name, else the playground. */
+const generatedLevels = new Map<number, Level>();
+
+/** The level of that name, `generated-<seed>` for a generated one, else the playground. */
 export function levelNamed(name: unknown): Level {
-  return Object.hasOwn(LEVELS, String(name)) ? LEVELS[name as LevelName] : PLAYGROUND;
+  if (Object.hasOwn(LEVELS, String(name))) return LEVELS[name as LevelName];
+  const seed = /^generated-([0-9]+)$/.exec(String(name))?.[1];
+  if (seed === undefined) return PLAYGROUND;
+  let level = generatedLevels.get(Number(seed));
+  if (!level) {
+    level = generatedLevel(Number(seed));
+    generatedLevels.set(Number(seed), level);
+  }
+  return level;
 }

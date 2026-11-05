@@ -124,6 +124,10 @@ screen.
   The playground is built from tiles (`shared/tiles.ts`) with sockets, ready for a wave function
   collapse generator, and has a pit with a plank across and stairs up two storeys. Carrying a
   sofa down the stairs is still to try.
+- **Generator:** `shared/generate.ts` makes levels from a seed, `?level=generated-<seed>`: rooms
+  with doorways, a way up from every storey, tiles by wave function collapse, and nothing left
+  that can't be reached. Next: room types that decide what's in a room (props, loot, light), and
+  multi-cell pieces.
 
 ### 5. First enemies
 

@@ -3,16 +3,16 @@ import type { Floor, Ladder, LevelBox } from "./level";
 
 /**
  * Levels built from tiles: a grid of square cells on storeys stacked one above the other. Each tile
- * is one cell on one storey, written as a character, and `composeTiles` turns a grid of them into
- * the floors, boxes and ladders a level is made of. They're meant to be generated later by wave
- * function collapse: each side of a tile has a socket (`socket`), `fits` says which sockets can
- * meet, and `composeTiles` checks what tiles need above and below them.
+ * is one cell on one storey, and the edges between cells can have walls, with or without a doorway,
+ * which is how rooms are made. `composeTiles` turns a grid into the floors, boxes and ladders of a
+ * level. It's meant to be generated (shared/generate.ts): each side of a tile has a socket,
+ * `fits` says which sockets can meet, and `fitsAbove` which tiles can stand on which.
  */
 
 /** Cells are this many meters square, and storeys this far apart. */
 export const CELL = 4;
 export const STOREY = 3;
-/** How far down a pit goes, below the ground. */
+/** How far down a pit goes, below its storey. */
 export const PIT_DEPTH = 10;
 const PIT_WALL = 0.5;
 /** Thickness of the ground, of any other floor, and of a plank. */
@@ -22,6 +22,10 @@ const PLANK = 0.08;
 const PLANK_WIDTH = 0.6;
 const RAIL_HEIGHT = 1;
 const RAIL = 0.06;
+/** Walls between cells: how thick, and how wide and high a doorway in one is. */
+const WALL = 0.2;
+const DOOR_WIDTH = 1.4;
+const DOOR_HEIGHT = 2.2;
 /** Stairs block in this many slices, each as high as the ramp at its lower end. */
 const STAIR_SLICES = 8;
 /** A ladder's width, the wall behind it, and how far out from that wall it can be climbed. */
@@ -43,20 +47,27 @@ export const OFFSET: Record<Side, [number, number]> = {
 export type Tile =
   /** Walkable all over. */
   | { kind: "floor" }
-  /** Rock, or a wall: filled from its floor to the next. Basements are dug out of it. */
+  /** Rock, or masonry: filled from its floor to the next. Basements are dug out of it. */
   | { kind: "solid" }
-  /** A hole down to `PIT_DEPTH`, with nothing but open cells under it: falling in kills. */
+  /** A hole down to `PIT_DEPTH`, with shafts under it: falling in kills. */
   | { kind: "pit" }
   /** A pit with a plank across it, from one side to the other along an axis. */
   | { kind: "bridge"; along: "x" | "z" }
-  /** Stairs up one storey, rising towards a side. The cell above must be open, and the next cell on the storey above, beyond the top, a floor. Stairs going down are stairs on the storey below. */
+  /** Stairs up one storey, rising towards a side, into a well above. Stairs going down are stairs on the storey below. */
   | { kind: "stairs"; up: Side }
-  /** A floor with a ladder up a wall on one side, out through the open cell above onto the floor beyond that side. */
+  /** A floor with a ladder up a wall on one side, into a well above. */
   | { kind: "ladder"; up: Side }
-  /** Nothing: air above a lower storey, or under a pit. */
-  | { kind: "open" };
+  /** Nothing: air above a lower storey. */
+  | { kind: "open" }
+  /** The air above stairs or a ladder, opening onto the floor they arrive on, towards `from`. */
+  | { kind: "well"; from: Side }
+  /** The air under a pit, walled in by it, down to the pit's bottom. */
+  | { kind: "shaft" };
 
-/** How each tile is written in a grid. */
+/**
+ * How each tile is written in a grid. Wells and shafts are written as open air, "."; which they are
+ * follows from what's above and below.
+ */
 export const TILE_CHARS: Record<string, Tile> = {
   F: { kind: "floor" },
   "#": { kind: "solid" },
@@ -74,6 +85,15 @@ export const TILE_CHARS: Record<string, Tile> = {
   ".": { kind: "open" },
 };
 
+/** The character a tile is written as. */
+export function tileChar(tile: Tile): string {
+  if (tile.kind === "open" || tile.kind === "well" || tile.kind === "shaft") return ".";
+  for (const [char, candidate] of Object.entries(TILE_CHARS)) {
+    if (JSON.stringify(candidate) === JSON.stringify(tile)) return char;
+  }
+  throw new Error(`No character for ${JSON.stringify(tile)}`);
+}
+
 /** What a tile's side offers its neighbour on the same storey. */
 export type Socket =
   | "floor"
@@ -84,6 +104,7 @@ export type Socket =
   | "stairs-top"
   | "stairs-side"
   | "ladder-wall"
+  | "arrival"
   | "open";
 
 export function socket(tile: Tile, side: Side): Socket {
@@ -93,6 +114,8 @@ export function socket(tile: Tile, side: Side): Socket {
     case "pit":
     case "open":
       return tile.kind;
+    case "shaft":
+      return "solid";
     case "bridge":
       return (tile.along === "z") === (side === "n" || side === "s") ? "plank" : "pit";
     case "stairs":
@@ -100,12 +123,15 @@ export function socket(tile: Tile, side: Side): Socket {
       return side === OPPOSITE[tile.up] ? "stairs-foot" : "stairs-side";
     case "ladder":
       return side === tile.up ? "ladder-wall" : "floor";
+    case "well":
+      return side === tile.from ? "arrival" : "open";
   }
 }
 
 /**
  * Which sockets can meet, either way round. Floors get a railing where they meet open air, and
- * anything can back onto solid rock but a plank or the foot of the stairs, which must lead on.
+ * anything can back onto solid rock but what must lead on: a plank, the foot of the stairs, and
+ * where stairs or a ladder arrive.
  */
 const FITS: Record<Socket, readonly Socket[]> = {
   floor: [
@@ -117,6 +143,7 @@ const FITS: Record<Socket, readonly Socket[]> = {
     "stairs-top",
     "stairs-side",
     "ladder-wall",
+    "arrival",
     "open",
   ],
   solid: ["floor", "solid", "pit", "stairs-top", "stairs-side", "ladder-wall", "open"],
@@ -126,6 +153,7 @@ const FITS: Record<Socket, readonly Socket[]> = {
   "stairs-top": ["floor", "solid", "pit", "stairs-side", "ladder-wall", "open"],
   "stairs-side": ["floor", "solid", "pit", "stairs-side", "stairs-top", "ladder-wall", "open"],
   "ladder-wall": ["floor", "solid", "pit", "stairs-side", "stairs-top", "ladder-wall", "open"],
+  arrival: ["floor"],
   open: ["floor", "solid", "stairs-side", "stairs-top", "ladder-wall", "open"],
 };
 
@@ -133,11 +161,41 @@ export function fits(a: Socket, b: Socket): boolean {
   return FITS[a].includes(b);
 }
 
+/** Sockets that can be walked through, so a doorway can open onto them. */
+const PASSABLE: readonly Socket[] = ["floor", "plank", "stairs-foot", "arrival"];
+/** Sockets a wall can't close off. */
+const MUST_LEAD_ON: readonly Socket[] = ["plank", "stairs-foot", "arrival"];
+
+const OPEN: Tile = { kind: "open" };
+
+/**
+ * Whether `upper` can stand right on top of `lower`: stairs and ladders lead into a well, and pits
+ * go down through shafts. Outside the grid, above is open air and below is nothing.
+ */
+export function fitsAbove(lower: Tile | undefined, upper: Tile | undefined): boolean {
+  const climbs = lower?.kind === "stairs" || lower?.kind === "ladder";
+  if (climbs) return upper?.kind === "well" && upper.from === lower.up;
+  if (upper?.kind === "well") return false;
+  const holed = upper?.kind === "pit" || upper?.kind === "bridge" || upper?.kind === "shaft";
+  if (lower?.kind === "shaft") return holed;
+  // A hole only goes down through shafts, to the bottom of the grid.
+  if (holed) return lower === undefined;
+  // Nothing below: only what holds itself up, or the bottom of a pit.
+  if (lower === undefined) return upper?.kind !== "open";
+  return true;
+}
+
+/** What's on the edge between two cells on a storey: nothing, a wall, or a wall with a doorway. */
+export type Edge = "none" | "wall" | "door";
+
 /**
  * A grid of tiles: the cell in the south-west corner starts at (x, z), and each storey is a list of
- * rows of tile characters, the northern row first, as on a map. The first storey is the deepest:
- * `basements` storeys lie below the ground, which is storey 0. Storeys above the last given, and
- * rows missing from one, are open air.
+ * rows, the northern row first, as on a map. The first storey is the deepest: `basements` storeys
+ * lie below the ground, which is storey 0. Storeys above the last given are open air.
+ *
+ * A storey is written one character per cell, or with its walls drawn in between, every cell
+ * surrounded by `+` corners and edges that are `-` or `|` for a wall, `d` for a doorway, or a space
+ * for nothing. Walls round the outside of such a storey enclose it.
  */
 export interface TileGrid {
   x: number;
@@ -146,80 +204,180 @@ export interface TileGrid {
   storeys: string[][];
 }
 
-/** The floors, boxes and ladders of a grid of tiles, after checking the tiles fit together. */
-export function composeTiles(grid: TileGrid): {
+/** A grid read into tiles and edges, with wells and shafts worked out. */
+export interface ParsedGrid {
+  cols: number;
+  rows: number;
+  basements: number;
+  /** tiles[storey + basements][row][col], row 0 the southernmost. */
+  tiles: Tile[][][];
+  /** The edge on a side of a cell, which may be on the outside of the grid. */
+  edge(storey: number, col: number, row: number, side: Side): Edge;
+  tile(storey: number, col: number, row: number): Tile | undefined;
+}
+
+export function parseTiles(grid: TileGrid): ParsedGrid {
+  const basements = grid.basements ?? 0;
+  const drawn = (lines: string[]) => lines[0]?.startsWith("+") ?? false;
+  const ground = grid.storeys[basements];
+  const rows = drawn(ground) ? (ground.length - 1) / 2 : ground.length;
+  const cols = drawn(ground) ? (ground[0].length - 1) / 2 : ground[0].length;
+  const edges = new Map<string, Edge>();
+  // Each edge once, by the cell to its south or west.
+  const edgeKey = (storey: number, col: number, row: number, side: Side) => {
+    if (side === "s") return `${storey},${col},${row - 1},n`;
+    if (side === "w") return `${storey},${col - 1},${row},e`;
+    return `${storey},${col},${row},${side}`;
+  };
+
+  const tiles: Tile[][][] = grid.storeys.map((lines, index) => {
+    const storey = index - basements;
+    const isDrawn = drawn(lines);
+    return Array.from({ length: rows }, (_, row) =>
+      Array.from({ length: cols }, (_, col) => {
+        const line = isDrawn ? lines[2 * (rows - 1 - row) + 1] : lines[rows - 1 - row];
+        if (line === undefined) return OPEN;
+        const char = isDrawn ? line[2 * col + 1] : line[col];
+        if (isDrawn) {
+          const mark = (side: Side, value: string | undefined) => {
+            const edge: Edge =
+              value === "d" ? "door" : value === "-" || value === "|" ? "wall" : "none";
+            if (edge !== "none") edges.set(edgeKey(storey, col, row, side), edge);
+          };
+          const above = lines[2 * (rows - 1 - row)];
+          const below = lines[2 * (rows - 1 - row) + 2];
+          mark("n", above?.[2 * col + 1]);
+          mark("s", below?.[2 * col + 1]);
+          mark("w", line[2 * col]);
+          mark("e", line[2 * col + 2]);
+        }
+        const tile = TILE_CHARS[char ?? "."];
+        if (!tile) throw new Error(`Unknown tile "${char}" on storey ${storey}`);
+        return tile;
+      }),
+    );
+  });
+  const at = (storey: number, col: number, row: number) => tiles[storey + basements]?.[row]?.[col];
+
+  // Open air above stairs or a ladder is its well; under a pit, a shaft.
+  for (let storey = tiles.length - 1 - basements; storey >= -basements; storey--) {
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        if (at(storey, col, row)?.kind !== "open") continue;
+        const below = at(storey - 1, col, row);
+        const above = at(storey + 1, col, row);
+        const cell = tiles[storey + basements][row];
+        if (below?.kind === "stairs" || below?.kind === "ladder") {
+          cell[col] = { kind: "well", from: below.up };
+        } else if (above?.kind === "pit" || above?.kind === "bridge" || above?.kind === "shaft") {
+          cell[col] = { kind: "shaft" };
+        }
+      }
+    }
+  }
+
+  return {
+    cols,
+    rows,
+    basements,
+    tiles,
+    tile: (storey, col, row) => {
+      if (col < 0 || col >= cols || row < 0 || row >= rows) return undefined;
+      if (storey < -basements) return undefined;
+      return at(storey, col, row) ?? OPEN;
+    },
+    edge: (storey, col, row, side) => edges.get(edgeKey(storey, col, row, side)) ?? "none",
+  };
+}
+
+/** Why a grid's tiles don't fit together, or undefined if they do. */
+export function checkTiles(grid: ParsedGrid): string | undefined {
+  const { cols, rows, basements } = grid;
+  for (let storey = -basements; storey < grid.tiles.length - basements; storey++) {
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const tile = grid.tile(storey, col, row) as Tile;
+        const where = `${tile.kind} at storey ${storey}, column ${col}, row ${row}`;
+        if (!fitsAbove(grid.tile(storey - 1, col, row), tile)) {
+          return `${where} can't stand on ${grid.tile(storey - 1, col, row)?.kind ?? "nothing"}`;
+        }
+        const above = grid.tile(storey + 1, col, row) ?? OPEN;
+        if (!fitsAbove(tile, above)) return `${where} can't have ${above.kind} above it`;
+        for (const side of SIDES) {
+          const mine = socket(tile, side);
+          const edge = grid.edge(storey, col, row, side);
+          const next = grid.tile(storey, col + OFFSET[side][0], row + OFFSET[side][1]);
+          if (edge === "wall" && MUST_LEAD_ON.includes(mine))
+            return `${where}: a wall closes off its ${side} side`;
+          if (edge === "door" && !PASSABLE.includes(mine))
+            return `${where}: a doorway on its ${side} side leads nowhere`;
+          // Across a wall, anything goes but what must lead on.
+          if (!next || edge === "wall") continue;
+          const theirs = socket(next, OPPOSITE[side]);
+          if (!fits(mine, theirs)) return `${where}: its ${side} side can't meet ${next.kind}`;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+/** The floors, boxes and ladders of a grid of tiles; throws if the tiles don't fit together. */
+export function composeTiles(source: TileGrid): {
   floors: Floor[];
   boxes: LevelBox[];
   ladders: Ladder[];
 } {
-  const basements = grid.basements ?? 0;
-  const ground = grid.storeys[basements];
-  const rows = ground.length;
-  const cols = ground[0].length;
-  const tileAt = (storey: number, col: number, row: number): Tile | undefined => {
-    if (col < 0 || col >= cols || row < 0 || row >= rows) return undefined;
-    if (storey < -basements) return undefined;
-    const line = grid.storeys[storey + basements]?.[rows - 1 - row];
-    if (!line) return TILE_CHARS["."];
-    const tile = TILE_CHARS[line[col]];
-    if (!tile) throw new Error(`Unknown tile "${line[col]}" on storey ${storey}`);
-    return tile;
-  };
+  const grid = parseTiles(source);
+  const problem = checkTiles(grid);
+  if (problem) throw new Error(problem);
+  const { cols, rows, basements } = grid;
   const floors: Floor[] = [];
   const boxes: LevelBox[] = [];
   const ladders: Ladder[] = [];
 
-  for (let storey = -basements; storey < grid.storeys.length - basements; storey++) {
+  for (let storey = -basements; storey < grid.tiles.length - basements; storey++) {
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
-        const tile = tileAt(storey, col, row) as Tile;
-        const where = `${tile.kind} at storey ${storey}, column ${col}, row ${row}`;
+        const tile = grid.tile(storey, col, row) as Tile;
         const cell: Box = {
-          minX: grid.x + col * CELL,
-          maxX: grid.x + (col + 1) * CELL,
-          minZ: grid.z + row * CELL,
-          maxZ: grid.z + (row + 1) * CELL,
+          minX: source.x + col * CELL,
+          maxX: source.x + (col + 1) * CELL,
+          minZ: source.z + row * CELL,
+          maxZ: source.z + (row + 1) * CELL,
         };
         const base = storey * STOREY;
-        const neighbour = (side: Side, up = 0) =>
-          tileAt(storey + up, col + OFFSET[side][0], row + OFFSET[side][1]);
-        const above = tileAt(storey + 1, col, row);
+        const neighbour = (side: Side) =>
+          grid.tile(storey, col + OFFSET[side][0], row + OFFSET[side][1]);
         const thickness = storey === 0 ? GROUND : SLAB;
+        // Up to the underside of whatever floor is above.
+        const ceiling = STOREY - SLAB;
 
+        // Walls on the north and east edges, and the south and west ones on the grid's edge, so each
+        // edge is built once.
         for (const side of SIDES) {
-          const next = neighbour(side);
-          if (next && !fits(socket(tile, side), socket(next, OPPOSITE[side]))) {
-            throw new Error(`${where}: its ${side} side can't meet ${next.kind}`);
+          const outer = !neighbour(side);
+          if (!outer && (side === "s" || side === "w")) continue;
+          const edge = grid.edge(storey, col, row, side);
+          // Brick round the outside, plaster between rooms.
+          const kind = outer ? "wall" : "partition";
+          if (edge !== "none") {
+            boxes.push(...wallBoxes(cell, side, base, ceiling, edge === "door", kind));
           }
         }
-        /** Something going up a storey from here needs open air above, and a floor to arrive on. */
-        const leadsUp = (up: Side) => {
-          if (above?.kind !== "open") throw new Error(`${where}: the cell above must be open`);
-          if (neighbour(up, 1)?.kind !== "floor") {
-            throw new Error(
-              `${where}: there must be a floor on storey ${storey + 1} beyond its top`,
-            );
-          }
-        };
 
         switch (tile.kind) {
           case "floor":
           case "ladder": {
             floors.push({ ...cell, y: base, thickness, kind: "floor" });
-            // A railing where it meets open air, except where stairs or a ladder come up.
+            // A railing where it meets open air, unless a wall is there already.
             for (const side of SIDES) {
-              if (neighbour(side)?.kind !== "open") continue;
-              const under = neighbour(side, -1);
-              if (
-                (under?.kind === "stairs" || under?.kind === "ladder") &&
-                under.up === OPPOSITE[side]
-              ) {
-                continue;
-              }
+              const next = neighbour(side);
+              if (!next || socket(next, OPPOSITE[side]) !== "open") continue;
+              if (grid.edge(storey, col, row, side) !== "none") continue;
               boxes.push({ ...edge(cell, side, RAIL), y: base, height: RAIL_HEIGHT, kind: "rail" });
             }
             if (tile.kind === "floor") break;
-            leadsUp(tile.up);
             // The wall it stands against, up to the floor it leads to: climbers press against it.
             const wall = edge(cell, tile.up, LADDER_WALL);
             boxes.push({ ...wall, y: base, height: STOREY, kind: "wall" });
@@ -239,16 +397,10 @@ export function composeTiles(grid: TileGrid): {
             break;
           }
           case "solid":
-            // Up to the underside of the floor above.
-            boxes.push({ ...cell, y: base, height: STOREY - GROUND, kind: "wall" });
+            boxes.push({ ...cell, y: base, height: ceiling, kind: "wall" });
             break;
           case "pit":
           case "bridge": {
-            for (let under = storey - 1; under >= -basements; under--) {
-              if (tileAt(under, col, row)?.kind !== "open") {
-                throw new Error(`${where}: only open cells can be under a pit`);
-              }
-            }
             // Walls round the hole, under the floors next to it, so nobody walks under them.
             for (const side of SIDES) {
               const next = neighbour(side);
@@ -269,7 +421,6 @@ export function composeTiles(grid: TileGrid): {
             break;
           }
           case "stairs": {
-            leadsUp(tile.up);
             floors.push({
               ...cell,
               y: base,
@@ -298,23 +449,57 @@ export function composeTiles(grid: TileGrid): {
             }
             break;
           }
-          case "open": {
-            if (storey > -basements) break;
-            // Down here there's nothing beneath, so it must be the bottom of a pit.
-            let up = storey + 1;
-            const highest = grid.storeys.length - basements - 1;
-            while (up < highest && tileAt(up, col, row)?.kind === "open") up++;
-            const top = tileAt(up, col, row)?.kind;
-            if (top !== "pit" && top !== "bridge") {
-              throw new Error(`${where}: the deepest storey can only be open under a pit`);
-            }
+          case "open":
+          case "well":
+          case "shaft":
             break;
-          }
         }
       }
     }
   }
   return { floors, boxes, ladders };
+}
+
+/** A wall along one side of a cell, astride the edge, with a doorway in the middle if asked. */
+function wallBoxes(
+  cell: Box,
+  side: Side,
+  y: number,
+  height: number,
+  door: boolean,
+  kind: "wall" | "partition",
+): LevelBox[] {
+  const alongX = side === "n" || side === "s";
+  const line = { n: cell.maxZ, s: cell.minZ, e: cell.maxX, w: cell.minX }[side];
+  const [start, end] = alongX ? [cell.minX, cell.maxX] : [cell.minZ, cell.maxZ];
+  const span = (from: number, to: number, bottom: number, top: number): LevelBox =>
+    alongX
+      ? {
+          minX: from,
+          maxX: to,
+          minZ: line - WALL / 2,
+          maxZ: line + WALL / 2,
+          y: bottom,
+          height: top - bottom,
+          kind,
+        }
+      : {
+          minX: line - WALL / 2,
+          maxX: line + WALL / 2,
+          minZ: from,
+          maxZ: to,
+          y: bottom,
+          height: top - bottom,
+          kind,
+        };
+  if (!door) return [span(start, end, y, y + height)];
+  const middle = (start + end) / 2;
+  return [
+    span(start, middle - DOOR_WIDTH / 2, y, y + height),
+    span(middle + DOOR_WIDTH / 2, end, y, y + height),
+    // Over the doorway, out of everyone's way.
+    span(middle - DOOR_WIDTH / 2, middle + DOOR_WIDTH / 2, y + DOOR_HEIGHT, y + height),
+  ];
 }
 
 /** The strip of a box this thick along one of its sides, inside it. */
