@@ -257,9 +257,10 @@ async function addConcept(world: World, concept: (typeof CONCEPTS)[number]) {
   }
 }
 
-/** Tick walking speed, m/s, and turning speed, radians a second. */
-const WANDER_SPEED = 0.45;
-const WANDER_TURN = 1.8;
+/** Tick walking speed, m/s, turning speed, radians a second, and how fast it gets up to that. */
+const WANDER_SPEED = 0.35;
+const WANDER_TURN = 1;
+const WANDER_TURN_ACCEL = 3;
 
 /**
  * A tick walking from one random spot to the next within `radius` of its place, turning to face
@@ -271,6 +272,7 @@ function addWanderer(world: World, concept: (typeof CONCEPTS)[number], radius: n
   let z = concept.z;
   let yaw = concept.turn ?? 0;
   let speed = 0;
+  let turnRate = 0;
   let goal = { x, z };
   let pause = 2;
   world.scene.onBeforeRenderObservable.add(() => {
@@ -280,6 +282,7 @@ function addWanderer(world: World, concept: (typeof CONCEPTS)[number], radius: n
     const distance = Math.hypot(dx, dz);
     if (distance < 0.05) {
       speed = 0;
+      turnRate = 0;
       pause -= dt;
       if (pause <= 0) {
         const a = Math.random() * Math.PI * 2;
@@ -290,7 +293,14 @@ function addWanderer(world: World, concept: (typeof CONCEPTS)[number], radius: n
     } else {
       const want = Math.atan2(dx, dz);
       const off = Math.atan2(Math.sin(want - yaw), Math.cos(want - yaw));
-      yaw += Math.sign(off) * Math.min(Math.abs(off), WANDER_TURN * dt);
+      // Speeds up and slows down into turns, rather than snapping round.
+      const wantRate =
+        Math.sign(off) * Math.min(WANDER_TURN, Math.sqrt(2 * WANDER_TURN_ACCEL * Math.abs(off)));
+      turnRate += Math.max(
+        -WANDER_TURN_ACCEL * dt,
+        Math.min(WANDER_TURN_ACCEL * dt, wantRate - turnRate),
+      );
+      yaw += turnRate * dt;
       // Turn on the spot first, then walk, slowing down on arrival.
       const target = Math.abs(off) < 0.4 ? Math.min(WANDER_SPEED, distance * 1.5) : 0;
       speed += (target - speed) * Math.min(1, dt * 3);

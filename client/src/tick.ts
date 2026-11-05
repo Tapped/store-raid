@@ -12,9 +12,13 @@ import { loadContainer } from "./assets";
  * A large tick, walked procedurally on the rig scripts/models/tick.py gives it: every frame each
  * leg's foot is placed, and the leg bends to reach it.
  *
- * - Feet stay planted on the ground until the body has moved on too far from them, then step to
- *   where they'll be needed. Legs step in two groups of four, the alternating tetrapod gait of
- *   spiders and ticks: front left, second right, third left and back right, then the other four.
+ * - A gait clock runs with the distance walked and turned, and each leg lifts at its own point in
+ *   the cycle: two groups of four half a cycle apart, the alternating tetrapod gait of spiders and
+ *   ticks (front left, second right, third left and back right, then the other four), with the back
+ *   legs of a group a little ahead. Feet are in the air for under half the cycle, so as one group
+ *   lands the other is lifting and something is always moving. A foot lifts before it swings,
+ *   swings with no jolt at either end, and sets down from above. Standing still, feet left out of
+ *   place step back one at a time.
  * - Each leg's joints lie in one upright plane through its hip, so a leg is solved in 2D in that
  *   plane (FABRIK, starting from its rest shape, so knees stay high) and the plane turns about the
  *   hip to face the foot.
@@ -25,20 +29,25 @@ import { loadContainer } from "./assets";
  */
 const MODEL = "models/characters/tick.glb";
 
-/** Seconds a step takes when strolling and at full speed. */
-const STEP_TIME = { slow: 0.26, fast: 0.13 };
-/** Speed, m/s, at which steps are fastest. */
-const FAST = 0.6;
+/** Meters walked in one gait cycle, in which every foot steps once. */
+const STRIDE = 0.28;
+/** The part of the cycle a foot spends in the air; it's planted for the rest. */
+const SWING = 0.4;
+/** How far ahead of the leg in front of it each leg of a group lifts, in cycles. */
+const WAVE = 0.05;
+/** How far the feet are from the middle: turning on the spot moves them this many meters a radian. */
+const TURN_RADIUS = 0.6;
+/** The shortest and longest a swing may take, seconds; settling steps take SETTLE_TIME. */
+const SWING_TIME = { min: 0.2, max: 0.45 };
+const SETTLE_TIME = 0.3;
+/** The fastest a foot may travel on average through a swing, m/s; it peaks at about 2.5 times this. */
+const FOOT_SPEED = 1;
+/** Below this pace, m/s, feet land less far ahead the slower it goes. */
+const SLOW = 0.2;
 /** How high a foot lifts in the middle of a step, meters. */
 const STEP_HEIGHT = 0.07;
-/** How far a foot may lag behind where it belongs before its group steps, meters. */
-const STEP_TRIGGER = 0.1;
-/** At rest, a foot this far from where it belongs steps back into place. */
+/** At rest, a foot this far from where it belongs steps back into place, meters. */
 const SETTLE = 0.02;
-/** Steps land where the foot will belong this many step times ahead. */
-const LEAD = 1.2;
-/** Each leg of a group starts this much after the leg in front of it, seconds. */
-const STAGGER = 0.025;
 /** Seconds standing still before it starts questing, and how fast it raises its legs. */
 const QUEST_AFTER = 1.2;
 const QUEST_RATE = 2;
@@ -51,8 +60,11 @@ interface Leg {
   bones: TransformNode[];
   /** Which half of the gait it steps in. */
   group: number;
-  /** How many legs from the front: the front legs quest, and later legs start their step later. */
+  /** How many legs from the front: the front legs quest. */
   index: number;
+  /** Where in the gait cycle it lifts, and where the cycle was for it last frame. */
+  offset: number;
+  phase: number;
   /** Rest pose, rig frame: joint positions hip to claw tip, and each segment's rotation. */
   joints: Vector3[];
   rotations: Matrix[];
@@ -63,7 +75,7 @@ interface Leg {
   home: Vector3;
   /** The claw tip in the world: planted, or moving through a step. */
   foot: Vector3;
-  step?: { from: Vector3; t: number; delay: number };
+  step?: { from: Vector3; t: number; time: number };
 }
 
 export class TickView {
@@ -81,7 +93,7 @@ export class TickView {
   private last?: { x: number; z: number; yaw: number };
   private velocity = Vector3.Zero();
   private turnRate = 0;
-  private lastGroup = 1;
+  private cycle = 0;
   private disposed = false;
 
   constructor(
@@ -180,10 +192,13 @@ export class TickView {
         });
         const lengths = joints.slice(1).map((j, i) => Vector3.Distance(j, joints[i]));
         const tipWorld = Vector3.TransformCoordinates(joints[6], toWorld);
+        const group = (s + index) % 2;
         this.legs.push({
           bones,
-          group: (s + index) % 2,
+          group,
           index,
+          offset: group * 0.5 + (3 - index) * WAVE,
+          phase: 1,
           joints,
           rotations: bones.map((b) => restOf(b).getRotationMatrix()),
           flat,
@@ -234,18 +249,17 @@ export class TickView {
     const moving = speed > 0.03 || Math.abs(this.turnRate) > 0.15;
     this.still = moving ? 0 : this.still + dt;
     const questing = this.still > QUEST_AFTER;
-    this.quest = Math.max(0, Math.min(1, this.quest + (questing ? dt : -2 * dt) * QUEST_RATE));
+    this.quest = Math.max(0, Math.min(1, this.quest + (questing ? dt : -dt) * QUEST_RATE));
 
-    const stepTime = lerp(STEP_TIME.slow, STEP_TIME.fast, Math.min(1, speed / FAST));
-    this.stepLegs(x, z, yaw, stepTime, moving, dt);
+    this.stepLegs(x, z, yaw, speed, moving, dt);
 
     // The body rides a little lower while legs are in the air, rolls away from lifted legs, and
     // rears back when questing; at rest it breathes.
     let lift = 0;
     let roll = 0;
     for (const leg of this.legs) {
-      if (!leg.step || leg.step.delay > 0) continue;
-      const up = Math.sin(Math.PI * leg.step.t);
+      if (!leg.step) continue;
+      const up = Math.sin(Math.PI * leg.step.t) ** 2;
       lift += up;
       roll += up * (leg.home.x > 0 ? 1 : -1);
     }
@@ -298,58 +312,73 @@ export class TickView {
           ),
         );
         const air = Vector3.TransformCoordinates(raised, this.root.getWorldMatrix());
-        foot = Vector3.Lerp(leg.foot, air, smooth(this.quest));
+        foot = Vector3.Lerp(leg.foot, air, smoother(this.quest));
       }
       this.solveLeg(leg, Vector3.TransformCoordinates(foot, worldToRig), bodyMotion, bodyNow);
     }
   }
 
-  private stepLegs(
-    x: number,
-    z: number,
-    yaw: number,
-    stepTime: number,
-    moving: boolean,
-    dt: number,
-  ) {
-    const lead = stepTime * LEAD;
-    const ahead = {
-      x: x + this.velocity.x * lead,
-      z: z + this.velocity.z * lead,
-      yaw: yaw + this.turnRate * lead,
-    };
+  private stepLegs(x: number, z: number, yaw: number, speed: number, moving: boolean, dt: number) {
+    // Feet move as fast walking as turning: that sets how fast the cycle runs.
+    const pace = speed + Math.abs(this.turnRate) * TURN_RADIUS;
+    const cycleTime = STRIDE / Math.max(pace, 1e-3);
+    if (moving) this.cycle = (this.cycle + dt / cycleTime) % 1;
+    const swingTime = Math.min(SWING_TIME.max, Math.max(SWING_TIME.min, SWING * cycleTime));
+    // A foot lands ahead of where it belongs by half the ground it will cover while planted. Slower
+    // than SLOW, that fades out with the speed rather than all at once when it stops.
+    const stance = ((1 - SWING) * STRIDE) / Math.max(pace, SLOW);
+
     for (const leg of this.legs) {
+      const questing = leg.index === 0 && this.quest > 0;
+      const phase = (this.cycle + leg.offset) % 1;
+      const lifts = phase < SWING && (leg.phase >= SWING || phase < leg.phase);
+      leg.phase = phase;
+      if (!leg.step && moving && lifts && !questing) {
+        // A long way to go takes longer, so no foot whips across: turning on the spot is where.
+        const land = this.homeAt(
+          leg,
+          x + this.velocity.x * (swingTime + stance / 2),
+          z + this.velocity.z * (swingTime + stance / 2),
+          yaw + this.turnRate * (swingTime + stance / 2),
+        );
+        const time = Math.max(swingTime, Vector3.Distance(leg.foot, land) / FOOT_SPEED);
+        leg.step = { from: leg.foot.clone(), t: 0, time };
+      }
       const step = leg.step;
       if (!step) continue;
-      if (step.delay > 0) {
-        step.delay -= dt;
-        continue;
-      }
-      step.t = Math.min(1, step.t + dt / stepTime);
-      // Aim at where the foot will belong, which moves on as the tick does.
-      const to = this.homeAt(leg, ahead.x, ahead.z, ahead.yaw);
-      const e = smooth(step.t);
-      leg.foot = Vector3.Lerp(step.from, to, e);
-      leg.foot.y = this.root.position.y + STEP_HEIGHT * Math.sin(Math.PI * step.t);
+      step.t = Math.min(1, step.t + dt / step.time);
+      const ahead = (1 - step.t) * step.time + stance / 2;
+      const to = this.homeAt(
+        leg,
+        x + this.velocity.x * ahead,
+        z + this.velocity.z * ahead,
+        yaw + this.turnRate * ahead,
+      );
+      // Up first, then across, then down: the swing waits a little at each end, and eases in and out.
+      const across = smoother(Math.min(1, Math.max(0, (step.t - 0.12) / 0.76)));
+      leg.foot = Vector3.Lerp(step.from, to, across);
+      leg.foot.y = this.root.position.y + STEP_HEIGHT * Math.sin(Math.PI * step.t) ** 2;
       if (step.t >= 1) leg.step = undefined;
     }
 
-    // A group steps only once the other group is planted, when one of its feet lags too far. The
-    // group that didn't step last goes first, so the two take turns.
-    for (const group of [1 - this.lastGroup, this.lastGroup]) {
-      const others = this.legs.filter((l) => l.group !== group);
-      if (others.some((l) => l.step)) continue;
-      const mine = this.legs.filter((l) => l.group === group && !(l.index === 0 && this.quest > 0));
-      if (mine.some((l) => l.step)) continue;
-      const lag = (l: Leg) => Vector3.Distance(l.foot, this.homeAt(l, x, z, yaw));
-      const trigger = moving ? STEP_TRIGGER : SETTLE;
-      if (!mine.some((l) => lag(l) > trigger)) continue;
-      for (const leg of mine) {
-        if (lag(leg) > SETTLE)
-          leg.step = { from: leg.foot.clone(), t: 0, delay: leg.index * STAGGER };
+    // Standing still, the foot furthest out of place steps back, one at a time.
+    if (moving || this.legs.some((l) => l.step)) return;
+    let worst: Leg | undefined;
+    let most = SETTLE;
+    for (const leg of this.legs) {
+      if (leg.index === 0 && this.quest > 0) continue;
+      const lag = Vector3.Distance(leg.foot, this.homeAt(leg, x, z, yaw));
+      if (lag > most) {
+        most = lag;
+        worst = leg;
       }
-      this.lastGroup = group;
-      break; // one group at a time
+    }
+    if (worst) {
+      worst.step = {
+        from: worst.foot.clone(),
+        t: 0,
+        time: Math.max(SETTLE_TIME, most / FOOT_SPEED),
+      };
     }
   }
 
@@ -448,12 +477,9 @@ function toward(from: Flat, to: Flat, length: number): Flat {
   return { s: from.s + (ds / d) * length, z: from.z + (dz / d) * length };
 }
 
-function lerp(a: number, b: number, t: number) {
-  return a + (b - a) * t;
-}
-
-function smooth(t: number) {
-  return t * t * (3 - 2 * t);
+/** Eases in and out with no jolt: speed and acceleration are zero at both ends. */
+function smoother(t: number) {
+  return t * t * t * (t * (6 * t - 15) + 10);
 }
 
 /** Smooth noise in about -1 to 1: a few sines out of step. */
