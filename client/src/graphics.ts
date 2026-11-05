@@ -63,17 +63,26 @@ export function surfaceMaterial(
   return material;
 }
 
-/** The game's look: muted, cool and contrasty, with darkened corners. */
+/**
+ * The game's look: cool, muted darkness and warm light, contrasty, with darkened corners. Colour
+ * curves run on the tone-mapped picture and split it by brightness into thirds; at night nearly
+ * everything falls in the shadows third, so that is where most of the look comes from.
+ */
 export function gradePicture(config: ImageProcessingConfiguration): void {
   config.toneMappingEnabled = true;
   config.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
   config.contrast = 1.2;
   config.exposure = 0.95;
 
+  // Hue in degrees; density and saturation from -100 to 100. Babylon squares and halves density, so
+  // 55 tints only 15%, and below about 30 the tint can't be seen. The tint multiplies, so it darkens.
   const curves = new ColorCurves();
-  curves.globalSaturation = -25;
-  curves.globalHue = 215;
-  curves.globalDensity = 3;
+  curves.shadowsHue = 220; // blue-grey darkness
+  curves.shadowsDensity = 55;
+  curves.shadowsSaturation = -20;
+  curves.highlightsHue = 40; // lamps and flashlights stay warm and keep their colour
+  curves.highlightsDensity = 35;
+  curves.globalSaturation = -5;
   config.colorCurves = curves;
   config.colorCurvesEnabled = true;
 
