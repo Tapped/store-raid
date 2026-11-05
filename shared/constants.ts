@@ -49,6 +49,15 @@ export function droppingHand(holding: Holding): Hand | undefined {
 /** Units per second at full input. */
 export const PLAYER_SPEED = 6;
 
+/** How high a player steps up without noticing, and how far down they follow the floor before falling. */
+export const STEP_UP = 0.35;
+export const STEP_DOWN = 0.3;
+/** How fast players fall, in meters per second per second. */
+export const GRAVITY = 20;
+
+/** Seconds a dimmer takes to fade the lights from fully on to off, or back. */
+export const DIM_TIME = 3;
+
 export const MAX_PLAYERS = 16;
 
 /** Full deflection of a MoveInput axis; inputs are whole numbers so prediction stays exact. */

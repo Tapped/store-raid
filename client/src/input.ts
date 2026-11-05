@@ -16,6 +16,8 @@ export interface Device {
   leavePressed(): boolean;
   /** True once per press: grab what's in front, with the right hand if it's free, else the left. */
   grabPressed(): boolean;
+  /** Whether the grab button is down: holding it on a dimmer fades the lights. */
+  grabHeld(): boolean;
   /** True once per press: let go of the last thing grabbed. */
   dropPressed(): boolean;
   /** True once the reload combo has been held long enough. Keyboards have F5 instead. */
@@ -95,6 +97,7 @@ const keyboard: Device = {
   joinPressed: () => anyPressed("Space", "Enter"),
   leavePressed: escapeLeaves,
   grabPressed: () => anyPressed("KeyE"),
+  grabHeld: () => held.has("KeyE"),
   dropPressed: () => anyPressed("KeyQ"),
   reloadHeld: () => false,
 };
@@ -149,6 +152,7 @@ function controller(index: number): Device {
     },
     leavePressed: () => edge(BUTTON_BACK),
     grabPressed: () => edge(BUTTON_RIGHT_BUMPER),
+    grabHeld: () => pad()?.buttons[BUTTON_RIGHT_BUMPER]?.pressed ?? false,
     dropPressed: () => edge(BUTTON_LEFT_BUMPER),
     reloadHeld() {
       const buttons = pad()?.buttons;
@@ -202,6 +206,7 @@ export const input: Device = {
   joinPressed: () => any((device) => device.joinPressed()),
   leavePressed: () => any((device) => device.leavePressed()),
   grabPressed: () => any((device) => device.grabPressed()),
+  grabHeld: () => any((device) => device.grabHeld()),
   dropPressed: () => any((device) => device.dropPressed()),
   reloadHeld: () => any((device) => device.reloadHeld()),
 };

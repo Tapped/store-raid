@@ -13,7 +13,7 @@ import {
   PLAYER_RADIUS,
   TICK_RATE,
 } from "../../shared/constants";
-import type { LevelBox } from "../../shared/level";
+import type { Level } from "../../shared/level";
 
 const GRAVITY = -9.81;
 const ITEM_DENSITY = 25; // kg per cubic meter
@@ -26,7 +26,6 @@ const LAYER_STATIC = 1;
 const LAYER_PLAYER = 2;
 const LAYER_ITEM = 4;
 const LAYER_CARRIED = 8;
-const GROUND_SIZE = 200;
 const IDENTITY: [number, number, number, number] = [0, 0, 0, 1];
 
 const wasm = readFileSync(
@@ -65,15 +64,48 @@ export class PhysicsWorld {
   private readonly shapes: HP_ShapeId[] = [];
   private readonly bodies = new Set<HP_BodyId>();
 
-  constructor(walls: readonly LevelBox[]) {
+  constructor(level: Pick<Level, "boxes" | "floors">) {
     havok.HP_World_SetGravity(this.world, [0, GRAVITY, 0]);
     havok.HP_World_SetIdealStepTime(this.world, 1 / TICK_RATE);
 
-    this.addStatic([0, -0.5, 0], [GROUND_SIZE, 1, GROUND_SIZE]);
-    for (const box of walls) {
+    for (const box of level.boxes) {
       this.addStatic(
-        [(box.minX + box.maxX) / 2, box.height / 2, (box.minZ + box.maxZ) / 2],
+        [(box.minX + box.maxX) / 2, box.y + box.height / 2, (box.minZ + box.maxZ) / 2],
         [box.maxX - box.minX, box.height, box.maxZ - box.minZ],
+      );
+    }
+    for (const floor of level.floors) {
+      const width = floor.maxX - floor.minX;
+      const depth = floor.maxZ - floor.minZ;
+      const centre = [(floor.minX + floor.maxX) / 2, floor.y, (floor.minZ + floor.maxZ) / 2];
+      if (!floor.rise) {
+        this.addStatic(
+          [centre[0], floor.y - floor.thickness / 2, centre[2]],
+          [width, floor.thickness, depth],
+        );
+        continue;
+      }
+      // A ramp: a slab tipped up towards one side, its top running from y to y + height.
+      const [dx, dz] = { n: [0, 1], s: [0, -1], e: [1, 0], w: [-1, 0] }[floor.rise.toward];
+      const run = dx ? width : depth;
+      const rise = floor.rise.height;
+      const slope = Math.atan2(rise, run);
+      const length = Math.hypot(run, rise);
+      // Turning the rising direction up towards y: about (direction × up), by the slope.
+      const [ax, az] = [-dz, dx];
+      const sin = Math.sin(slope / 2);
+      const turn: [number, number, number, number] = [ax * sin, 0, az * sin, Math.cos(slope / 2)];
+      // Down from the middle of the top along the tipped normal, by half the thickness.
+      const half = floor.thickness / 2;
+      const normal = [-dx * Math.sin(slope), Math.cos(slope), -dz * Math.sin(slope)];
+      this.addStatic(
+        [
+          centre[0] - normal[0] * half,
+          floor.y + rise / 2 - normal[1] * half,
+          centre[2] - normal[2] * half,
+        ],
+        dx ? [length, floor.thickness, depth] : [width, floor.thickness, length],
+        turn,
       );
     }
 
@@ -158,13 +190,20 @@ export class PhysicsWorld {
     return distance;
   }
 
-  addPlayer(x: number, z: number): HP_BodyId {
-    return this.addBody(this.playerShape, havok.MotionType.KINEMATIC, [[x, 0, z], IDENTITY]);
+  addPlayer(x: number, y: number, z: number): HP_BodyId {
+    return this.addBody(this.playerShape, havok.MotionType.KINEMATIC, [[x, y, z], IDENTITY]);
   }
 
   /** Where a kinematic body must be by the end of the next step; Havok works out its velocity. */
-  movePlayer(body: HP_BodyId, x: number, z: number): void {
-    havok.HP_Body_SetTargetQTransform(body, [[x, 0, z], IDENTITY]);
+  movePlayer(body: HP_BodyId, x: number, y: number, z: number): void {
+    havok.HP_Body_SetTargetQTransform(body, [[x, y, z], IDENTITY]);
+  }
+
+  /** Put an item somewhere at once, upright and still. */
+  place(body: HP_BodyId, x: number, y: number, z: number): void {
+    havok.HP_Body_SetQTransform(body, [[x, y, z], IDENTITY]);
+    havok.HP_Body_SetLinearVelocity(body, [0, 0, 0]);
+    havok.HP_Body_SetAngularVelocity(body, [0, 0, 0]);
   }
 
   removeBody(body: HP_BodyId): void {
@@ -209,10 +248,16 @@ export class PhysicsWorld {
     return shape;
   }
 
-  private addStatic(center: [number, number, number], size: [number, number, number]): void {
-    const shape = this.shape(ok(havok.HP_Shape_CreateBox([0, 0, 0], IDENTITY, size)));
+  private addStatic(
+    center: number[],
+    size: number[],
+    turn: [number, number, number, number] = IDENTITY,
+  ): void {
+    const shape = this.shape(
+      ok(havok.HP_Shape_CreateBox([0, 0, 0], IDENTITY, size as [number, number, number])),
+    );
     havok.HP_Shape_SetFilterInfo(shape, [LAYER_STATIC, LAYER_ITEM | LAYER_CARRIED]);
-    this.addBody(shape, havok.MotionType.STATIC, [center, IDENTITY]);
+    this.addBody(shape, havok.MotionType.STATIC, [center as [number, number, number], turn]);
   }
 
   private addBody(shape: HP_ShapeId, motion: MotionType, transform: QTransform): HP_BodyId {

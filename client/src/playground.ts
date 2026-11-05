@@ -16,8 +16,20 @@ import type { World } from "./scene";
  * Drawn only, with no collision. Add a line here to put a new one out.
  */
 const CONCEPTS: { model: string; label: string; x: number; z: number; turn?: number }[] = [
-  { model: "models/characters/tick.glb", label: "Large tick", x: 9.5, z: -4, turn: -Math.PI / 2 },
+  { model: "models/characters/tick.glb", label: "Large tick", x: 12, z: -9, turn: -Math.PI / 2 },
 ];
+
+/** How bright the hall is with the dimmer fully up. */
+const HEMI = 0.75;
+const ENVIRONMENT = 0.5;
+const SUN = 0.8;
+const STRIP_GLOW = new Color3(1, 0.93, 0.8);
+
+/** What the playground lets the rest of the page change. */
+export interface Playground {
+  /** Light the hall as the dimmer says, from 0 (off) to 1. */
+  setLight(brightness: number): void;
+}
 
 /** Steel I-beams across the hall under the roof, this far apart. */
 const BEAM_SPACING = 3;
@@ -26,9 +38,9 @@ const FLANGE = 0.2;
 
 /**
  * The playground's hall: a roof on steel beams over the brick walls from shared/level.ts, even
- * light, and the concepts on show. Its items and dock come from the level like any other.
+ * light on a dimmer, and the concepts on show. Its items and dock come from the level like any other.
  */
-export async function addPlayground(world: World): Promise<void> {
+export function addPlayground(world: World): Playground {
   const { scene, level } = world;
   const roof = level.roof ?? 6;
   const walls = level.boxes;
@@ -40,13 +52,14 @@ export async function addPlayground(world: World): Promise<void> {
   // Indoors: bright, even light from the roof lights, and no fog to speak of.
   const hemi = scene.getLightByName("hemi") as HemisphericLight | null;
   if (hemi) {
-    hemi.intensity = 0.75;
+    hemi.intensity = HEMI;
     hemi.diffuse = new Color3(1, 0.95, 0.85);
     // Light off the floor, so the roof and beams aren't black.
     hemi.groundColor = new Color3(0.55, 0.52, 0.48);
   }
   scene.fogDensity = 0.0005;
-  scene.environmentIntensity = 0.5;
+  scene.environmentIntensity = ENVIRONMENT;
+  const sun = scene.getLightByName("sun");
 
   // The roof is not a shadow caster: the sun stands in for the roof lights.
   const panels = surfaceMaterial("roof", scene, new Color3(0.55, 0.56, 0.57), {
@@ -89,7 +102,7 @@ export async function addPlayground(world: World): Promise<void> {
   // Strip lights between the beams: they only glow, the hemispheric light does the lighting.
   const glow = new StandardMaterial("roof-light", scene);
   glow.disableLighting = true;
-  glow.emissiveColor = new Color3(1, 0.93, 0.8);
+  glow.emissiveColor = STRIP_GLOW.clone();
   const strips: Mesh[] = [];
   for (let z = minZ + BEAM_SPACING; z < maxZ - BEAM_SPACING / 2; z += BEAM_SPACING) {
     for (const x of [-width / 4, width / 4]) {
@@ -105,7 +118,83 @@ export async function addPlayground(world: World): Promise<void> {
   const lights = Mesh.MergeMeshes(strips, true);
   if (lights) lights.material = glow;
 
-  for (const concept of CONCEPTS) await addConcept(world, concept);
+  for (const concept of CONCEPTS) void addConcept(world, concept);
+
+  const showDimmer = addDimmer(world);
+  let shown = 1;
+  return {
+    setLight(brightness) {
+      if (brightness === shown) return;
+      shown = brightness;
+      // Squared, so the dim end, where the testing happens, gets most of the dimmer's travel.
+      const light = brightness * brightness;
+      if (hemi) hemi.intensity = HEMI * light;
+      if (sun) sun.intensity = SUN * light;
+      scene.environmentIntensity = ENVIRONMENT * light;
+      glow.emissiveColor = STRIP_GLOW.scale(light);
+      showDimmer(brightness);
+    },
+  };
+}
+
+/**
+ * The dimmer on the wall, from the level: a plate with a knob, a faint glow to find it by in the
+ * dark, and a sign saying how bright it's set. Returns what updates the sign.
+ */
+function addDimmer(world: World): (brightness: number) => void {
+  const { scene, level } = world;
+  const place = level.dimmer;
+  if (!place) return () => {};
+  const holder = new TransformNode("dimmer", scene);
+  holder.position.set(place.x, place.y, place.z);
+  holder.rotation.y = place.turn;
+
+  const plate = MeshBuilder.CreateBox(
+    "dimmer-plate",
+    { width: 0.12, height: 0.12, depth: 0.02 },
+    scene,
+  );
+  plate.parent = holder;
+  plate.position.z = 0.01;
+  plate.material = surfaceMaterial("dimmer-plate", scene, new Color3(0.9, 0.88, 0.84), {
+    roughness: 0.4,
+  });
+  const knob = MeshBuilder.CreateCylinder("dimmer-knob", { diameter: 0.05, height: 0.025 }, scene);
+  knob.parent = holder;
+  knob.rotation.x = Math.PI / 2;
+  knob.position.z = 0.03;
+  const glowing = new StandardMaterial("dimmer-glow", scene);
+  glowing.disableLighting = true;
+  glowing.emissiveColor = new Color3(1, 0.55, 0.15);
+  knob.material = glowing;
+
+  const sign = MeshBuilder.CreatePlane("dimmer-sign", { width: 0.5, height: 0.125 }, scene);
+  sign.parent = holder;
+  sign.position.set(0, 0.17, 0.005);
+  // Planes face -z; turn it to face out of the wall.
+  sign.rotation.y = Math.PI;
+  const text = new DynamicTexture("dimmer-text", { width: 512, height: 128 }, scene);
+  text.hasAlpha = true;
+  const material = new StandardMaterial("dimmer-sign", scene);
+  material.diffuseTexture = text;
+  material.emissiveColor = new Color3(0.8, 0.8, 0.8);
+  material.disableLighting = true;
+  material.useAlphaFromDiffuseTexture = true;
+  sign.material = material;
+
+  const show = (brightness: number) => {
+    text.getContext().clearRect(0, 0, 512, 128);
+    text.drawText(
+      `Lights ${Math.round(brightness * 100)}% · hold E`,
+      null,
+      84,
+      "bold 52px system-ui, sans-serif",
+      "#f2e6c8",
+      "transparent",
+    );
+  };
+  show(1);
+  return show;
 }
 
 async function addConcept(world: World, concept: (typeof CONCEPTS)[number]) {

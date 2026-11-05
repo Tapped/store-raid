@@ -120,6 +120,10 @@ screen.
   `LEVEL_BOXES`, so it must gain height and take the current level as input, and stay pure.
 - Place loot so value rises with depth, height and darkness.
 - **Done when:** the crew can carry a sofa down a flight of stairs.
+- **Started:** `stepMover` has height: floors, stairs as ramps, gravity and falling to your death.
+  The playground is built from tiles (`shared/tiles.ts`) with sockets, ready for a wave function
+  collapse generator, and has a pit with a plank across and stairs up two storeys. Carrying a
+  sofa down the stairs is still to try.
 
 ### 5. First enemies
 

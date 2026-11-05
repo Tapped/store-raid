@@ -82,7 +82,7 @@ export class LocalPlayer {
     const predict = Predict.get(room);
 
     // Other players: interpolate towards the latest snapshot (small spring for smooth motion).
-    predict.attachAll("players", { mode: "lerp", fields: ["x", "z"], smoothMs: 65 });
+    predict.attachAll("players", { mode: "lerp", fields: ["x", "y", "z"], smoothMs: 65 });
     predict.attachAll("items", {
       x: ITEM_SMOOTHING,
       y: ITEM_SMOOTHING,
@@ -111,9 +111,8 @@ export class LocalPlayer {
     // Predict locally with the exact step the server runs, reconcile on correction.
     predict.reconciler(self, {
       input,
-      fields: ["x", "z", "vx", "vz"],
-      step: (ctx, predicted, command) =>
-        stepMover(predicted, command, ctx.dt, this.world.level.boxes),
+      fields: ["x", "y", "z", "vx", "vy", "vz"],
+      step: (ctx, predicted, command) => stepMover(predicted, command, ctx.dt, this.world.level),
     });
 
     this.session = { room, predict, input, sessionId: room.sessionId, self };
@@ -124,10 +123,15 @@ export class LocalPlayer {
   grab(): void {
     const self = this.session?.self;
     if (!self) return;
+    // Sent even with both hands full: it may be a dimmer they reach for.
     const hand = grabbingHand(self);
-    if (!hand) return;
-    this.hands.reach(hand);
+    if (hand) this.hands.reach(hand);
     this.session?.room.send("grab");
+  }
+
+  /** The grab button is up again, which stops turning a dimmer. */
+  release(): void {
+    this.session?.room.send("release");
   }
 
   /** Let go of the last thing grabbed. */
@@ -190,7 +194,7 @@ export class LocalPlayer {
 
     this.camera.position.set(
       session.predict.value(session.self, "x"),
-      EYE_HEIGHT,
+      session.predict.value(session.self, "y") + EYE_HEIGHT,
       session.predict.value(session.self, "z"),
     );
   }

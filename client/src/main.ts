@@ -18,10 +18,10 @@ const hint = document.getElementById("hint") as HTMLDivElement;
 const status = document.getElementById("status") as HTMLDivElement;
 
 const engine = await createEngine(canvas);
-// The building to play in: `?level=playground` for the hall to try things out in, else the store.
+// The building to play in: `?level=store` for the store, else the playground, the hall to try things out in.
 const world = createWorld(engine, levelNamed(new URLSearchParams(location.search).get("level")));
-if (world.level.name === "playground") void addPlayground(world);
-else {
+const playground = world.level.name === "playground" ? addPlayground(world) : undefined;
+if (!playground) {
   void addProps(world);
   void addShelves(world);
   void addHarbour(world.scene);
@@ -66,12 +66,17 @@ function leave() {
   sessionStorage.removeItem(JOINED_KEY);
 }
 
+let grabWasHeld = false;
+
 function pollInput() {
   if (input.reloadHeld()) location.reload();
   // Always ask, so a press made while playing isn't saved up for later.
   const joinPressed = input.joinPressed();
   const leavePressed = input.leavePressed();
   if (input.grabPressed()) player?.grab();
+  const grabHeld = input.grabHeld();
+  if (grabWasHeld && !grabHeld) player?.release();
+  grabWasHeld = grabHeld;
   if (input.dropPressed()) player?.drop();
   if (player && leavePressed) leave();
   else if (!player && joinPressed) join();
@@ -95,10 +100,11 @@ function syncViews(dt: number) {
       views.set(sessionId, view);
     }
     const x = session.predict.value(state, "x");
+    const y = session.predict.value(state, "y");
     const z = session.predict.value(state, "z");
     // The carry pose holds things in both arms; one-handed things just hang at the side.
     const inBothArms = state.left !== "" && state.left === state.right;
-    view.update(x, z, state.yaw, inBothArms, dt);
+    view.update(x, y, z, state.yaw, inBothArms, dt);
   }
 }
 
@@ -165,6 +171,8 @@ engine.runRenderLoop(() => {
   world.lobbyCamera.alpha += dt * 0.1;
   syncViews(dt);
   syncItems();
+  const light = player?.session?.room.state.light;
+  if (light !== undefined) playground?.setLight(light);
   player?.updateHands(dt, items);
   showStatus();
   world.scene.render();

@@ -23,7 +23,7 @@ Join with the device you want to play on.
 | Leave | Back | Esc |
 | Move | left stick | W A S D |
 | Look | right stick | the mouse (click to capture it) |
-| Grab | RB | E |
+| Grab (hold on the dimmer to fade the lights) | RB | E |
 | Drop | LB | Q |
 
 Browsers only reveal a controller once a button has been pressed on it, and the tab must have focus.

@@ -25,8 +25,8 @@ import {
 } from "./graphics";
 import { addSky, HORIZON } from "./sky";
 import { storeSurface } from "./store";
+import { addTerrain, SURFACE_TILE as FLOOR_TILE } from "./terrain";
 
-const FLOOR_TILE = 6; // meters that one repeat of a surface texture covers
 const WALL_TILE = 3;
 const LOBBY_TARGET = new Vector3(91.5, 3, -45); // on the harbour street between the rows of street lights
 const DUSK_REFLECTION = new Color3(0.7, 0.72, 0.8);
@@ -92,18 +92,11 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
   configureShadows(shadows);
   shadows.setDarkness(0.35);
 
-  const ground = MeshBuilder.CreateGround(
-    "ground",
-    { width: level.size, height: level.size },
-    scene,
-  );
-  const floorTiles = level.size / FLOOR_TILE;
-  const floorMat = storeSurface("floor", scene, [floorTiles, floorTiles]);
+  const floorMat = storeSurface("floor", scene);
   // Dark and damp, like wet asphalt: the sky glances off it.
   floorMat.albedoColor = new Color3(0.32, 0.33, 0.36);
   floorMat.roughness = 0.6;
-  ground.material = floorMat;
-  ground.receiveShadows = true;
+  addTerrain(scene, level, shadows, floorMat);
 
   if (level.dock) {
     const { minX, maxX, minZ, maxZ } = level.dock;
@@ -130,6 +123,8 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
     roughness: 0.5,
   });
   for (const [i, box] of level.boxes.entries()) {
+    // Railings, pits and stairs are drawn by addTerrain.
+    if (box.kind !== "wall" && box.kind !== "shelf") continue;
     const width = box.maxX - box.minX;
     const depth = box.maxZ - box.minZ;
     const tiled = (u: number, v: number) => new Vector4(0, 0, u / WALL_TILE, v / WALL_TILE);
@@ -152,7 +147,7 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
       },
       scene,
     );
-    mesh.position.set((box.minX + box.maxX) / 2, box.height / 2, (box.minZ + box.maxZ) / 2);
+    mesh.position.set((box.minX + box.maxX) / 2, box.y + box.height / 2, (box.minZ + box.maxZ) / 2);
     mesh.material = box.kind === "shelf" ? shelfMat : wallMat;
     mesh.receiveShadows = true;
     shadows.addShadowCaster(mesh);

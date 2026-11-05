@@ -17,8 +17,11 @@ export const Player = schema({
   name: t.string(),
   color: t.string(),
   x: t.number(),
+  /** Height of the player's feet. */
+  y: t.number(),
   z: t.number(),
   vx: t.number(),
+  vy: t.number(),
   vz: t.number(),
   /** Where the player looks around y, in radians. */
   yaw: t.number(),
@@ -44,5 +47,7 @@ export type Item = SchemaType<typeof Item>;
 export const GameState = schema({
   players: t.map(Player),
   items: t.map(Item),
+  /** How bright the lights are, from 0 (off) to 1, as the dimmer leaves them. */
+  light: t.number(),
 });
 export type GameState = SchemaType<typeof GameState>;

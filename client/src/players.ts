@@ -132,13 +132,12 @@ export class PlayerView {
   }
 
   /** Once per rendered frame, wherever the player is now and wherever they look. */
-  update(x: number, z: number, yaw: number, carrying: boolean, dt: number) {
+  update(x: number, y: number, z: number, yaw: number, carrying: boolean, dt: number) {
     const dx = x - (this.lastX ?? x);
     const dz = z - this.lastZ;
     this.lastX = x;
     this.lastZ = z;
-    this.root.position.x = x;
-    this.root.position.z = z;
+    this.root.position.set(x, y, z);
     if (dt <= 0) return;
 
     const blend = 1 - Math.exp(-SPEED_SMOOTHING * dt);

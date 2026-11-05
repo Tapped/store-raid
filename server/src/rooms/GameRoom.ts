@@ -2,6 +2,7 @@ import type { HP_BodyId } from "@babylonjs/havok";
 import { type Client, type CloseCode, Room, type StepContext } from "@colyseus/core";
 import { resolveCircleCircle } from "../../../shared/collision";
 import {
+  DIM_TIME,
   droppingHand,
   grabbingHand,
   HANDS,
@@ -11,6 +12,7 @@ import {
   MAX_PLAYERS,
   MOVE_SCALE,
   PLAYER_COLORS,
+  PLAYER_HEIGHT,
   PLAYER_RADIUS,
   TICK_RATE,
   YAW_SCALE,
@@ -39,6 +41,12 @@ const MAX_CARRY_LAG = 1.5;
 const CARRY_LAG_TIME = 0.4;
 /** Carriers can stand this far beyond the ends of a shared item before it falls. */
 const MAX_CARRY_SLACK = 2;
+/** Items can be grabbed from this far below a player's feet to this far above them. */
+const GRAB_BELOW = 0.6;
+const GRAB_ABOVE = 2.2;
+/** How far from a dimmer a player can reach it, and how high their hand is. */
+const DIMMER_REACH = 1.6;
+const DIMMER_HAND = 1.3;
 /** Seconds a dropped item falls through players before it can be bumped into again. */
 const FALL_TIME = 1;
 
@@ -63,6 +71,9 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   });
 
   private joinCount = 0;
+  /** Players holding the dimmer, and which way it fades: 1 brighter, -1 darker. */
+  private readonly dimming = new Set<string>();
+  private dimDirection = 1;
 
   private level!: Level;
   private physics!: PhysicsWorld;
@@ -76,16 +87,28 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   private readonly lagging = new Map<string, number>();
 
   /** Where each player (by name) last was, so a restart or reload puts them back there. */
-  private lastSeen = load("lastSeen", {} as Record<string, { x: number; z: number }>);
+  private lastSeen = load("lastSeen", {} as Record<string, { x: number; y?: number; z: number }>);
 
   messages = {
     // Movement arrives through the input buffer above. Register handlers here only for things
     // that aren't per-tick inputs (chat, emotes, abilities, …).
     /** Grab what's in front, with the right hand if it's free, else the left. */
+    /** A dimmer in front of the player gets held instead, until `release`. */
     grab: (client: Client) => {
       const player = this.state.players.get(client.sessionId);
-      const hand = player && grabbingHand(player);
-      if (player && hand) this.grab(player, hand);
+      if (!player) return;
+      if (this.atDimmer(player)) {
+        // Each push fades the other way from the last.
+        this.dimDirection = -this.dimDirection;
+        this.dimming.add(client.sessionId);
+        return;
+      }
+      const hand = grabbingHand(player);
+      if (hand) this.grab(player, hand);
+    },
+    /** The grab button is up again: stop turning the dimmer. */
+    release: (client: Client) => {
+      this.dimming.delete(client.sessionId);
     },
     /** Let go of the last thing grabbed. */
     drop: (client: Client) => {
@@ -97,7 +120,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
 
   onCreate(options: JoinOptions) {
     this.level = levelNamed(options?.level);
-    this.physics = new PhysicsWorld(this.level.boxes);
+    this.physics = new PhysicsWorld(this.level);
+    this.state.light = 1;
     for (const [i, { kind, x, y, z }] of this.level.items.entries()) {
       const id = `item${i}`;
       this.state.items.set(
@@ -114,31 +138,37 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   onJoin(client: Client, options: JoinOptions) {
     const index = this.joinCount++;
     const name = (options?.name ?? "").trim().slice(0, 16) || `player-${index + 1}`;
-    const spawn = this.lastSeen[this.seenKey(name)] ?? this.level.spawnPoint(index);
+    const spawn = { y: 0, ...(this.lastSeen[this.seenKey(name)] ?? this.level.spawnPoint(index)) };
     this.state.players.set(
       client.sessionId,
       new Player({
         name,
         color: PLAYER_COLORS[index % PLAYER_COLORS.length],
         x: spawn.x,
+        y: spawn.y,
         z: spawn.z,
         vx: 0,
+        vy: 0,
         vz: 0,
         yaw: 0,
         left: "",
         right: "",
       }),
     );
-    this.playerBodies.set(client.sessionId, this.physics.addPlayer(spawn.x, spawn.z));
+    this.playerBodies.set(client.sessionId, this.physics.addPlayer(spawn.x, spawn.y, spawn.z));
     console.log(`${name} (${client.sessionId}) joined`);
   }
 
   onLeave(client: Client, code: CloseCode) {
     console.log(client.sessionId, "left", code);
     for (const hand of HANDS) this.drop(client.sessionId, hand);
+    this.dimming.delete(client.sessionId);
     const player = this.state.players.get(client.sessionId);
     if (player) {
-      this.lastSeen[this.seenKey(player.name)] = { x: player.x, z: player.z };
+      // Not while falling, or they'd come back in mid-air.
+      if (player.vy === 0) {
+        this.lastSeen[this.seenKey(player.name)] = { x: player.x, y: player.y, z: player.z };
+      }
       save("lastSeen", this.lastSeen);
     }
     this.state.players.delete(client.sessionId);
@@ -161,6 +191,30 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
    * one-handed thing needs only this hand free, a two-handed one needs both. Shared items must have
    * room for another carrier.
    */
+  /** Whether the player is in reach of the dimmer and looking at it. */
+  private atDimmer(player: Player): boolean {
+    const target = this.level.dimmer;
+    if (!target) return false;
+    const dx = target.x - player.x;
+    const dz = target.z - player.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance > DIMMER_REACH || Math.abs(target.y - player.y - DIMMER_HAND) > 1) return false;
+    const ahead = dx * Math.sin(player.yaw) + dz * Math.cos(player.yaw);
+    return ahead >= distance * Math.cos(GRAB_CONE);
+  }
+
+  /** Fade the lights while someone holds the dimmer, turning round at fully on and off. */
+  private dim(dt: number) {
+    for (const sessionId of this.dimming) {
+      const player = this.state.players.get(sessionId);
+      if (!player || !this.atDimmer(player)) this.dimming.delete(sessionId);
+    }
+    if (this.dimming.size === 0) return;
+    const light = this.state.light + (this.dimDirection * dt) / DIM_TIME;
+    if (light >= 1 || light <= 0) this.dimDirection = -this.dimDirection;
+    this.state.light = Math.min(1, Math.max(0, light));
+  }
+
   private grab(player: Player, hand: Hand) {
     const bothFree = !player.left && !player.right;
     let nearest: string | undefined;
@@ -169,7 +223,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       const kind = this.kindOf(item);
       if (kind.hands === 2 && !bothFree) continue;
       if (this.carriersOf(id).length >= kind.carriers) continue;
-      const { gap, x, z } = this.nearestPoint(player, item);
+      const { gap, x, y, z } = this.nearestPoint(player, item);
+      if (y < player.y - GRAB_BELOW || y > player.y + GRAB_ABOVE) continue;
       // Ahead of where the player looks, unless they're already touching it.
       const ahead = (x - player.x) * Math.sin(player.yaw) + (z - player.z) * Math.cos(player.yaw);
       if (gap > PLAYER_RADIUS && ahead < gap * Math.cos(GRAB_CONE)) continue;
@@ -209,6 +264,30 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     }
   }
 
+  /** Fell to their death: back to the start, empty-handed. */
+  private respawn(sessionId: string, player: Player) {
+    for (const hand of HANDS) this.drop(sessionId, hand);
+    const spawn = this.level.spawnPoint(this.joinCount++);
+    player.x = spawn.x;
+    player.y = 0;
+    player.z = spawn.z;
+    player.vx = 0;
+    player.vy = 0;
+    player.vz = 0;
+    console.log(`${player.name} fell`);
+  }
+
+  /** An item that fell out of the level goes back where it started. */
+  private putBack(id: string, body: HP_BodyId) {
+    const spawn = this.level.items[Number(id.slice("item".length))];
+    const item = this.state.items.get(id);
+    if (!spawn || !item) return;
+    this.dropItem(id);
+    this.falling.delete(id);
+    this.physics.place(body, spawn.x, spawn.y, spawn.z);
+    this.physics.readPose(body, item);
+  }
+
   private kindOf(item: Item) {
     return ITEM_KINDS[item.kind as ItemKind];
   }
@@ -223,18 +302,23 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
    * The point of an item nearest to the player, however it's turned or tipped over, and how far it
    * is from the player's centre on the ground.
    */
-  private nearestPoint(player: Player, item: Item): { gap: number; x: number; z: number } {
+  private nearestPoint(
+    player: Player,
+    item: Item,
+  ): { gap: number; x: number; y: number; z: number } {
     const size = this.kindOf(item).size;
     const q = { x: item.qx, y: item.qy, z: item.qz, w: item.qw };
     // Into the item's own frame, clamp to its box, and back out again.
-    const local = rotate({ ...q, w: -q.w }, player.x - item.x, 0, player.z - item.z);
+    const waist = player.y + PLAYER_HEIGHT / 2;
+    const local = rotate({ ...q, w: -q.w }, player.x - item.x, waist - item.y, player.z - item.z);
     const clamped = local.map((value, axis) =>
       Math.max(-size[axis] / 2, Math.min(size[axis] / 2, value)),
     );
-    const [x, , z] = rotate(q, clamped[0], clamped[1], clamped[2]);
+    const [x, y, z] = rotate(q, clamped[0], clamped[1], clamped[2]);
     return {
       gap: Math.hypot(item.x + x - player.x, item.z + z - player.z),
       x: item.x + x,
+      y: item.y + y,
       z: item.z + z,
     };
   }
@@ -290,7 +374,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       if (Math.hypot(dx, dz) > length + MAX_CARRY_SLACK) return undefined;
       return {
         x: (first.x + second[1].x) / 2,
-        y: CARRY_HEIGHT,
+        y: (first.y + second[1].y) / 2 + CARRY_HEIGHT,
         z: (first.z + second[1].z) / 2,
         yaw: Math.atan2(-dz, dx),
       };
@@ -302,7 +386,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       const distance = PLAYER_RADIUS + depth / 2 + 0.2;
       return {
         x: first.x + facing.x * distance,
-        y: CARRY_HEIGHT,
+        y: first.y + CARRY_HEIGHT,
         z: first.z + facing.z * distance,
         yaw: Math.atan2(facing.x, facing.z),
       };
@@ -313,7 +397,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     const ahead = 0.15;
     return {
       x: first.x + right.x * side + facing.x * ahead,
-      y: HAND_HEIGHT,
+      y: first.y + HAND_HEIGHT,
       z: first.z + right.z * side + facing.z * ahead,
       yaw: Math.atan2(-facing.z, facing.x),
     };
@@ -325,15 +409,19 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       const channel = this.inputs.get(sessionId);
       if (!channel) continue;
       for (const input of channel) {
-        stepMover(player, input, ctx.dt, this.level.boxes);
+        stepMover(player, input, ctx.dt, this.level);
         player.yaw = input.yaw / YAW_SCALE;
       }
+      if (player.y < this.level.killY) this.respawn(sessionId, player);
     }
+
+    this.dim(ctx.dt);
 
     // 2. Push overlapping players apart (server-only; clients get corrected).
     const players = [...this.state.players.values()];
     for (let i = 0; i < players.length; i++) {
       for (let j = i + 1; j < players.length; j++) {
+        if (Math.abs(players[i].y - players[j].y) > PLAYER_HEIGHT) continue;
         const a = { x: players[i].x, z: players[i].z, radius: PLAYER_RADIUS };
         const b = { x: players[j].x, z: players[j].z, radius: PLAYER_RADIUS };
         if (resolveCircleCircle(a, b)) {
@@ -348,7 +436,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     // 3. Physics, with players where they ended up: they shove items, items never stop them.
     for (const [sessionId, player] of this.state.players) {
       const body = this.playerBodies.get(sessionId);
-      if (body) this.physics.movePlayer(body, player.x, player.z);
+      if (body) this.physics.movePlayer(body, player.x, player.y, player.z);
     }
     this.carryItems(ctx.dt);
     for (const [id, left] of this.falling) {
@@ -364,6 +452,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     for (const [id, item] of this.state.items) {
       const body = this.itemBodies.get(id);
       if (body) this.physics.readPose(body, item);
+      if (body && item.y < this.level.killY) this.putBack(id, body);
       const dock = this.level.dock;
       item.delivered =
         !!dock &&
