@@ -42,7 +42,8 @@ export interface MoveInputLike {
  *
  * Players walk on the highest floor under their centre that they can step up onto, follow it down
  * stairs, and fall when it drops away. Boxes only stop them where they overlap them in height. On a
- * ladder, walking into it climbs, backing away climbs down, and nobody falls off it backwards.
+ * ladder, walking into it climbs, backing away climbs down, and nobody falls off it backwards; but
+ * with no hand free to climb with, a ladder is just a wall, and its hatch a hole.
  *
  * Player-vs-player pushing is NOT done here (it depends on other players); the server does it
  * after all inputs are applied, and the reconciler corrects us when it happens.
@@ -52,6 +53,8 @@ export function stepMover(
   input: MoveInputLike,
   dt: number,
   terrain: Terrain,
+  /** Whether they have a hand free to climb with: see `canClimb`. */
+  climbs = true,
 ): void {
   let dirX = input.moveX / MOVE_SCALE;
   let dirZ = input.moveZ / MOVE_SCALE;
@@ -64,7 +67,7 @@ export function stepMover(
   }
 
   // On a ladder when pushing into it, or anywhere off the ground in front of it.
-  const ladder = ladderAt(terrain, mover.x, mover.y, mover.z);
+  const ladder = climbs ? ladderAt(terrain, mover.x, mover.y, mover.z) : undefined;
   let climb: number | undefined;
   if (ladder) {
     const [towardX, towardZ] = OFFSET[ladder.toward];

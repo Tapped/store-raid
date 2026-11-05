@@ -1,7 +1,7 @@
 /**
  * Checks the playground with a bot: the dimmer fades the lights while held, the stairs go up to the
  * mezzanine and on to the platform, the railing stops it at the edge, stairs go down to the
- * basement, ladders go up and down, the plank crosses the pit, and stepping off it falls to a
+ * basement, ladders go up and down but not with full hands, the plank crosses the pit, and stepping off it falls to a
  * respawn. Exits non-zero if any of that doesn't happen. Needs your game
  * server running (SERVER_PORT, else 2567).
  *
@@ -153,6 +153,39 @@ await push(2, 6, 4);
 check(near(self().y, 3) && self().z > 4, `a ladder leads up to the mezzanine (${where()})`);
 await push(2, 0, 3);
 check(near(self().y, 0), `and back down (${where()})`);
+
+// The box from the west wall, in both arms, is too much to climb with.
+await walk([
+  [2, -2],
+  [-2, -2],
+  [-2, -10],
+  [-12.3, -10],
+  [-12.3, -6],
+]);
+for (let t = 0; t < 3; t++) {
+  input.data.moveX = 0;
+  input.data.moveZ = 0;
+  input.data.yaw = Math.round((-Math.PI / 2) * YAW_SCALE);
+  input.send();
+  await tick();
+}
+room.send("grab");
+await wait(500);
+const box = room.state.items.get(self().left);
+check(box?.kind === "box", "the bot picks up the box");
+await walk([
+  [-12.3, -10],
+  [-2, -10],
+  [-2, -2],
+  [2, -2],
+]);
+await push(2, 6, 3);
+check(near(self().y, 0) && self().z < 4, `with both hands full it can't climb (${where()})`);
+room.send("drop");
+await wait(300);
+await push(2, 6, 4);
+check(near(self().y, 3), `with them empty it can (${where()})`);
+await push(2, 0, 3);
 
 // Across the pit on the plank at x = 10, from z -4 to 8.
 const lowest = await walk([

@@ -39,6 +39,11 @@ export function grabbingHand(holding: Holding): Hand | undefined {
   return undefined;
 }
 
+/** Climbing a ladder takes a free hand: a phone in the other is fine, a TV or two phones aren't. */
+export function canClimb(holding: Holding): boolean {
+  return grabbingHand(holding) !== undefined;
+}
+
 /** The hand a drop empties: the last one to grab, so the left if it holds anything. */
 export function droppingHand(holding: Holding): Hand | undefined {
   if (holding.left) return "left";

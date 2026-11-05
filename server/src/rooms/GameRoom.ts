@@ -2,6 +2,7 @@ import type { HP_BodyId } from "@babylonjs/havok";
 import { type Client, type CloseCode, Room, type StepContext } from "@colyseus/core";
 import { resolveCircleCircle } from "../../../shared/collision";
 import {
+  canClimb,
   DIM_TIME,
   droppingHand,
   grabbingHand,
@@ -409,7 +410,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       const channel = this.inputs.get(sessionId);
       if (!channel) continue;
       for (const input of channel) {
-        stepMover(player, input, ctx.dt, this.level);
+        stepMover(player, input, ctx.dt, this.level, canClimb(player));
         player.yaw = input.yaw / YAW_SCALE;
       }
       if (player.y < this.level.killY) this.respawn(sessionId, player);

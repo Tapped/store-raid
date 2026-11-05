@@ -3,6 +3,7 @@ import { CloseCode } from "@colyseus/sdk";
 import { Predict } from "@colyseus/sdk/predict";
 import type { MoveInput } from "../../server/src/rooms/schema";
 import {
+  canClimb,
   EYE_HEIGHT,
   grabbingHand,
   HANDS,
@@ -112,7 +113,9 @@ export class LocalPlayer {
     predict.reconciler(self, {
       input,
       fields: ["x", "y", "z", "vx", "vy", "vz"],
-      step: (ctx, predicted, command) => stepMover(predicted, command, ctx.dt, this.world.level),
+      // With what our hands hold now: a replay after picking something up may differ for a tick.
+      step: (ctx, predicted, command) =>
+        stepMover(predicted, command, ctx.dt, this.world.level, canClimb(self)),
     });
 
     this.session = { room, predict, input, sessionId: room.sessionId, self };
