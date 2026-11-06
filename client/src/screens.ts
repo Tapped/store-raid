@@ -28,7 +28,7 @@ import { tunables } from "./tuning";
 const LOOP = "audio/sfx/tv-static.ogg";
 const DRONE = tunables(
   "Sound/TVs",
-  { volume: { value: 0.9, min: 0, max: 3, hint: "Each TV's static" } },
+  { volume: { value: 0.2, min: 0, max: 3, hint: "Each TV's static" } },
   ({ volume }) => {
     for (const sound of drones) sound.volume = volume;
   },

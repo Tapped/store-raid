@@ -18,7 +18,7 @@ const VOLUME = tunables(
   "Sound/Ambience",
   {
     bed: { value: 0.12, min: 0, max: 1, hint: "The room tone heard everywhere" },
-    vent: { value: 1, min: 0, max: 3, hint: "The vent above the entrance" },
+    vent: { value: 0.5, min: 0, max: 3, hint: "The vent above the entrance" },
   },
   ({ bed, vent }) => {
     if (!sounds) return;

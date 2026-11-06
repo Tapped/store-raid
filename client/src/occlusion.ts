@@ -29,7 +29,7 @@ const OPEN_CUTOFF = 20000;
 const WALLS = tunables(
   "Sound/Occlusion",
   {
-    wallGain: { value: 0.35, min: 0, max: 1, hint: "How loud a sound is through one wall" },
+    wallGain: { value: 0.28, min: 0, max: 1, hint: "How loud a sound is through one wall" },
     wallCutoff: { value: 700, min: 100, max: 8000, step: 10, hint: "Hz above which one wall cuts" },
     minCutoff: { value: 180, min: 20, max: 2000, step: 10, hint: "Hz below which walls never cut" },
     glide: {

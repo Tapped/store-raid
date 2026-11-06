@@ -77,7 +77,7 @@ const FALLOFF = tunables(
       hint: "Meters within which a placed sound is at full volume",
     },
     far: { value: 30, min: 2, max: 100, step: 1, hint: "Meters past which it gets no quieter" },
-    rolloff: { value: 1.2, min: 0, max: 5, hint: "How fast it fades with distance" },
+    rolloff: { value: 2.48, min: 0, max: 5, hint: "How fast it fades with distance" },
   },
   () => {
     for (const sound of following) setFalloff(sound);

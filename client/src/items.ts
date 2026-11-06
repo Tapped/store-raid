@@ -32,7 +32,7 @@ const beams = new Set<SpotLight>();
 const BEAM = tunables(
   "Look/Flashlight",
   {
-    angle: { value: 0.75, min: 0.2, max: 1.6, hint: "The cone's full angle, in radians" },
+    angle: { value: 1.07, min: 0.2, max: 1.6, hint: "The cone's full angle, in radians" },
     inner: { value: 0.25, min: 0, max: 1.6, hint: "The bright middle's full angle, in radians" },
     intensity: { value: 220, min: 0, max: 800, hint: "How bright it is a meter out" },
     range: { value: 45, min: 5, max: 100, hint: "Meters until it has faded out" },
@@ -59,7 +59,7 @@ const BEAM_COLOR = new Color3(1, 0.92, 0.78);
 const LENS_GLOW = new Color3(4, 3.6, 3);
 const CLICK = "audio/sfx/flashlight-click.ogg";
 const SOUND = tunables("Sound/Flashlight", {
-  click: { value: 0.5, min: 0, max: 1, hint: "The switch's click, at the flashlight" },
+  click: { value: 0.05, min: 0, max: 1, hint: "The switch's click, at the flashlight" },
 });
 let clicks: Promise<OneShots | undefined> | undefined;
 

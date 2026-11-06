@@ -63,8 +63,8 @@ const IK_ITERATIONS = 10;
 const TAPS = ["audio/sfx/tick-tap-1.wav", "audio/sfx/tick-tap-2.wav", "audio/sfx/tick-tap-3.wav"];
 /** How loud its taps are, at their loudest, and its hiss. */
 const TICK_SOUND = tunables("Sound/Tick", {
-  taps: { value: 0.22, min: 0, max: 2, hint: "Its feet tapping, at their loudest" },
-  hiss: { value: 0.9, min: 0, max: 3, hint: "Its hiss, now and then" },
+  taps: { value: 0.15, min: 0, max: 2, hint: "Its feet tapping, at their loudest" },
+  hiss: { value: 0.29, min: 0, max: 3, hint: "Its hiss, now and then" },
 });
 /**
  * Four feet land within a few hundredths of a second of each other, which played one tap each

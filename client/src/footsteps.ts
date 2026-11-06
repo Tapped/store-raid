@@ -12,8 +12,8 @@ const MOVING_SPEED = 0.5;
  * from a meter away, and our own; and how fast they come.
  */
 export const FOOTSTEPS = tunables("Sound/Footsteps", {
-  theirs: { value: 0.35, min: 0, max: 2, hint: "Someone else's, from a meter away" },
-  own: { value: 0.21, min: 0, max: 2, hint: "Our own" },
+  theirs: { value: 0.15, min: 0, max: 2, hint: "Someone else's, from a meter away" },
+  own: { value: 0.15, min: 0, max: 2, hint: "Our own" },
   stepRate: {
     value: 2.2,
     min: 0.5,
