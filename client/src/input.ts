@@ -22,6 +22,8 @@ export interface Device {
   dropPressed(): boolean;
   /** Whether the player runs: Shift held, or a click of the left stick until the stick is let go. */
   runHeld(): boolean;
+  /** Whether the jump button is down: it jumps whenever the player is on the ground. */
+  jumpHeld(): boolean;
   /** True once the reload combo has been held long enough. Keyboards have F5 instead. */
   reloadHeld(): boolean;
 }
@@ -102,6 +104,7 @@ const keyboard: Device = {
   grabHeld: () => held.has("KeyE"),
   dropPressed: () => anyPressed("KeyQ"),
   runHeld: () => keys("ShiftLeft", "ShiftRight"),
+  jumpHeld: () => held.has("Space"),
   reloadHeld: () => false,
 };
 
@@ -165,6 +168,7 @@ function controller(index: number): Device {
       if (Math.hypot(axes[0] ?? 0, axes[1] ?? 0) < DEADZONE) running = false;
       return running;
     },
+    jumpHeld: () => pad()?.buttons[BUTTON_SOUTH]?.pressed ?? false,
     reloadHeld() {
       const buttons = pad()?.buttons;
       if (!buttons?.[BUTTON_LEFT_STICK]?.pressed || !buttons[BUTTON_RIGHT_STICK]?.pressed) {
@@ -220,5 +224,6 @@ export const input: Device = {
   grabHeld: () => any((device) => device.grabHeld()),
   dropPressed: () => any((device) => device.dropPressed()),
   runHeld: () => any((device) => device.runHeld()),
+  jumpHeld: () => any((device) => device.jumpHeld()),
   reloadHeld: () => any((device) => device.reloadHeld()),
 };

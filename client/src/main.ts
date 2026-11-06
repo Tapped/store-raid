@@ -149,7 +149,7 @@ function showStatus() {
   status.textContent = player?.status ?? "";
   status.style.display = status.textContent ? "" : "none";
   hint.textContent = player
-    ? "Click to look with the mouse | Grab: E · RB | Drop: Q · LB | Leave: Esc · Back"
+    ? "Click to look with the mouse | Jump: Space · A | Grab: E · RB | Drop: Q · LB | Leave: Esc · Back"
     : "Join: Space or Enter · A or Start on a controller";
 }
 

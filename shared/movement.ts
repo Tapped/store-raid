@@ -2,6 +2,7 @@ import { resolveCircleBox } from "./collision";
 import {
   CLIMB_SPEED,
   GRAVITY,
+  JUMP_SPEED,
   MOVE_SCALE,
   PLAYER_HEIGHT,
   PLAYER_RADIUS,
@@ -40,6 +41,8 @@ export interface MoveInputLike {
   moveX: number;
   moveZ: number;
   run?: boolean;
+  /** Whether jump is held. Optional, so bots that never jump needn't send it. */
+  jump?: boolean;
 }
 
 /**
@@ -53,6 +56,10 @@ export interface MoveInputLike {
  * stairs, and fall when it drops away. Boxes only stop them where they overlap them in height. On a
  * ladder, walking into it climbs, backing away climbs down, and nobody falls off it backwards; but
  * with no hand free to climb with, a ladder is just a wall, and its hatch a hole.
+ *
+ * Holding jump jumps whenever they stand on the ground, not while they climb. In the air they step
+ * up over nothing, so a jump clears only what is lower than their feet, and floors overhead stop
+ * it, so nobody's head goes through the stairs or the storey above.
  *
  * Player-vs-player pushing is NOT done here (it depends on other players); the server does it
  * after all inputs are applied, and the reconciler corrects us when it happens.
@@ -115,8 +122,14 @@ export function stepMover(
     if (ladder.toward === "e") circle.x = Math.min(circle.x, ladder.maxX - gap);
     if (ladder.toward === "w") circle.x = Math.max(circle.x, ladder.minX + gap);
   }
+  // In the air nobody steps up: a railing stops a jump that doesn't clear it.
+  const airborne =
+    climb === undefined &&
+    (mover.vy > 0 ||
+      mover.y - groundUnder(terrain, mover.x, mover.z, mover.y + STEP_UP) > STEP_DOWN);
+  const lift = airborne ? 0 : STEP_UP;
   for (const box of terrain.boxes) {
-    if (!blocks(box, mover.y)) continue;
+    if (!blocks(box, mover.y, lift)) continue;
     const { dx, dz } = resolveCircleBox(circle, box);
     // Kill velocity heading into the wall so the reconciler replays the same stop.
     if (dx !== 0 && Math.sign(dx) !== Math.sign(vx)) vx = 0;
@@ -129,15 +142,27 @@ export function stepMover(
   mover.vz = vz;
 
   const ground = groundUnder(terrain, circle.x, circle.z, mover.y + STEP_UP);
+  const grounded = mover.vy <= 0 && mover.y - ground <= STEP_DOWN;
   if (ladder && climb !== undefined) {
     mover.vy = 0;
     mover.y = Math.max(ground, Math.min(ladder.top, mover.y + climb * CLIMB_SPEED * dt));
-  } else if (mover.vy <= 0 && mover.y - ground <= STEP_DOWN) {
+  } else if (grounded && !input.jump) {
     mover.y = ground;
     mover.vy = 0;
   } else {
+    if (grounded) {
+      mover.y = ground;
+      mover.vy = JUMP_SPEED;
+    }
+    const y = mover.y;
     mover.vy -= GRAVITY * dt;
     mover.y += mover.vy * dt;
+    // Heads bump the floor above: only one that was over it, not one it already stands under.
+    const ceiling = ceilingOver(terrain, circle.x, circle.z, y + PLAYER_HEIGHT);
+    if (mover.vy > 0 && mover.y + PLAYER_HEIGHT > ceiling) {
+      mover.y = Math.max(y, ceiling - PLAYER_HEIGHT);
+      mover.vy = 0;
+    }
     if (mover.y <= ground) {
       mover.y = ground;
       mover.vy = 0;
@@ -145,9 +170,9 @@ export function stepMover(
   }
 }
 
-/** Whether a box is in the way of a player standing at this height, above what they step up. */
-function blocks(box: LevelBox, y: number): boolean {
-  return box.y + box.height > y + STEP_UP && box.y < y + PLAYER_HEIGHT;
+/** Whether a box is in the way of a player with their feet at this height, above what they step up. */
+function blocks(box: LevelBox, y: number, lift: number): boolean {
+  return box.y + box.height > y + lift && box.y < y + PLAYER_HEIGHT;
 }
 
 /** The ladder a player standing here can climb, if any. */
@@ -172,4 +197,15 @@ export function groundUnder(terrain: Terrain, x: number, z: number, below: numbe
     if (height <= below && height > ground) ground = height;
   }
   return ground;
+}
+
+/** The bottom of the lowest floor over a point that is above `above`; Infinity under open sky. */
+function ceilingOver(terrain: Terrain, x: number, z: number, above: number): number {
+  let ceiling = Number.POSITIVE_INFINITY;
+  for (const floor of terrain.floors) {
+    if (x < floor.minX || x > floor.maxX || z < floor.minZ || z > floor.maxZ) continue;
+    const height = floorHeight(floor, x, z) - floor.thickness;
+    if (height >= above && height < ceiling) ceiling = height;
+  }
+  return ceiling;
 }

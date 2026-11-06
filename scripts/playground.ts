@@ -154,13 +154,14 @@ check(near(self().y, 3) && self().z > 4, `a ladder leads up to the mezzanine (${
 await push(2, 0, 3);
 check(near(self().y, 0), `and back down (${where()})`);
 
-// The box from the west wall, in both arms, is too much to climb with.
+// The box from the west wall, in both arms, is too much to climb with. Stopping well inside REACH of
+// it: right at the edge, a grab works or not by rounding.
 await walk([
   [2, -2],
   [-2, -2],
   [-2, -10],
-  [-12.3, -10],
-  [-12.3, -6],
+  [-12.5, -10],
+  [-12.5, -6],
 ]);
 for (let t = 0; t < 3; t++) {
   input.data.moveX = 0;
@@ -174,7 +175,7 @@ await wait(500);
 const box = room.state.items.get(self().left);
 check(box?.kind === "box", "the bot picks up the box");
 await walk([
-  [-12.3, -10],
+  [-12.5, -10],
   [-2, -10],
   [-2, -2],
   [2, -2],

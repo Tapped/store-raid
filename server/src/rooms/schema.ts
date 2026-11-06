@@ -12,6 +12,8 @@ export const MoveInput = schema({
   yaw: t.int16(),
   /** Whether the run button is held: full input then goes RUN_SPEED instead of PLAYER_SPEED. */
   run: t.boolean(),
+  /** Whether jump is held: it jumps whenever the player stands on the ground. */
+  jump: t.boolean(),
 });
 export type MoveInput = SchemaType<typeof MoveInput>;
 

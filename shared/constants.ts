@@ -72,6 +72,8 @@ export const CLIMB_SPEED = 2.5;
 
 /** How fast players fall, in meters per second per second. */
 export const GRAVITY = 20;
+/** How fast a jump leaves the ground, in meters per second: about 0.9 m up, under GRAVITY. */
+export const JUMP_SPEED = 6;
 
 /** Seconds a dimmer takes to fade the lights from fully on to off, or back. */
 export const DIM_TIME = 3;
