@@ -52,10 +52,28 @@ export const Item = schema({
 });
 export type Item = SchemaType<typeof Item>;
 
+/** The room's mechanics, from shared/mechanics.ts: every player in it moves by these. */
+export const Mechanics = schema({
+  walkSpeed: t.number(),
+  runSpeed: t.number(),
+  runTime: t.number(),
+  restTime: t.number(),
+  runAgain: t.number(),
+  uphill: t.number(),
+  stepUp: t.number(),
+  stepDown: t.number(),
+  climbSpeed: t.number(),
+  gravity: t.number(),
+  jumpSpeed: t.number(),
+});
+export type Mechanics = SchemaType<typeof Mechanics>;
+
 export const GameState = schema({
   players: t.map(Player),
   items: t.map(Item),
   /** How bright the lights are, from 0 (off) to 1, as the dimmer leaves them. */
   light: t.number(),
+  /** The rules players move by. Tuned live in dev, through the `tune` message. */
+  mechanics: Mechanics,
 });
 export type GameState = SchemaType<typeof GameState>;

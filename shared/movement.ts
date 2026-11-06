@@ -1,21 +1,7 @@
 import { resolveCircleBox } from "./collision";
-import {
-  CLIMB_SPEED,
-  GRAVITY,
-  JUMP_SPEED,
-  MOVE_SCALE,
-  PLAYER_HEIGHT,
-  PLAYER_RADIUS,
-  PLAYER_SPEED,
-  REST_TIME,
-  RUN_AGAIN,
-  RUN_SPEED,
-  RUN_TIME,
-  STEP_DOWN,
-  STEP_UP,
-  UPHILL,
-} from "./constants";
+import { MOVE_SCALE, PLAYER_HEIGHT, PLAYER_RADIUS } from "./constants";
 import { type Floor, floorHeight, type Ladder, type Level, type LevelBox } from "./level";
+import type { Mechanics } from "./mechanics";
 import { LADDER_WALL, OFFSET } from "./tiles";
 
 /**
@@ -50,8 +36,9 @@ export interface MoveInputLike {
  * The single movement step, run identically by the server (once per received input) and by
  * the client reconciler (predict, then replay on correction).
  *
- * Pure function of (state, input, dt) and the level's static `terrain`: no clocks, no randomness, no
- * reads outside its arguments. Break that and client prediction drifts from the server.
+ * Pure function of (state, input, dt), the level's static `terrain` and the room's `mechanics`: no
+ * clocks, no randomness, no reads outside its arguments. Break that and client prediction drifts
+ * from the server.
  *
  * Players walk on the highest floor under their centre that they can step up onto, follow it down
  * stairs, and fall when it drops away. Boxes only stop them where they overlap them in height. On a
@@ -70,6 +57,8 @@ export function stepMover(
   input: MoveInputLike,
   dt: number,
   terrain: Terrain,
+  /** The rules they move by: the room's, synced from the server. */
+  m: Mechanics,
   /** Whether they have a hand free to climb with: see `canClimb`. */
   climbs = true,
 ): void {
@@ -84,13 +73,13 @@ export function stepMover(
   }
 
   // On a ladder when pushing into it, or anywhere off the ground in front of it.
-  const ladder = climbs ? ladderAt(terrain, mover.x, mover.y, mover.z) : undefined;
+  const ladder = climbs ? ladderAt(terrain, mover.x, mover.y, mover.z, m.stepDown) : undefined;
   let climb: number | undefined;
   if (ladder) {
     const [towardX, towardZ] = OFFSET[ladder.toward];
     const into = dirX * towardX + dirZ * towardZ;
-    const ground = groundUnder(terrain, mover.x, mover.z, mover.y + STEP_UP);
-    if (into > 0.2 || mover.y > ground + STEP_DOWN) {
+    const ground = groundUnder(terrain, mover.x, mover.z, mover.y + m.stepUp);
+    if (into > 0.2 || mover.y > ground + m.stepDown) {
       climb = into;
       // Backing away climbs down instead of stepping off.
       if (into < 0) {
@@ -101,25 +90,26 @@ export function stepMover(
   }
 
   // Stairs slow them down, and running up them is harder work. A ladder has its own pace.
-  const pace = climb === undefined ? paceAt(terrain, mover.x, mover.y, mover.z, dirX, dirZ) : FLAT;
+  const pace =
+    climb === undefined ? paceAt(terrain, mover.x, mover.y, mover.z, dirX, dirZ, m) : FLAT;
 
   // Running takes stamina, more going up, and only happens on the ground, moving, with some left.
   const running = input.run === true && climb === undefined && length > 0 && !mover.winded;
   if (running) {
-    mover.stamina = Math.max(0, mover.stamina - (dt * pace.effort) / RUN_TIME);
+    mover.stamina = Math.max(0, mover.stamina - (dt * pace.effort) / m.runTime);
     if (mover.stamina === 0) mover.winded = true;
   } else {
-    mover.stamina = Math.min(1, mover.stamina + dt / REST_TIME);
-    if (mover.stamina >= RUN_AGAIN) mover.winded = false;
+    mover.stamina = Math.min(1, mover.stamina + dt / m.restTime);
+    if (mover.stamina >= m.runAgain) mover.winded = false;
   }
 
-  const speed = (running ? RUN_SPEED : PLAYER_SPEED) * pace.speed;
+  const speed = (running ? m.runSpeed : m.walkSpeed) * pace.speed;
   let vx = dirX * speed;
   let vz = dirZ * speed;
 
   const circle = { x: mover.x + vx * dt, z: mover.z + vz * dt, radius: PLAYER_RADIUS };
   // Below the top, a climber stays against the ladder, even having come onto it from above.
-  if (ladder && climb !== undefined && mover.y < ladder.top - STEP_UP) {
+  if (ladder && climb !== undefined && mover.y < ladder.top - m.stepUp) {
     const gap = LADDER_WALL + PLAYER_RADIUS;
     if (ladder.toward === "n") circle.z = Math.min(circle.z, ladder.maxZ - gap);
     if (ladder.toward === "s") circle.z = Math.max(circle.z, ladder.minZ + gap);
@@ -130,8 +120,8 @@ export function stepMover(
   const airborne =
     climb === undefined &&
     (mover.vy > 0 ||
-      mover.y - groundUnder(terrain, mover.x, mover.z, mover.y + STEP_UP) > STEP_DOWN);
-  const lift = airborne ? 0 : STEP_UP;
+      mover.y - groundUnder(terrain, mover.x, mover.z, mover.y + m.stepUp) > m.stepDown);
+  const lift = airborne ? 0 : m.stepUp;
   for (const box of terrain.boxes) {
     if (!blocks(box, mover.y, lift)) continue;
     const { dx, dz } = resolveCircleBox(circle, box);
@@ -145,21 +135,21 @@ export function stepMover(
   mover.vx = vx;
   mover.vz = vz;
 
-  const ground = groundUnder(terrain, circle.x, circle.z, mover.y + STEP_UP);
-  const grounded = mover.vy <= 0 && mover.y - ground <= STEP_DOWN;
+  const ground = groundUnder(terrain, circle.x, circle.z, mover.y + m.stepUp);
+  const grounded = mover.vy <= 0 && mover.y - ground <= m.stepDown;
   if (ladder && climb !== undefined) {
     mover.vy = 0;
-    mover.y = Math.max(ground, Math.min(ladder.top, mover.y + climb * CLIMB_SPEED * dt));
+    mover.y = Math.max(ground, Math.min(ladder.top, mover.y + climb * m.climbSpeed * dt));
   } else if (grounded && !input.jump) {
     mover.y = ground;
     mover.vy = 0;
   } else {
     if (grounded) {
       mover.y = ground;
-      mover.vy = JUMP_SPEED;
+      mover.vy = m.jumpSpeed;
     }
     const y = mover.y;
-    mover.vy -= GRAVITY * dt;
+    mover.vy -= m.gravity * dt;
     mover.y += mover.vy * dt;
     // Heads bump the floor above: only one that was over it, not one it already stands under.
     const ceiling = ceilingOver(terrain, circle.x, circle.z, y + PLAYER_HEIGHT);
@@ -180,14 +170,20 @@ function blocks(box: LevelBox, y: number, lift: number): boolean {
 }
 
 /** The ladder a player standing here can climb, if any. */
-function ladderAt(terrain: Terrain, x: number, y: number, z: number): Ladder | undefined {
+function ladderAt(
+  terrain: Terrain,
+  x: number,
+  y: number,
+  z: number,
+  stepDown: number,
+): Ladder | undefined {
   return terrain.ladders.find(
     (ladder) =>
       x >= ladder.minX &&
       x <= ladder.maxX &&
       z >= ladder.minZ &&
       z <= ladder.maxZ &&
-      y >= ladder.y - STEP_DOWN &&
+      y >= ladder.y - stepDown &&
       y <= ladder.top,
   );
 }
@@ -205,7 +201,7 @@ const FLAT: Pace = { speed: 1, effort: 1 };
 /**
  * The pace of anything walking the level from here in this direction: players, and anything that
  * chases them, so all of them are slowed the same. On stairs their speed is along the slope, not
- * across the ground, and going up costs more, by UPHILL for every meter it rises per meter across:
+ * across the ground, and going up costs more, by `uphill` for every meter it rises per meter across:
  * they go slower, and running there tires them faster. Flat ground, the air, and across the stairs
  * leave them as they are.
  *
@@ -218,15 +214,16 @@ export function paceAt(
   z: number,
   dirX: number,
   dirZ: number,
+  m: Pick<Mechanics, "uphill" | "stepUp" | "stepDown">,
 ): Pace {
   const length = Math.hypot(dirX, dirZ);
-  const floor = floorUnder(terrain, x, z, y + STEP_UP);
-  if (length === 0 || !floor?.rise || y - floorHeight(floor, x, z) > STEP_DOWN) return FLAT;
+  const floor = floorUnder(terrain, x, z, y + m.stepUp);
+  if (length === 0 || !floor?.rise || y - floorHeight(floor, x, z) > m.stepDown) return FLAT;
   const [towardX, towardZ] = OFFSET[floor.rise.toward];
   const across = towardX !== 0 ? floor.maxX - floor.minX : floor.maxZ - floor.minZ;
   // Meters up per meter across in this direction: below 0 going down.
   const grade = ((floor.rise.height / across) * (dirX * towardX + dirZ * towardZ)) / length;
-  const effort = 1 + UPHILL * Math.max(0, grade);
+  const effort = 1 + m.uphill * Math.max(0, grade);
   return { speed: 1 / Math.hypot(1, grade) / effort, effort };
 }
 

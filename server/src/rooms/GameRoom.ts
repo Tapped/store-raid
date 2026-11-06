@@ -19,10 +19,11 @@ import {
   YAW_SCALE,
 } from "../../../shared/constants";
 import { type Level, levelNamed } from "../../../shared/level";
+import { clampMechanics, MECHANICS, type Mechanics as Rules } from "../../../shared/mechanics";
 import { stepMover } from "../../../shared/movement";
 import { load, save } from "../persist";
 import { PhysicsWorld } from "../physics";
-import { GameState, Item, MoveInput, Player } from "./schema";
+import { GameState, Item, Mechanics, MoveInput, Player } from "./schema";
 
 /**
  * How far from the player's centre to an item's nearest point they can reach to grab it, or keep
@@ -50,6 +51,8 @@ const DIMMER_REACH = 1.6;
 const DIMMER_HAND = 1.3;
 /** Seconds a dropped item falls through players before it can be bumped into again. */
 const FALL_TIME = 1;
+/** Whether players may tune the room's mechanics: everywhere but a production server. */
+const TUNABLE = process.env.NODE_ENV !== "production";
 
 export interface JoinOptions {
   name?: string;
@@ -59,7 +62,7 @@ export interface JoinOptions {
 
 export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   maxClients = MAX_PLAYERS;
-  state = new GameState();
+  state = new GameState({ light: 1, mechanics: new Mechanics({ ...MECHANICS }) });
 
   /** Per-client input buffer. `sanitize` clamps every field as it's decoded — never trust the wire. */
   inputs = this.defineInput(MoveInput, {
@@ -117,12 +120,23 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       const hand = player && droppingHand(player);
       if (hand) this.drop(client.sessionId, hand);
     },
+    /**
+     * Change the room's mechanics, for everyone in it (dev only): any of them, each held to its
+     * range in MECHANICS_RANGE. Clients predict with the synced values, so nobody rubber-bands.
+     */
+    tune: (client: Client, asked: Partial<Rules>) => {
+      if (!TUNABLE) return;
+      const changed = clampMechanics(asked);
+      if (Object.keys(changed).length === 0) return;
+      Object.assign(this.state.mechanics, changed);
+      const player = this.state.players.get(client.sessionId);
+      console.log(`${player?.name ?? client.sessionId} tuned`, changed);
+    },
   };
 
   onCreate(options: JoinOptions) {
     this.level = levelNamed(options?.level);
     this.physics = new PhysicsWorld(this.level);
-    this.state.light = 1;
     for (const [i, { kind, x, y, z }] of this.level.items.entries()) {
       const id = `item${i}`;
       this.state.items.set(
@@ -414,7 +428,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       const channel = this.inputs.get(sessionId);
       if (!channel) continue;
       for (const input of channel) {
-        stepMover(player, input, ctx.dt, this.level, canClimb(player));
+        stepMover(player, input, ctx.dt, this.level, this.state.mechanics, canClimb(player));
         player.yaw = input.yaw / YAW_SCALE;
       }
       if (player.y < this.level.killY) this.respawn(sessionId, player);

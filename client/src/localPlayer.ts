@@ -122,7 +122,14 @@ export class LocalPlayer {
       fields: ["x", "y", "z", "vx", "vy", "vz", "stamina", "winded"],
       // With what our hands hold now: a replay after picking something up may differ for a tick.
       step: (ctx, predicted, command) =>
-        stepMover(predicted, command, ctx.dt, this.world.level, canClimb(self)),
+        stepMover(
+          predicted,
+          command,
+          ctx.dt,
+          this.world.level,
+          room.state.mechanics,
+          canClimb(self),
+        ),
     });
 
     this.session = { room, predict, input, sessionId: room.sessionId, self };
