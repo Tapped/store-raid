@@ -1,6 +1,7 @@
 import type { ItemKind } from "../../shared/constants";
 import { levelNamed } from "../../shared/level";
 import { addAmbience } from "./ambience";
+import { footstepVolume } from "./footsteps";
 import { createEngine } from "./graphics";
 import { POSES } from "./hands";
 import { addHarbour } from "./harbour";
@@ -168,7 +169,15 @@ addEventListener("pageshow", (event) => {
 // Debug handle for the browser console and automated smoke tests (dev builds only).
 if (import.meta.env.DEV)
   Object.assign(window, {
-    __game: { player: () => player, views, items, world, engine, handPoses: POSES },
+    __game: {
+      player: () => player,
+      views,
+      items,
+      world,
+      engine,
+      handPoses: POSES,
+      footsteps: footstepVolume,
+    },
   });
 
 engine.runRenderLoop(() => {
