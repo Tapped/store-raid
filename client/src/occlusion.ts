@@ -1,11 +1,12 @@
 import type { Scene, StaticSound, Vector3 } from "@babylonjs/core";
 import type { Level } from "../../shared/level";
+import { tunables } from "./tuning";
 
 /**
  * Sounds heard through walls: quieter and muffled. Each frame a straight line is drawn from the
  * listener's ears to every occluded sound, and every wall, floor and shelf it passes through adds
- * to how blocked the sound is. One wall turns a sound down to WALL_GAIN and cuts everything above
- * about WALL_CUTOFF Hz; two walls do that twice. The change glides over GLIDE seconds, so stepping
+ * to how blocked the sound is. One wall turns a sound down to `wallGain` and cuts everything above
+ * about `wallCutoff` Hz; two walls do that twice. The change glides over `glide` seconds, so stepping
  * past a doorframe doesn't jump, except when a one-shot starts, which takes the right value at once.
  *
  * Babylon's sounds have no filter of their own, so a low-pass filter and a gain go in between the
@@ -24,12 +25,27 @@ const BLOCKS: Record<string, number> = {
   pit: 0,
   stairs: 0,
 };
-const WALL_GAIN = 0.35;
 const OPEN_CUTOFF = 20000;
-const WALL_CUTOFF = 700;
-const MIN_CUTOFF = 180;
-/** Seconds the gain and filter take to get most of the way to a new value (a time constant). */
-const GLIDE = 0.08;
+const WALLS = tunables(
+  "Sound/Occlusion",
+  {
+    wallGain: { value: 0.35, min: 0, max: 1, hint: "How loud a sound is through one wall" },
+    wallCutoff: { value: 700, min: 100, max: 8000, step: 10, hint: "Hz above which one wall cuts" },
+    minCutoff: { value: 180, min: 20, max: 2000, step: 10, hint: "Hz below which walls never cut" },
+    glide: {
+      value: 0.08,
+      min: 0.005,
+      max: 1,
+      step: 0.005,
+      hint: "Seconds the gain and filter take to get most of the way to a new value",
+    },
+  },
+  // Every sound again, at once.
+  () => {
+    const ear = listening?.activeCamera?.globalPosition;
+    if (ear) for (const entry of occluded.values()) apply(entry, ear, true);
+  },
+);
 /** A line has to go this many meters through something for it to count, so touching doesn't. */
 const THROUGH = 0.05;
 
@@ -130,8 +146,11 @@ function apply(entry: Occluded, ear: Vector3, snap: boolean) {
   const blocked = blockedBetween(ear, entry.sound.spatial.position);
   if (!snap && Math.abs(blocked - entry.blocked) < 0.01) return;
   entry.blocked = blocked;
-  const gain = WALL_GAIN ** blocked;
-  const cutoff = Math.max(MIN_CUTOFF, OPEN_CUTOFF * (WALL_CUTOFF / OPEN_CUTOFF) ** blocked);
+  const gain = WALLS.wallGain ** blocked;
+  const cutoff = Math.max(
+    WALLS.minCutoff,
+    OPEN_CUTOFF * (WALLS.wallCutoff / OPEN_CUTOFF) ** blocked,
+  );
   const now = entry.context.currentTime;
   for (const [param, value] of [
     [entry.gain.gain, gain],
@@ -141,7 +160,7 @@ function apply(entry: Occluded, ear: Vector3, snap: boolean) {
       param.cancelScheduledValues(now);
       param.setValueAtTime(value, now);
     } else {
-      param.setTargetAtTime(value, now, GLIDE);
+      param.setTargetAtTime(value, now, WALLS.glide);
     }
   }
 }

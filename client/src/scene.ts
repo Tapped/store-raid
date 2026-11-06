@@ -25,6 +25,7 @@ import {
 import { addSky, HORIZON } from "./sky";
 import { storeSurface } from "./store";
 import { addTerrain, SURFACE_TILE as FLOOR_TILE, worldBox } from "./terrain";
+import { tunables } from "./tuning";
 import { addSurfaceVariation } from "./variation";
 
 const WALL_TILE = 3;
@@ -42,11 +43,22 @@ export interface World {
   plainShelves: Mesh[];
 }
 
+const VIEW = tunables(
+  "Rendering/Camera",
+  { fov: { value: 1.1, min: 0.4, max: 2, hint: "Vertical field of view, in radians" } },
+  ({ fov }) => {
+    for (const camera of playerCameras) camera.fov = fov;
+  },
+);
+const playerCameras = new Set<FreeCamera>();
+
 /** First-person camera, in the player's eyes. `LocalPlayer` moves and turns it; it reads no input itself. */
 export function createPlayerCamera(scene: Scene, name: string): FreeCamera {
   const camera = new FreeCamera(name, Vector3.Zero(), scene);
   camera.inputs.clear();
-  camera.fov = 1.1; // vertical, in radians
+  camera.fov = VIEW.fov;
+  playerCameras.add(camera);
+  camera.onDisposeObservable.addOnce(() => playerCameras.delete(camera));
   camera.minZ = 0.05; // close enough not to cut into what's held, or a wall right in front
   return camera;
 }
@@ -57,7 +69,6 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
   scene.clearColor = HORIZON.toColor4().toLinearSpace();
   addSky(scene);
   scene.fogMode = Scene.FOGMODE_EXP2;
-  scene.fogDensity = 0.003;
   scene.fogColor = HORIZON;
 
   const lobbyCamera = level.roof
@@ -70,7 +81,6 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
     assetUrl("textures/environment.env"),
     scene,
   );
-  scene.environmentIntensity = 0.28;
   // That image is a sunny day, so cool what every surface takes from it. A material's constructor
   // announces it before setting its own fields, hence the wait for it to finish.
   scene.onNewMaterialAddedObservable.add((material) => {
@@ -81,16 +91,45 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
 
   // Overcast dusk: most light comes from the whole sky, and the sun only leaves faint shadows.
   const hemi = new HemisphericLight("hemi", new Vector3(0, 1, 0), scene);
-  hemi.intensity = 0.18;
   hemi.diffuse = new Color3(0.72, 0.76, 0.86);
   hemi.groundColor = new Color3(0.12, 0.12, 0.15);
   const sun = new DirectionalLight("sun", new Vector3(-0.5, -1, 0.3), scene);
   sun.position = new Vector3(20, 40, -20);
-  sun.intensity = 0.8;
   sun.diffuse = new Color3(0.78, 0.84, 1);
   const shadows = new ShadowGenerator(SHADOW_MAP_SIZE, sun);
   configureShadows(shadows);
-  shadows.setDarkness(0.35);
+  // Overcast dusk outdoors: how much light comes from the sky, the sun and the reflections. Halls
+  // light themselves: see addPlayground.
+  if (!level.roof) {
+    const outdoors = tunables(
+      "Rendering/Outdoor light",
+      {
+        hemi: { value: 0.18, min: 0, max: 2, hint: "Light from the whole sky" },
+        sun: { value: 0.8, min: 0, max: 3, hint: "The one light that casts shadows" },
+        environment: {
+          value: 0.28,
+          min: 0,
+          max: 2,
+          hint: "What surfaces reflect, and soft ambient",
+        },
+        fog: { value: 0.003, min: 0, max: 0.05, step: 0.0001 },
+      },
+      (values) => light(values),
+    );
+    const light = (values: typeof outdoors) => {
+      hemi.intensity = values.hemi;
+      sun.intensity = values.sun;
+      scene.environmentIntensity = values.environment;
+      scene.fogDensity = values.fog;
+    };
+    light(outdoors);
+  }
+  const shadowSettings = tunables(
+    "Rendering/Shadows",
+    { darkness: { value: 0.35, min: 0, max: 1, hint: "0 is black shadows, 1 none" } },
+    ({ darkness }) => shadows.setDarkness(darkness),
+  );
+  shadows.setDarkness(shadowSettings.darkness);
 
   const floorMat = storeSurface("floor", scene);
   // Dark and damp, like wet asphalt: the sky glances off it.

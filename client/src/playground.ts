@@ -11,6 +11,7 @@ import { loadContainer } from "./assets";
 import { surfaceMaterial } from "./graphics";
 import type { World } from "./scene";
 import { TickView } from "./tick";
+import { tunables } from "./tuning";
 
 /**
  * Things to look at, standing along the east wall: models made for the game but not in it yet.
@@ -35,10 +36,6 @@ const CONCEPTS: {
   },
 ];
 
-/** How bright the hall is with the dimmer fully up. */
-const HEMI = 0.75;
-const ENVIRONMENT = 0.5;
-const SUN = 0.8;
 const STRIP_GLOW = new Color3(1, 0.93, 0.8);
 
 /** What the playground lets the rest of the page change. */
@@ -65,16 +62,24 @@ export function addPlayground(world: World): Playground {
   const minZ = Math.min(...walls.map((b) => b.minZ));
   const maxZ = Math.max(...walls.map((b) => b.maxZ));
 
-  // Indoors: bright, even light from the roof lights, and no fog to speak of.
+  // Indoors: bright, even light from the roof lights, and no fog to speak of. How bright with the
+  // dimmer fully up.
+  const hall = tunables(
+    "Rendering/Hall light",
+    {
+      hemi: { value: 0.75, min: 0, max: 3, hint: "Light from the whole roof" },
+      environment: { value: 0.5, min: 0, max: 2, hint: "What surfaces reflect, and soft ambient" },
+      sun: { value: 0.8, min: 0, max: 3, hint: "The one light that casts shadows" },
+      fog: { value: 0.0005, min: 0, max: 0.05, step: 0.0001 },
+    },
+    () => light(shown),
+  );
   const hemi = scene.getLightByName("hemi") as HemisphericLight | null;
   if (hemi) {
-    hemi.intensity = HEMI;
     hemi.diffuse = new Color3(1, 0.95, 0.85);
     // Light off the floor, so the roof and beams aren't black.
     hemi.groundColor = new Color3(0.55, 0.52, 0.48);
   }
-  scene.fogDensity = 0.0005;
-  scene.environmentIntensity = ENVIRONMENT;
   const sun = scene.getLightByName("sun");
 
   // The roof is not a shadow caster: the sun stands in for the roof lights.
@@ -139,17 +144,21 @@ export function addPlayground(world: World): Playground {
 
   const showDimmer = addDimmer(world);
   let shown = 1;
+  const light = (brightness: number) => {
+    shown = brightness;
+    // Squared, so the dim end, where the testing happens, gets most of the dimmer's travel.
+    const scale = brightness * brightness;
+    if (hemi) hemi.intensity = hall.hemi * scale;
+    if (sun) sun.intensity = hall.sun * scale;
+    scene.environmentIntensity = hall.environment * scale;
+    scene.fogDensity = hall.fog;
+    glow.emissiveColor = STRIP_GLOW.scale(scale);
+    showDimmer(brightness);
+  };
+  light(1);
   return {
     setLight(brightness) {
-      if (brightness === shown) return;
-      shown = brightness;
-      // Squared, so the dim end, where the testing happens, gets most of the dimmer's travel.
-      const light = brightness * brightness;
-      if (hemi) hemi.intensity = HEMI * light;
-      if (sun) sun.intensity = SUN * light;
-      scene.environmentIntensity = ENVIRONMENT * light;
-      glow.emissiveColor = STRIP_GLOW.scale(light);
-      showDimmer(brightness);
+      if (brightness !== shown) light(brightness);
     },
   };
 }

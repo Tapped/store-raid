@@ -17,6 +17,7 @@ import {
   TICK_RATE,
   YAW_SCALE,
 } from "../../shared/constants";
+import { MECHANICS, MECHANICS_KEYS, MECHANICS_RANGE, type Mechanics } from "../../shared/mechanics";
 import { stepMover } from "../../shared/movement";
 import { Gait, playOwnFootstep } from "./footsteps";
 import { addCameraEffects } from "./graphics";
@@ -26,13 +27,48 @@ import type { ItemView } from "./items";
 import { type GameConnection, joinGame, waitForServer } from "./net";
 import { createPlayerCamera, type World } from "./scene";
 import { TiredEffect } from "./tired";
+import { addSetting, tunables } from "./tuning";
 
-const LOOK_SPEED = 2.5; // radians per second at full stick
-const DRAG_SPEED = 0.005; // radians per pixel
-/** How far up or down the player can look, in radians from level. */
-const MAX_PITCH = 1.45;
-/** Meters the camera rises and sinks with each breath when winded. */
-const BREATH_HEAVE = 0.015;
+const LOOK = tunables("Controls/Looking", {
+  lookSpeed: { value: 2.5, min: 0.5, max: 8, hint: "Radians per second at full stick" },
+  dragSpeed: {
+    value: 0.005,
+    min: 0.0005,
+    max: 0.02,
+    step: 0.0001,
+    hint: "Mouse: radians per pixel",
+  },
+  maxPitch: {
+    value: 1.45,
+    min: 0.5,
+    max: 1.57,
+    hint: "How far up or down the player can look, in radians from level",
+  },
+});
+const HEAVE = tunables("Feel/Tired", {
+  breathHeave: {
+    value: 0.015,
+    min: 0,
+    max: 0.1,
+    step: 0.001,
+    hint: "Meters the camera rises and sinks with each breath when winded",
+  },
+});
+
+/** What each mechanic does, for the tuning panel. */
+const MECHANICS_HINTS: Record<keyof Mechanics, string> = {
+  walkSpeed: "Meters per second at full input",
+  runSpeed: "Meters per second at full input while running",
+  runTime: "Seconds of running from full stamina to none",
+  restTime: "Seconds of not running from no stamina to full",
+  runAgain: "Stamina a winded player needs back before running again",
+  uphill: "How much harder stairs are, per meter of rise per meter across",
+  stepUp: "Meters a player steps up without noticing",
+  stepDown: "Meters down a player follows the floor before falling",
+  climbSpeed: "Meters per second up or down a ladder",
+  gravity: "Meters per second per second",
+  jumpSpeed: "Meters per second up as a jump leaves the ground",
+};
 /** Two patches behind, with a little spring: a carried item stays ahead of its carrier. */
 const ITEM_SMOOTHING = { mode: "lerp", delay: 67, smoothMs: 40 } as const;
 /**
@@ -74,6 +110,8 @@ export class LocalPlayer {
   private readonly gait = new Gait();
   /** What we carry alone in both arms, drawn in them: how far the server's is held back. */
   private carrying: { id: string; held: Vector3; turned: boolean } | undefined;
+  /** The mechanics this player tuned, sent again on every join: a restarted server forgets them. */
+  private readonly tuned: Partial<Mechanics> = {};
 
   constructor(
     private readonly world: World,
@@ -84,7 +122,29 @@ export class LocalPlayer {
     this.removeCameraEffects = addCameraEffects(world.scene, this.camera);
     this.hands = new FirstPersonHands(world, this.camera);
     this.tired = new TiredEffect(world.scene.imageProcessingConfiguration);
+    this.addMechanicsSettings();
     void this.connect();
+  }
+
+  /**
+   * The room's mechanics in the tuning panel. They're the room's, so changing one changes it for
+   * everyone in the room, and what the panel shows is what the server says.
+   */
+  private addMechanicsSettings(): void {
+    for (const key of MECHANICS_KEYS) {
+      addSetting({
+        group: "Mechanics/The room's, for everyone in it",
+        key,
+        hint: MECHANICS_HINTS[key],
+        initial: MECHANICS[key],
+        ...MECHANICS_RANGE[key],
+        get: () => this.session?.room.state.mechanics[key] ?? this.tuned[key] ?? MECHANICS[key],
+        set: (value) => {
+          this.tuned[key] = value as number;
+          this.session?.room.send("tune", { [key]: value });
+        },
+      });
+    }
   }
 
   /** Joins, and keeps trying until it works: the server restarts on every save in dev. */
@@ -154,6 +214,7 @@ export class LocalPlayer {
     });
 
     this.session = { room, predict, input, sessionId: room.sessionId, self };
+    if (Object.keys(this.tuned).length) room.send("tune", this.tuned);
     this.status = "";
   }
 
@@ -262,15 +323,16 @@ export class LocalPlayer {
     const controls = this.device.read();
     const { rotation } = this.camera;
     // Babylon's yaw turns right as it grows, and its pitch looks down as it grows.
-    rotation.y += controls.lookX * LOOK_SPEED * dt + controls.dragX * DRAG_SPEED;
+    rotation.y += controls.lookX * LOOK.lookSpeed * dt + controls.dragX * LOOK.dragSpeed;
     rotation.y = Math.atan2(Math.sin(rotation.y), Math.cos(rotation.y));
-    rotation.x -= controls.lookY * LOOK_SPEED * dt - controls.dragY * DRAG_SPEED;
-    rotation.x = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, rotation.x));
+    rotation.x -= controls.lookY * LOOK.lookSpeed * dt - controls.dragY * LOOK.dragSpeed;
+    rotation.x = Math.max(-LOOK.maxPitch, Math.min(LOOK.maxPitch, rotation.x));
 
     const session = this.session;
     this.tired.update(
       session ? session.predict.value(session.self, "stamina") : 1,
       session?.self.winded ?? false,
+      session?.room.state.mechanics.runAgain ?? MECHANICS.runAgain,
       dt,
     );
     if (!session) return;
@@ -296,7 +358,7 @@ export class LocalPlayer {
 
     this.camera.position.set(
       session.predict.value(session.self, "x"),
-      session.predict.value(session.self, "y") + EYE_HEIGHT + this.tired.heave * BREATH_HEAVE,
+      session.predict.value(session.self, "y") + EYE_HEIGHT + this.tired.heave * HEAVE.breathHeave,
       session.predict.value(session.self, "z"),
     );
   }

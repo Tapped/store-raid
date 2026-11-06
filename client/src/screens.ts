@@ -4,6 +4,7 @@ import {
   DynamicTexture,
   MeshBuilder,
   StandardMaterial,
+  type StaticSound,
   Texture,
   TransformNode,
   Vector3,
@@ -14,6 +15,7 @@ import { loadContainer } from "./assets";
 import { audioEngine, SPATIAL, soundBuffer } from "./audio";
 import { surfaceMaterial } from "./graphics";
 import type { World } from "./scene";
+import { tunables } from "./tuning";
 
 /**
  * The TVs of `tv` tiles (shared/tiles.ts): the TV item's model on a low cabinet, its screen showing
@@ -24,7 +26,14 @@ import type { World } from "./scene";
  * would smear into grey.
  */
 const LOOP = "audio/sfx/tv-static.ogg";
-const VOLUME = 0.9;
+const DRONE = tunables(
+  "Sound/TVs",
+  { volume: { value: 0.9, min: 0, max: 3, hint: "Each TV's static" } },
+  ({ volume }) => {
+    for (const sound of drones) sound.volume = volume;
+  },
+);
+const drones = new Set<StaticSound>();
 /** Full volume within this many meters, then half as loud each time the distance doubles. */
 const NEAR = 2;
 const FAR = 30;
@@ -115,7 +124,7 @@ export async function addScreens(world: World): Promise<void> {
       {
         ...SPATIAL,
         loop: true,
-        volume: VOLUME,
+        volume: DRONE.volume,
         spatialMinDistance: NEAR,
         spatialMaxDistance: FAR,
         spatialRolloffFactor: 1,
@@ -123,6 +132,8 @@ export async function addScreens(world: World): Promise<void> {
       },
       audio,
     );
+    drones.add(sound);
+    sound.onDisposeObservable.addOnce(() => drones.delete(sound));
     // Looping sounds played before the browser lets the page make sound start once it does. Each
     // TV somewhere else in the loop, so two of them don't sound like one.
     sound.play({ startOffset: (buffer.duration * i * 0.37) % buffer.duration });

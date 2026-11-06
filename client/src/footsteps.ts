@@ -1,18 +1,26 @@
 import type { Scene, Vector3 } from "@babylonjs/core";
 import { PLAYER_SPEED, RUN_SPEED } from "../../shared/constants";
 import { OneShots } from "./audio";
+import { tunables } from "./tuning";
 
 const STEPS = [1, 2, 3, 4, 5].map((n) => `audio/sfx/footstep-concrete-${n}.ogg`);
 
-/** Steps per second at walking speed; standing still the gait idles at 0.3 of that. */
-const STEP_RATE = 2.2;
 /** Slower than this (m/s) is standing, with no steps. */
 const MOVING_SPEED = 0.5;
 /**
  * How loud steps are at walking speed, running ones louder and slow ones softer: someone else's
- * from a meter away, and our own. Changeable from the console, as `__game.footsteps`, to tune by ear.
+ * from a meter away, and our own; and how fast they come.
  */
-export const footstepVolume = { theirs: 0.35, own: 0.21 };
+export const FOOTSTEPS = tunables("Sound/Footsteps", {
+  theirs: { value: 0.35, min: 0, max: 2, hint: "Someone else's, from a meter away" },
+  own: { value: 0.21, min: 0, max: 2, hint: "Our own" },
+  stepRate: {
+    value: 2.2,
+    min: 0.5,
+    max: 5,
+    hint: "Steps per second at walking speed; standing, the gait idles at 0.3 of that",
+  },
+});
 
 /**
  * How someone's feet go: a phase that turns faster the faster they go, with a foot landing every
@@ -28,7 +36,7 @@ export class Gait {
   update(dt: number, speed: number, grounded: boolean): boolean {
     this.pace = Math.min(RUN_SPEED / PLAYER_SPEED, speed / PLAYER_SPEED);
     const before = Math.floor(this.phase / Math.PI);
-    this.phase += dt * STEP_RATE * Math.PI * (0.3 + this.pace);
+    this.phase += dt * FOOTSTEPS.stepRate * Math.PI * (0.3 + this.pace);
     return grounded && speed > MOVING_SPEED && Math.floor(this.phase / Math.PI) !== before;
   }
 
@@ -44,11 +52,11 @@ let ours: Promise<OneShots | undefined> | undefined;
 /** Plays a footstep at someone else's feet, heard from there: the concrete steps. */
 export function playFootstep(scene: Scene, at: Vector3, volume: number): void {
   theirs ??= OneShots.load(scene, STEPS, 4);
-  void theirs.then((steps) => steps?.play(at, volume * footstepVolume.theirs));
+  void theirs.then((steps) => steps?.play(at, volume * FOOTSTEPS.theirs));
 }
 
 /** Plays one of our own footsteps: heard straight, as from our own feet, not from a place. */
 export function playOwnFootstep(scene: Scene, volume: number): void {
   ours ??= OneShots.load(scene, STEPS, 2, { spatial: false });
-  void ours.then((steps) => steps?.play(undefined, volume * footstepVolume.own));
+  void ours.then((steps) => steps?.play(undefined, volume * FOOTSTEPS.own));
 }

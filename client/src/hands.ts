@@ -10,6 +10,7 @@ import { HANDS, type Hand, ITEM_KINDS, type ItemKind } from "../../shared/consta
 import { loadContainer } from "./assets";
 import type { Gait } from "./footsteps";
 import type { World } from "./scene";
+import { tunables } from "./tuning";
 
 /** Models built by scripts/models/hand.py: a right hand, mirrored for the left. */
 const OPEN = "models/characters/hand.glb";
@@ -50,16 +51,40 @@ const ARM_REACH = 0.8;
 
 /** The rendering group drawn after the world, with the depth cleared. */
 const OVER_WORLD = 1;
-/** How quickly the hands follow their pose, per second. */
-const FOLLOW = 16;
-/** How long a grab's reach takes, in seconds, and how far it goes. */
-const REACH_TIME = 0.28;
+/** How far a grab's reach goes. */
 const REACH = new Vector3(0, 0.06, 0.2);
-/** Walking bob, at walking speed: meters across and up. Running bobs more. */
-const BOB = new Vector3(0.012, 0.016, 0);
-/** How far the hands lag behind turning the head, in meters per radian per second. */
-const SWAY = 0.012;
-const MAX_SWAY = 0.05;
+/** How the hands move with the player. */
+const MOTION = tunables("Feel/Hands", {
+  follow: {
+    value: 16,
+    min: 1,
+    max: 60,
+    hint: "How quickly the hands follow their pose, per second",
+  },
+  reachTime: { value: 0.28, min: 0.05, max: 1, hint: "Seconds a grab's reach takes" },
+  bobAcross: {
+    value: 0.012,
+    min: 0,
+    max: 0.08,
+    step: 0.001,
+    hint: "Walking bob across, in meters at walking speed; running bobs more",
+  },
+  bobUp: {
+    value: 0.016,
+    min: 0,
+    max: 0.08,
+    step: 0.001,
+    hint: "Walking bob up and down, in meters",
+  },
+  sway: {
+    value: 0.012,
+    min: 0,
+    max: 0.08,
+    step: 0.001,
+    hint: "How far the hands lag behind turning the head, in meters per radian per second",
+  },
+  maxSway: { value: 0.05, min: 0, max: 0.2, step: 0.001, hint: "The most they lag, in meters" },
+});
 
 /** What a hand holds: the item's id and kind, and the node its view is drawn with. */
 export interface Held {
@@ -108,7 +133,7 @@ export class FirstPersonHands {
         new Vector3(0, 1, 0),
         new Vector3(-1, 0, 0),
       );
-      const parts: HandParts = { pose, anchor, reach: REACH_TIME };
+      const parts: HandParts = { pose, anchor, reach: MOTION.reachTime };
       this.place(hand, parts, REST.at, REST.turn, 1);
       return parts;
     };
@@ -157,8 +182,8 @@ export class FirstPersonHands {
     this.lastYaw = rotation.y;
     this.lastPitch = rotation.x;
     const swayTarget = new Vector3(
-      clamp(-turnRate * SWAY, MAX_SWAY),
-      clamp(pitchRate * SWAY, MAX_SWAY),
+      clamp(-turnRate * MOTION.sway, MOTION.maxSway),
+      clamp(pitchRate * MOTION.sway, MOTION.maxSway),
       0,
     );
     Vector3.LerpToRef(this.sway, swayTarget, 1 - Math.exp(-10 * dt), this.sway);
@@ -166,14 +191,14 @@ export class FirstPersonHands {
     // Lowest as a foot lands, at every multiple of π.
     const { phase, pace } = gait;
     const bob = new Vector3(
-      Math.sin(phase) * BOB.x * pace,
-      -Math.abs(Math.cos(phase)) * BOB.y * pace,
+      Math.sin(phase) * MOTION.bobAcross * pace,
+      -Math.abs(Math.cos(phase)) * MOTION.bobUp * pace,
       0,
     );
 
     const both = held.left && held.left.id === held.right?.id ? held.left : undefined;
     const grips = both ? this.gripPoints(both) : undefined;
-    const follow = 1 - Math.exp(-FOLLOW * dt);
+    const follow = 1 - Math.exp(-MOTION.follow * dt);
 
     for (const hand of HANDS) {
       const parts = this.hands[hand];
@@ -198,7 +223,7 @@ export class FirstPersonHands {
 
       parts.anchor.position.set(IN_HAND.x * side, IN_HAND.y, IN_HAND.z);
       parts.reach += dt;
-      const t = Math.min(1, parts.reach / REACH_TIME);
+      const t = Math.min(1, parts.reach / MOTION.reachTime);
       at.addInPlace(REACH.scale(Math.sin(Math.PI * t)));
       at.addInPlace(this.sway).addInPlace(new Vector3(bob.x * side, bob.y, 0));
       this.place(hand, parts, at, turn, follow);

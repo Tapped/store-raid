@@ -16,6 +16,7 @@ import {
   TAARenderingPipeline,
   WebGPUEngine,
 } from "@babylonjs/core";
+import { tunables } from "./tuning";
 
 export type Quality = "balanced" | "high";
 
@@ -68,32 +69,71 @@ export function surfaceMaterial(
  * curves run on the tone-mapped picture and split it by brightness into thirds; at night nearly
  * everything falls in the shadows third, so that is where most of the look comes from.
  */
+export const GRADE = tunables(
+  "Rendering/Picture",
+  {
+    exposure: { value: 0.95, min: 0.1, max: 3 },
+    contrast: { value: 1.2, min: 0.5, max: 2.5 },
+    toneMapping: { value: true, hint: "Khronos PBR neutral tone mapping" },
+    vignetteWeight: { value: 0.8, min: 0, max: 5, hint: "How strongly the corners darken" },
+    dithering: { value: true, hint: "Noise below one level, so dark gradients don't step" },
+  },
+  () => regrade(),
+);
+
+/**
+ * Hue in degrees; density and saturation from -100 to 100. Babylon squares and halves density, so
+ * 55 tints only 15%, and below about 30 the tint can't be seen. The tint multiplies, so it darkens.
+ */
+export const CURVES = tunables(
+  "Rendering/Colour curves",
+  {
+    shadowsHue: { value: 220, min: 0, max: 360, step: 1, hint: "Blue-grey darkness" },
+    shadowsDensity: { value: 55, min: 0, max: 100, step: 1 },
+    shadowsSaturation: { value: -20, min: -100, max: 100, step: 1 },
+    midtonesHue: { value: 0, min: 0, max: 360, step: 1 },
+    midtonesDensity: { value: 0, min: 0, max: 100, step: 1 },
+    midtonesSaturation: { value: 0, min: -100, max: 100, step: 1 },
+    highlightsHue: {
+      value: 40,
+      min: 0,
+      max: 360,
+      step: 1,
+      hint: "Lamps and flashlights stay warm",
+    },
+    highlightsDensity: { value: 35, min: 0, max: 100, step: 1 },
+    highlightsSaturation: { value: 0, min: -100, max: 100, step: 1 },
+    globalSaturation: { value: -5, min: -100, max: 100, step: 1 },
+  },
+  () => regrade(),
+);
+
+/** Every picture graded, to grade again when the settings change. */
+const graded = new Set<ImageProcessingConfiguration>();
+
 export function gradePicture(config: ImageProcessingConfiguration): void {
-  config.toneMappingEnabled = true;
   config.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
-  config.contrast = 1.2;
-  config.exposure = 0.95;
-
-  // Hue in degrees; density and saturation from -100 to 100. Babylon squares and halves density, so
-  // 55 tints only 15%, and below about 30 the tint can't be seen. The tint multiplies, so it darkens.
-  const curves = new ColorCurves();
-  curves.shadowsHue = 220; // blue-grey darkness
-  curves.shadowsDensity = 55;
-  curves.shadowsSaturation = -20;
-  curves.highlightsHue = 40; // lamps and flashlights stay warm and keep their colour
-  curves.highlightsDensity = 35;
-  curves.globalSaturation = -5;
-  config.colorCurves = curves;
+  config.colorCurves = new ColorCurves();
   config.colorCurvesEnabled = true;
-
   config.vignetteEnabled = true;
-  config.vignetteWeight = 0.8;
   config.vignetteColor = new Color4(0, 0, 0, 0);
   config.vignetteBlendMode = ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY;
+  graded.add(config);
+  applyGrade(config);
+}
 
-  // The screen has 8 bits per channel: noise below one level keeps dark gradients, like the sky,
-  // fog and vignette, from stepping.
-  config.ditheringEnabled = true;
+/** Puts the grade's settings into a picture, as they are now. */
+export function applyGrade(config: ImageProcessingConfiguration): void {
+  config.toneMappingEnabled = GRADE.toneMapping;
+  config.contrast = GRADE.contrast;
+  config.exposure = GRADE.exposure;
+  config.vignetteWeight = GRADE.vignetteWeight;
+  config.ditheringEnabled = GRADE.dithering;
+  if (config.colorCurves) Object.assign(config.colorCurves, CURVES);
+}
+
+function regrade() {
+  for (const config of graded) applyGrade(config);
 }
 
 export const SHADOW_MAP_SIZE = quality === "high" ? 4096 : 2048;
@@ -114,9 +154,66 @@ export function drawInstances(mesh: Mesh, matrices: Float32Array): void {
  * against a wall, on top of the occlusion models carry, baked by scripts/models/.
  */
 const AMBIENT_OCCLUSION =
-  quality === "high"
-    ? { ratio: 1, samples: 32, radius: 1.5 }
-    : { ratio: 0.5, samples: 16, radius: 1.5 };
+  quality === "high" ? { ratio: 1, samples: 32 } : { ratio: 0.5, samples: 16 };
+
+/** The post-processing's settings, applied to every camera's pipelines as they change. */
+export const POST = tunables(
+  "Rendering/Post-processing",
+  {
+    ssaoStrength: { value: 1, min: 0, max: 4, hint: "Contact shadows where things meet" },
+    ssaoRadius: { value: 1.5, min: 0.1, max: 5, hint: "Meters around a point that darken it" },
+    taaFactor: {
+      value: 0.05,
+      min: 0.01,
+      max: 1,
+      step: 0.01,
+      hint: "How much of each new frame TAA takes: higher smears less but shimmers more",
+    },
+    bloom: { value: true },
+    bloomThreshold: { value: 0.9, min: 0, max: 2, hint: "How bright a pixel must be to glow" },
+    bloomWeight: { value: 0.15, min: 0, max: 1 },
+    bloomKernel: {
+      value: 64,
+      min: 1,
+      max: 256,
+      step: 1,
+      hint: "How far the glow spreads, in pixels",
+    },
+    sharpen: { value: true, hint: "TAA softens the picture a little" },
+    sharpenEdge: { value: 0.2, min: 0, max: 2 },
+    grain: { value: false },
+    grainIntensity: { value: 30, min: 0, max: 100, step: 1 },
+    chromaticAberration: { value: false },
+    aberration: { value: 30, min: 0, max: 200, step: 1 },
+  },
+  () => {
+    for (const pipelines of cameraPipelines) applyPost(pipelines);
+  },
+);
+
+interface CameraPipelines {
+  ssao: SSAO2RenderingPipeline;
+  taa: TAARenderingPipeline;
+  post: DefaultRenderingPipeline;
+}
+
+const cameraPipelines = new Set<CameraPipelines>();
+
+function applyPost({ ssao, taa, post }: CameraPipelines) {
+  ssao.totalStrength = POST.ssaoStrength;
+  ssao.radius = POST.ssaoRadius;
+  taa.factor = POST.taaFactor;
+  post.bloomEnabled = POST.bloom;
+  post.bloomThreshold = POST.bloomThreshold;
+  post.bloomWeight = POST.bloomWeight;
+  post.bloomKernel = POST.bloomKernel;
+  post.sharpenEnabled = POST.sharpen;
+  post.sharpen.edgeAmount = POST.sharpenEdge;
+  post.grainEnabled = POST.grain;
+  post.grain.intensity = POST.grainIntensity;
+  post.chromaticAberrationEnabled = POST.chromaticAberration;
+  post.chromaticAberration.aberrationAmount = POST.aberration;
+}
 
 /**
  * Post-processing for one camera; returns how to remove it, which must happen before the camera is
@@ -135,13 +232,11 @@ export function addCameraEffects(scene: Scene, camera: Camera): () => void {
     Constants.TEXTURETYPE_HALF_FLOAT,
   );
   ssao.samples = AMBIENT_OCCLUSION.samples;
-  ssao.radius = AMBIENT_OCCLUSION.radius;
-  ssao.totalStrength = 1;
   ssao.expensiveBlur = true;
 
   // After ambient occlusion, so its noise is smoothed over frames along with the rest. Half floats
-  // for the same reason as ambient occlusion. Its history can smear a moving picture: `factor`, how
-  // much of each new frame it takes (default 0.05), is the setting to tune.
+  // for the same reason as ambient occlusion. Its history can smear a moving picture: `taaFactor`
+  // is the setting to tune.
   const taa = new TAARenderingPipeline(
     `taa-${camera.name}`,
     scene,
@@ -158,13 +253,12 @@ export function addCameraEffects(scene: Scene, camera: Camera): () => void {
   if (prePass) prePass.samples = 4;
 
   const post = new DefaultRenderingPipeline(`post-${camera.name}`, true, scene, [camera]);
-  post.bloomEnabled = true;
-  post.bloomThreshold = 0.9;
-  post.bloomWeight = 0.15;
-  post.sharpenEnabled = true; // TAA softens the picture a little
-  post.sharpen.edgeAmount = 0.2;
+  const pipelines = { ssao, taa, post };
+  applyPost(pipelines);
+  cameraPipelines.add(pipelines);
 
   return () => {
+    cameraPipelines.delete(pipelines);
     post.dispose();
     taa.dispose();
     ssao.dispose();

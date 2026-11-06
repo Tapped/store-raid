@@ -1,7 +1,7 @@
 import type { ItemKind } from "../../shared/constants";
 import { levelNamed } from "../../shared/level";
 import { addAmbience } from "./ambience";
-import { footstepVolume } from "./footsteps";
+import { FOOTSTEPS } from "./footsteps";
 import { createEngine } from "./graphics";
 import { POSES } from "./hands";
 import { addHarbour } from "./harbour";
@@ -16,6 +16,8 @@ import { reloadOnNewBuild } from "./reload";
 import { createWorld } from "./scene";
 import { addScreens } from "./screens";
 import { addShelves } from "./store";
+import { describeChanges } from "./tuning";
+import { toggleTuning } from "./tuningPanel";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const hint = document.getElementById("hint") as HTMLDivElement;
@@ -176,7 +178,12 @@ if (import.meta.env.DEV)
       world,
       engine,
       handPoses: POSES,
-      footsteps: footstepVolume,
+      footsteps: FOOTSTEPS,
+      /**
+       * Opens or closes the tuning panel. `tune.changes()` lists what's been tuned away from the
+       * code's values, to bake in.
+       */
+      tune: Object.assign(toggleTuning, { changes: describeChanges }),
     },
   });
 

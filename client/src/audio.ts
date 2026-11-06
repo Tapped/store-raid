@@ -11,6 +11,7 @@ import {
 } from "@babylonjs/core";
 import { assetUrl } from "./assets";
 import { occlude, snapOcclusion } from "./occlusion";
+import { tunables } from "./tuning";
 
 /**
  * Sound, through Babylon's audio engine: one for the page, heard from wherever the scene's active
@@ -19,11 +20,22 @@ import { occlude, snapOcclusion } from "./occlusion";
  */
 let engine: Promise<AudioEngineV2> | undefined;
 
+const MIX = tunables(
+  "Sound/Mix",
+  { master: { value: 1, min: 0, max: 2, hint: "Everything's volume" } },
+  ({ master }) => {
+    void engine?.then((audio) => {
+      audio.volume = master;
+    });
+  },
+);
+
 export function audioEngine(scene: Scene): Promise<AudioEngineV2> {
   engine ??= (async () => {
     const audio = await CreateAudioEngineAsync({
       disableDefaultUI: true,
       resumeOnInteraction: true,
+      volume: MIX.master,
     });
     const follow = () => audio.listener.attach(scene.activeCamera);
     follow();
@@ -50,15 +62,52 @@ export function soundBuffer(scene: Scene, path: string): Promise<StaticSoundBuff
   return buffer;
 }
 
-/** How sounds in the world fade with distance: full volume within 1 m, gone past 30 m. */
+/**
+ * How sounds in the world fade with distance: full volume within `near` meters, then by `rolloff`
+ * as the distance grows, and no quieter past `far`. Sounds with a reach of their own, such as the
+ * ambience's vent, set these themselves; the rest follow `followFalloff()`.
+ */
+const FALLOFF = tunables(
+  "Sound/Falloff",
+  {
+    near: {
+      value: 1,
+      min: 0.1,
+      max: 10,
+      hint: "Meters within which a placed sound is at full volume",
+    },
+    far: { value: 30, min: 2, max: 100, step: 1, hint: "Meters past which it gets no quieter" },
+    rolloff: { value: 1.2, min: 0, max: 5, hint: "How fast it fades with distance" },
+  },
+  () => {
+    for (const sound of following) setFalloff(sound);
+  },
+);
+
+/** Placed sounds and how they're heard: spread into a placed sound's options. */
 export const SPATIAL: Partial<IStaticSoundOptions> = {
   spatialEnabled: true,
   spatialPanningModel: "HRTF",
   spatialDistanceModel: "inverse",
-  spatialMinDistance: 1,
-  spatialMaxDistance: 30,
-  spatialRolloffFactor: 1.2,
+  spatialMinDistance: FALLOFF.near,
+  spatialMaxDistance: FALLOFF.far,
+  spatialRolloffFactor: FALLOFF.rolloff,
 };
+
+const following = new Set<StaticSound>();
+
+function setFalloff(sound: StaticSound) {
+  sound.spatial.minDistance = FALLOFF.near;
+  sound.spatial.maxDistance = FALLOFF.far;
+  sound.spatial.rolloffFactor = FALLOFF.rolloff;
+}
+
+/** Have a placed sound fade with distance as the falloff settings say, as they change. */
+export function followFalloff(sound: StaticSound): void {
+  setFalloff(sound);
+  following.add(sound);
+  sound.onDisposeObservable.addOnce(() => following.delete(sound));
+}
 
 /**
  * Short sounds played at places in the world, such as footsteps: each play picks one of the
@@ -94,7 +143,10 @@ export class OneShots {
               { ...(spatial ? SPATIAL : {}), maxInstances: 1 },
               audio,
             );
-            if (spatial) occlude(voice);
+            if (spatial) {
+              followFalloff(voice);
+              occlude(voice);
+            }
             return voice;
           }),
         ),

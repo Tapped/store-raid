@@ -9,8 +9,9 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { loadContainer } from "./assets";
-import { audioEngine, OneShots, SPATIAL, soundBuffer } from "./audio";
+import { audioEngine, followFalloff, OneShots, SPATIAL, soundBuffer } from "./audio";
 import { occlude } from "./occlusion";
+import { tunables } from "./tuning";
 
 /**
  * A large tick, walked procedurally on the rig scripts/models/tick.py gives it: every frame each
@@ -60,7 +61,11 @@ const IK_ITERATIONS = 10;
 
 /** A claw tapping the floor, one of these at random each time a foot lands. */
 const TAPS = ["audio/sfx/tick-tap-1.wav", "audio/sfx/tick-tap-2.wav", "audio/sfx/tick-tap-3.wav"];
-const TAP_VOLUME = 0.22;
+/** How loud its taps are, at their loudest, and its hiss. */
+const TICK_SOUND = tunables("Sound/Tick", {
+  taps: { value: 0.22, min: 0, max: 2, hint: "Its feet tapping, at their loudest" },
+  hiss: { value: 0.9, min: 0, max: 3, hint: "Its hiss, now and then" },
+});
 /**
  * Four feet land within a few hundredths of a second of each other, which played one tap each
  * sounds like a machine gun. A foot landing sooner than TAP_GAP.min seconds after the last tap is
@@ -70,7 +75,6 @@ const TAP_VOLUME = 0.22;
 const TAP_GAP = { min: 0.07, max: 0.3 };
 const TAP_SOFTEST = 0.35;
 const HISS = "audio/sfx/tick-hiss.wav";
-const HISS_VOLUME = 0.9;
 /** Seconds of quiet between hisses while it keeps questing, at least and at most. */
 const HISS_GAP = { min: 1.5, max: 4 };
 
@@ -253,11 +257,12 @@ export class TickView {
       this.hiss = await CreateSoundAsync(
         `${name}-hiss`,
         hiss,
-        { ...SPATIAL, volume: HISS_VOLUME },
+        { ...SPATIAL, volume: TICK_SOUND.hiss },
         audio,
       );
       // From its mouth, wherever that goes.
       this.hiss.spatial.attach(head);
+      followFalloff(this.hiss);
       occlude(this.hiss);
     }
   }
@@ -306,6 +311,7 @@ export class TickView {
     if (this.hiss && questing && this.quest > 0.3 && this.clock >= this.nextHiss) {
       const rate = 0.85 + 0.2 * Math.random();
       this.hiss.playbackRate = rate;
+      this.hiss.volume = TICK_SOUND.hiss;
       this.hiss.play();
       this.nextHiss =
         this.clock +
@@ -453,7 +459,7 @@ export class TickView {
     if (!this.taps || gap < TAP_GAP.min) return;
     this.lastTap = this.clock;
     const t = Math.min(1, (gap - TAP_GAP.min) / (TAP_GAP.max - TAP_GAP.min));
-    this.taps.play(at, TAP_VOLUME * lerp(TAP_SOFTEST, 1, t), 0.15);
+    this.taps.play(at, TICK_SOUND.taps * lerp(TAP_SOFTEST, 1, t), 0.15);
   }
 
   /** Bend a leg so its claw tip reaches `target` (rig frame), with the body moved by bodyMotion. */
