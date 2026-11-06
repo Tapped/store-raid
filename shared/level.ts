@@ -151,6 +151,8 @@ const STORE_ITEMS: ItemSpawn[] = [
   { kind: "phone", x: 0, y: 0.1, z: -8 },
   { kind: "phone", x: -12, y: 0.1, z: -9 },
   { kind: "phone", x: 12, y: 0.1, z: 2 },
+  { kind: "flashlight", x: -0.5, y: 0.05, z: 11 },
+  { kind: "flashlight", x: 0.5, y: 0.05, z: 11 },
   { kind: "tv", x: -6, y: 0.5, z: 9 },
   { kind: "tv", x: 12, y: 0.5, z: -10 },
 ];
@@ -228,6 +230,8 @@ const PLAYGROUND: Level = {
   items: [
     { kind: "phone", x: -14, y: 0.1, z: -9 },
     { kind: "phone", x: -14, y: 0.1, z: -8 },
+    { kind: "flashlight", x: -14, y: 0.05, z: -10 },
+    { kind: "flashlight", x: -13.4, y: 0.05, z: -10 },
     { kind: "box", x: -14, y: 0.6, z: -6 },
     { kind: "tv", x: -14, y: 0.5, z: -3 },
     { kind: "sofa", x: -13.5, y: 0.5, z: 1 },
@@ -264,7 +268,7 @@ function generatedLevel(seed: number): Level {
   });
   const entrance = centre(generated.entrance);
   // The same items on the same floors every time for a seed.
-  const kinds: ItemKind[] = ["phone", "phone", "phone", "box", "box", "tv", "sofa"];
+  const kinds: ItemKind[] = ["flashlight", "phone", "phone", "phone", "box", "box", "tv", "sofa"];
   const others = generated.floors.filter((cell) => cell !== generated.floors[0]);
   const spots = others.filter(
     (_, i) => i % Math.max(1, Math.floor(others.length / kinds.length)) === 0,

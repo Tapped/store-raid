@@ -1,25 +1,60 @@
 import {
   Color3,
+  Light,
   type Material,
   type Mesh,
   MeshBuilder,
   PBRMaterial,
   Quaternion,
+  SpotLight,
   TransformNode,
-  type Vector3,
+  Vector3,
 } from "@babylonjs/core";
 import { ITEM_KINDS, type ItemKind } from "../../shared/constants";
 import { loadContainer } from "./assets";
+import { OneShots } from "./audio";
 import { surfaceMaterial } from "./graphics";
-import type { World } from "./scene";
+import { LIGHT_PRIORITY, type World } from "./scene";
+import { tunables } from "./tuning";
 
 const COLORS: Record<ItemKind, Color3> = {
   phone: new Color3(0.85, 0.86, 0.88),
+  flashlight: new Color3(0.03, 0.03, 0.035),
   tv: new Color3(0.06, 0.06, 0.07),
   box: new Color3(0.62, 0.45, 0.26),
   sofa: new Color3(0.2, 0.34, 0.55),
 };
 const DELIVERED_GLOW = new Color3(0.05, 0.25, 0.08);
+
+/** Every flashlight's beam on the page, for the tuning panel to change. */
+const beams = new Set<SpotLight>();
+/** A flashlight's beam, from its lens at +x and along it. */
+const BEAM = tunables(
+  "Look/Flashlight",
+  {
+    angle: { value: 0.75, min: 0.2, max: 1.6, hint: "The cone's full angle, in radians" },
+    inner: { value: 0.25, min: 0, max: 1.6, hint: "The bright middle's full angle, in radians" },
+    intensity: { value: 90, min: 0, max: 400, hint: "How bright it is a meter out" },
+    range: { value: 35, min: 5, max: 80, hint: "Meters until it has faded out" },
+  },
+  () => {
+    for (const beam of beams) shapeBeam(beam);
+  },
+);
+
+function shapeBeam(beam: SpotLight) {
+  beam.angle = BEAM.angle;
+  beam.innerAngle = Math.min(BEAM.inner, BEAM.angle);
+  beam.intensity = BEAM.intensity;
+  beam.range = BEAM.range;
+}
+const BEAM_COLOR = new Color3(1, 0.92, 0.78);
+const LENS_GLOW = new Color3(4, 3.6, 3);
+const CLICK = "audio/sfx/flashlight-click.ogg";
+const SOUND = tunables("Sound/Flashlight", {
+  click: { value: 0.5, min: 0, max: 1, hint: "The switch's click, at the flashlight" },
+});
+let clicks: Promise<OneShots | undefined> | undefined;
 
 /** Sofa parts inside its physics box, as [width, height, depth, x, y, z] around the centre. */
 const SOFA_PARTS = [
@@ -47,6 +82,12 @@ export class ItemView {
   private readonly ownGlow = new Map<Glowing, Color3>();
   private boxes: Mesh[] = [];
   private delivered = false;
+  private on = false;
+  /** Whether the server has said if it's on yet: one already on when we arrive doesn't click. */
+  private told = false;
+  /** A flashlight's beam. */
+  private readonly beam: SpotLight | undefined;
+  private lens: Glowing | undefined;
   private disposed = false;
 
   constructor(
@@ -75,6 +116,25 @@ export class ItemView {
       world.shadows.addShadowCaster(part);
       this.boxes.push(part);
     }
+    if (kind === "flashlight") {
+      const beam = new SpotLight(
+        `${id}-beam`,
+        new Vector3(width / 2, 0, 0),
+        new Vector3(1, 0, 0),
+        BEAM.angle,
+        2,
+        scene,
+      );
+      beam.parent = this.node;
+      beam.falloffType = Light.FALLOFF_GLTF;
+      shapeBeam(beam);
+      beams.add(beam);
+      beam.diffuse = BEAM_COLOR;
+      beam.specular = BEAM_COLOR;
+      beam.renderPriority = LIGHT_PRIORITY.other;
+      beam.setEnabled(false);
+      this.beam = beam;
+    }
     void this.loadModel(world, id, kind);
   }
 
@@ -93,6 +153,7 @@ export class ItemView {
     this.boxes = [];
     const meshes = holder.getChildMeshes();
     this.materials = [...new Set(meshes.map((m) => m.material))].filter(glows);
+    this.lens = this.materials.find((m) => m.name.endsWith("lens"));
     for (const m of this.materials) {
       // Occlusion baked by scripts/models/ darkens the sky light and sun too, not only reflections:
       // in this dim overcast light that's nearly all the light. Imported models' occlusion maps are
@@ -103,7 +164,7 @@ export class ItemView {
       mesh.receiveShadows = true;
       world.shadows.addShadowCaster(mesh);
     }
-    this.setDelivered(this.delivered);
+    this.glow();
   }
 
   setPose(x: number, y: number, z: number, qx: number, qy: number, qz: number, qw: number) {
@@ -123,6 +184,8 @@ export class ItemView {
     this.node.parent = holder ?? null;
     // The hands draw what they hold over the world; back in it, it's drawn with the rest.
     if (!holder) for (const mesh of this.node.getChildMeshes()) mesh.renderingGroupId = 0;
+    // Our own flashlight's beam wins over everyone else's.
+    if (this.beam) this.beam.renderPriority = holder ? LIGHT_PRIORITY.own : LIGHT_PRIORITY.other;
     if (holder) {
       this.node.position.setAll(0);
       this.node.rotationQuaternion?.copyFrom(Quaternion.Identity());
@@ -141,16 +204,43 @@ export class ItemView {
   }
 
   setDelivered(delivered: boolean) {
+    if (delivered === this.delivered) return;
     this.delivered = delivered;
+    this.glow();
+  }
+
+  /** Switch a flashlight on or off: its beam, and its lens glowing. */
+  setOn(on: boolean) {
+    const told = this.told;
+    this.told = true;
+    if (!this.beam || on === this.on) return;
+    this.on = on;
+    if (told) {
+      const scene = this.node.getScene();
+      const at = this.node.getAbsolutePosition().clone();
+      clicks ??= OneShots.load(scene, [CLICK], 2);
+      void clicks.then((sounds) => sounds?.play(at, SOUND.click, 0.05));
+    }
+    this.beam.setEnabled(on);
+    this.glow();
+  }
+
+  private glow() {
     for (const m of this.materials) {
       // Lit parts, like a TV's LED, get their own glow back afterwards.
       if (!this.ownGlow.has(m)) this.ownGlow.set(m, m.emissiveColor.clone());
-      m.emissiveColor = delivered ? DELIVERED_GLOW : (this.ownGlow.get(m) ?? Color3.Black());
+      m.emissiveColor =
+        m === this.lens && this.on
+          ? LENS_GLOW
+          : this.delivered
+            ? DELIVERED_GLOW
+            : (this.ownGlow.get(m) ?? Color3.Black());
     }
   }
 
   dispose() {
     this.disposed = true;
+    if (this.beam) beams.delete(this.beam);
     this.node.dispose(false, true);
   }
 }

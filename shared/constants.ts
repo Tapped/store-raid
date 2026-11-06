@@ -15,10 +15,12 @@ export const EYE_HEIGHT = 1.65;
 
 /**
  * What can be carried: its size (x = long side), how many hands each carrier needs for it, and how
- * many people it takes to lift it.
+ * many people it takes to lift it. A kind with `front` has one, at +x, which is carried pointing
+ * the way its carrier looks; anything else is carried either way round, whichever is nearer.
  */
 export const ITEM_KINDS = {
   phone: { size: [0.25, 0.08, 0.18], hands: 1, carriers: 1 },
+  flashlight: { size: [0.26, 0.062, 0.062], hands: 1, carriers: 1, front: true },
   tv: { size: [1.2, 0.75, 0.15], hands: 2, carriers: 1 },
   box: { size: [1, 1, 1], hands: 2, carriers: 1 },
   sofa: { size: [2.4, 0.9, 0.9], hands: 2, carriers: 2 },

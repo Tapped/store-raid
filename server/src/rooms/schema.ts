@@ -42,6 +42,8 @@ export type Player = SchemaType<typeof Player>;
 export const Item = schema({
   kind: t.string(),
   delivered: t.boolean(),
+  /** A flashlight that's switched on. Dropping it leaves it on. */
+  on: t.boolean(),
   x: t.number(),
   y: t.number(),
   z: t.number(),

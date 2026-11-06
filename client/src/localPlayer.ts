@@ -233,6 +233,11 @@ export class LocalPlayer {
     this.session?.room.send("release");
   }
 
+  /** Switch the flashlights in our hands on or off; the server says which way. */
+  toggleLight(): void {
+    this.session?.room.send("light");
+  }
+
   /** Let go of the last thing grabbed. */
   drop(): void {
     this.session?.room.send("drop");

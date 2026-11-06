@@ -167,8 +167,9 @@ export class PhysicsWorld {
   /**
    * Pull a lifted item towards a position and a turn around y. Velocities rather than teleports, so
    * it can't pass through walls. Returns how far it still is from there, to notice it getting stuck.
+   * Either end of it will do unless it has a `front`.
    */
-  carry(body: HP_BodyId, x: number, y: number, z: number, yaw: number): number {
+  carry(body: HP_BodyId, x: number, y: number, z: number, yaw: number, front = false): number {
     const [[px, py, pz], [qx, qy, qz, qw]] = ok(havok.HP_Body_GetQTransform(body));
     const [dx, dy, dz] = [x - px, y - py, z - pz];
     const distance = Math.hypot(dx, dy, dz);
@@ -178,7 +179,7 @@ export class PhysicsWorld {
     // Rotation left to do, target * inverse(current), to whichever end of the item is closer.
     let ty = Math.sin(yaw / 2);
     let tw = Math.cos(yaw / 2);
-    if (Math.abs(ty * qy + tw * qw) < Math.SQRT1_2) [ty, tw] = [tw, -ty];
+    if (!front && Math.abs(ty * qy + tw * qw) < Math.SQRT1_2) [ty, tw] = [tw, -ty];
     const sign = ty * qy + tw * qw < 0 ? -1 : 1;
     const turn = 2 * CARRY_GAIN * sign;
     // The vector part of (0, ty, 0, tw) * (-qx, -qy, -qz, qw): the axis to turn about, times sin(angle / 2).

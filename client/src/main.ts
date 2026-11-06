@@ -88,6 +88,7 @@ function pollInput() {
   if (grabWasHeld && !grabHeld) player?.release();
   grabWasHeld = grabHeld;
   if (input.dropPressed()) player?.drop();
+  if (input.lightPressed()) player?.toggleLight();
   if (player && leavePressed) leave();
   else if (!player && joinPressed) join();
 }
@@ -145,6 +146,7 @@ function syncItems() {
       predict.value(item, "qw"),
     );
     view.setDelivered(item.delivered);
+    view.setOn(item.on);
   }
 }
 
@@ -152,7 +154,7 @@ function showStatus() {
   status.textContent = player?.status ?? "";
   status.style.display = status.textContent ? "" : "none";
   hint.textContent = player
-    ? "Click to look with the mouse | Jump: Space · A | Grab: E · RB | Drop: Q · LB | Leave: Esc · Back"
+    ? "Click to look with the mouse | Jump: Space · A | Grab: E · RB | Drop: Q · LB | Flashlight: F · Y | Leave: Esc · Back"
     : "Join: Space or Enter · A or Start on a controller";
 }
 

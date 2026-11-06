@@ -20,6 +20,8 @@ export interface Device {
   grabHeld(): boolean;
   /** True once per press: let go of the last thing grabbed. */
   dropPressed(): boolean;
+  /** True once per press: switch the flashlights in the player's hands on or off. */
+  lightPressed(): boolean;
   /** Whether the player runs: Shift held, or a click of the left stick until the stick is let go. */
   runHeld(): boolean;
   /** Whether the jump button is down: it jumps whenever the player is on the ground. */
@@ -103,6 +105,7 @@ const keyboard: Device = {
   grabPressed: () => anyPressed("KeyE"),
   grabHeld: () => held.has("KeyE"),
   dropPressed: () => anyPressed("KeyQ"),
+  lightPressed: () => anyPressed("KeyF"),
   runHeld: () => keys("ShiftLeft", "ShiftRight"),
   jumpHeld: () => held.has("Space"),
   reloadHeld: () => false,
@@ -112,6 +115,7 @@ const DEADZONE = 0.15;
 
 // Standard gamepad mapping: https://w3c.github.io/gamepad/#remapping
 const BUTTON_SOUTH = 0; // A / Cross
+const BUTTON_NORTH = 3; // Y / Triangle
 const BUTTON_LEFT_BUMPER = 4;
 const BUTTON_RIGHT_BUMPER = 5;
 const BUTTON_BACK = 8; // Back / Share
@@ -162,6 +166,7 @@ function controller(index: number): Device {
     grabPressed: () => edge(BUTTON_RIGHT_BUMPER),
     grabHeld: () => pad()?.buttons[BUTTON_RIGHT_BUMPER]?.pressed ?? false,
     dropPressed: () => edge(BUTTON_LEFT_BUMPER),
+    lightPressed: () => edge(BUTTON_NORTH),
     runHeld() {
       const axes = pad()?.axes ?? [];
       if (edge(BUTTON_LEFT_STICK)) running = true;
@@ -223,6 +228,7 @@ export const input: Device = {
   grabPressed: () => any((device) => device.grabPressed()),
   grabHeld: () => any((device) => device.grabHeld()),
   dropPressed: () => any((device) => device.dropPressed()),
+  lightPressed: () => any((device) => device.lightPressed()),
   runHeld: () => any((device) => device.runHeld()),
   jumpHeld: () => any((device) => device.jumpHeld()),
   reloadHeld: () => any((device) => device.reloadHeld()),

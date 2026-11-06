@@ -23,15 +23,22 @@ const GRIP = "models/characters/hand-grip.glb";
 export const POSES = {
   rest: { at: new Vector3(0.21, -0.2, 0.38), turn: new Vector3(-0.12, -0.12, 0.65) },
   hold: { at: new Vector3(0.26, -0.25, 0.42), turn: new Vector3(-0.1, -0.3, -0.25) },
+  /** A flashlight, held up and pointed where the player looks: the wrist's roll, as it aims itself. */
+  aim: { at: new Vector3(0.2, -0.19, 0.36), roll: -0.1 },
+  /** Where the player points a flashlight: this far ahead of their eyes. */
+  aimAt: new Vector3(0, 0, 8),
   /** Where the right shoulder is: on a big thing, the forearm points from here to the grip. */
   shoulder: new Vector3(0.2, -0.35, -0.05),
   /** Where a one-handed thing sits beside the gripping hand, from the wrist: palm side is -x. */
   inHand: new Vector3(-0.1, 0.015, 0.07),
+  /** Where a flashlight's middle sits in the fist, from the wrist. */
+  inFist: new Vector3(-0.035, 0.0, 0.125),
 };
 const REST = POSES.rest;
 const HOLD = POSES.hold;
 const SHOULDER = POSES.shoulder;
 const IN_HAND = POSES.inHand;
+const AIM = POSES.aim;
 /** Wrist back from the point it grips, along the item's surface, in meters. */
 const GRIP_BACK = 0.07;
 /**
@@ -212,6 +219,10 @@ export class FirstPersonHands {
         turn = grips.heading
           ? new Vector3(grips.heading.x + 0.15, grips.heading.y * side - EDGE_WRAP, 0)
           : reachTurn(at, shoulder, side);
+      } else if (thing?.kind === "flashlight") {
+        at = AIM.at.clone();
+        turn = reachTurn(POSES.aimAt, at, 1);
+        turn.z = AIM.roll;
       } else if (thing) {
         at = HOLD.at.clone();
         turn = HOLD.turn;
@@ -221,7 +232,8 @@ export class FirstPersonHands {
       }
       if (!grips) at.x *= side;
 
-      parts.anchor.position.set(IN_HAND.x * side, IN_HAND.y, IN_HAND.z);
+      const inHand = thing?.kind === "flashlight" ? POSES.inFist : IN_HAND;
+      parts.anchor.position.set(inHand.x * side, inHand.y, inHand.z);
       parts.reach += dt;
       const t = Math.min(1, parts.reach / MOTION.reachTime);
       at.addInPlace(REACH.scale(Math.sin(Math.PI * t)));

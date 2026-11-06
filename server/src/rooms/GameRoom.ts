@@ -115,6 +115,16 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     release: (client: Client) => {
       this.dimming.delete(client.sessionId);
     },
+    /** Switch the flashlights in the player's hands on, or off if any is on. */
+    light: (client: Client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      const held = [...new Set(HANDS.map((hand) => player[hand]))]
+        .map((id) => this.state.items.get(id))
+        .filter((item) => item?.kind === "flashlight");
+      const on = !held.some((item) => item?.on);
+      for (const item of held) if (item) item.on = on;
+    },
     /** Let go of the last thing grabbed. */
     drop: (client: Client) => {
       const player = this.state.players.get(client.sessionId);
@@ -142,7 +152,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       const id = `item${i}`;
       this.state.items.set(
         id,
-        new Item({ kind, delivered: false, x, y, z, qx: 0, qy: 0, qz: 0, qw: 1 }),
+        new Item({ kind, delivered: false, on: false, x, y, z, qx: 0, qy: 0, qz: 0, qw: 1 }),
       );
       this.itemBodies.set(id, this.physics.addItem(kind, x, y, z));
     }
@@ -370,7 +380,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
         this.dropItem(id);
         continue;
       }
-      const lag = this.physics.carry(body, target.x, target.y, target.z, target.yaw);
+      const front = "front" in kind && kind.front;
+      const lag = this.physics.carry(body, target.x, target.y, target.z, target.yaw, front);
       const lagTime = lag > MAX_CARRY_LAG ? (this.lagging.get(id) ?? 0) + dt : 0;
       this.lagging.set(id, lagTime);
       if (lagTime > CARRY_LAG_TIME) this.dropItem(id);

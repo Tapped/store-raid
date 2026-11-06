@@ -31,6 +31,14 @@ import { addSurfaceVariation } from "./variation";
 const WALL_TILE = 3;
 const LOBBY_TARGET = new Vector3(91.5, 3, -45); // on the harbour street between the rows of street lights
 const DUSK_REFLECTION = new Color3(0.7, 0.72, 0.8);
+/** Lights a PBR surface takes at once: the sky and sun, and flashlights. */
+const MAX_LIGHTS = 6;
+
+/**
+ * Which lights a surface keeps when more shine on it than it can take: the scene's own first, then
+ * our own flashlight, then everyone else's. Higher goes first.
+ */
+export const LIGHT_PRIORITY = { scene: 10, own: 5, other: 1 };
 
 export interface World {
   scene: Scene;
@@ -85,7 +93,10 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
   // announces it before setting its own fields, hence the wait for it to finish.
   scene.onNewMaterialAddedObservable.add((material) => {
     if (!(material instanceof PBRMaterial)) return;
-    queueMicrotask(() => material.reflectionColor.copyFrom(DUSK_REFLECTION));
+    queueMicrotask(() => {
+      material.reflectionColor.copyFrom(DUSK_REFLECTION);
+      material.maxSimultaneousLights = MAX_LIGHTS;
+    });
   });
   gradePicture(scene.imageProcessingConfiguration);
 
@@ -93,9 +104,11 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
   const hemi = new HemisphericLight("hemi", new Vector3(0, 1, 0), scene);
   hemi.diffuse = new Color3(0.72, 0.76, 0.86);
   hemi.groundColor = new Color3(0.12, 0.12, 0.15);
+  hemi.renderPriority = LIGHT_PRIORITY.scene;
   const sun = new DirectionalLight("sun", new Vector3(-0.5, -1, 0.3), scene);
   sun.position = new Vector3(20, 40, -20);
   sun.diffuse = new Color3(0.78, 0.84, 1);
+  sun.renderPriority = LIGHT_PRIORITY.scene;
   const shadows = new ShadowGenerator(SHADOW_MAP_SIZE, sun);
   configureShadows(shadows);
   // Overcast dusk outdoors: how much light comes from the sky, the sun and the reflections. Halls

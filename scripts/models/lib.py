@@ -228,6 +228,37 @@ def tube(name, points, radii, mat=None, sides=8, weights=None):
     return obj
 
 
+def lathe(name, profile, at=(0, 0, 0), axis="z", mat=None, sides=24):
+    """
+    A turned shape, like a bottle, a knob or a torch: `profile` is (along, radius) pairs in meters,
+    in order along its outline, turned round `axis` through `at`. The outline may double back (a
+    lip folding in round a lens); each end with a radius above 0 is closed flat.
+    """
+    bm = bmesh.new()
+    turn = {
+        "x": Matrix(((0, 0, 1), (1, 0, 0), (0, 1, 0))),
+        "y": Matrix(((0, 1, 0), (0, 0, 1), (1, 0, 0))),
+        "z": Matrix.Identity(3),
+    }[axis]
+    at = Vector(at)
+    rings = [
+        [
+            bm.verts.new(at + turn @ Vector((r * math.cos(a), r * math.sin(a), t)))
+            for a in (2 * math.pi * s / sides for s in range(sides))
+        ]
+        for t, r in profile
+    ]
+    for a, b in zip(rings, rings[1:]):
+        for s in range(sides):
+            bm.faces.new((a[s], a[(s + 1) % sides], b[(s + 1) % sides], b[s]))
+    for ring, (_, r) in ((rings[0], profile[0]), (rings[-1], profile[-1])):
+        if r > 1e-6:
+            bm.faces.new(ring)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return assign(_mesh_object(name, bm), mat)
+
+
 def jointed(name, joints, radii, mat=None, sides=8, bone=None, parent=None):
     """
     A jointed limb through `joints`, segment i `radii[i]` thick, swelling a little in the middle

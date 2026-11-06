@@ -21,7 +21,7 @@ client/src/tuning.ts       the registry of tunables: tunables() turns a module's
 client/src/tuningPanel.ts  the tuning panel, `__game.tune()`: every registered setting as a slider or checkbox
 client/src/hands.ts        FirstPersonHands: the player's own gloved hands at the camera: resting, reaching, holding, carrying
 client/src/players.ts      PlayerView: animated character (capsule if the model is missing) + billboard name tag
-client/src/items.ts        ItemView: a phone, TV, box or sofa, drawn where the server says: models/props/<kind>.glb, else boxes
+client/src/items.ts        ItemView: a phone, flashlight, TV, box or sofa, drawn where the server says: models/props/<kind>.glb, else boxes
 client/src/props.ts        addProps(): scenery models, drawn only, with no collision
 client/src/playground.ts   addPlayground(): the playground hall: roof, beams, lights on the dimmer, and CONCEPTS on show
 client/src/terrain.ts      addTerrain(): a level's floors, planks, stairs, ladders, railings and pits; worldBox() for seamless tiling
@@ -92,6 +92,12 @@ scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`p
   the right hand if it's free, else the left. Drop (Q, LB; `drop` message) lets go of the last thing
   grabbed. `grabbingHand()`/`droppingHand()` in `shared/constants.ts` decide which hand.
   One-handed items are stepped over rather than shoved, so players can walk up to them.
+- **Flashlights:** F (Y on a controller; `light` message) switches the flashlights in the player's
+  hands on, or off if any is on; `Item.on` syncs it, and a dropped one stays on. Each is a
+  `SpotLight` from its lens at +x. The player's own is held up and aimed where they look
+  (`POSES.aim` in `client/src/hands.ts`); everyone else's points the way its holder looks, as an
+  item with `front` in `ITEM_KINDS` is carried. Surfaces take `MAX_LIGHTS` lights, chosen by
+  `LIGHT_PRIORITY` (`client/src/scene.ts`): the sky and sun, then our own, then others'.
 - Lasting state goes through `server/src/persist.ts`, keyed by player name, never `sessionId`.
 
 ## Running
