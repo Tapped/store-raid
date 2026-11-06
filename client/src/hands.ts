@@ -39,6 +39,15 @@ const SHOULDER = POSES.shoulder;
 const IN_HAND = POSES.inHand;
 /** Wrist back from the point it grips, along the item's surface, in meters. */
 const GRIP_BACK = 0.07;
+/**
+ * On a big thing carried alone, how far the wrist sits in front of its near face, in meters, and
+ * out from its side. The eye is between its sides, so its near face hides anything along them
+ * behind it: the hands go on its front edges, where the player can see them.
+ */
+const EDGE_BACK = 0.08;
+const EDGE_OUT = 0.02;
+/** How far the hands on a big thing's front edges turn in to wrap them, in radians. */
+const EDGE_WRAP = 0.25;
 
 /** The rendering group drawn after the world, with the depth cleared. */
 const OVER_WORLD = 1;
@@ -177,7 +186,9 @@ export class FirstPersonHands {
       let turn: Vector3;
       if (grips) {
         at = grips[hand];
-        turn = reachTurn(at, new Vector3(SHOULDER.x * side, SHOULDER.y, SHOULDER.z), side);
+        turn = grips.heading
+          ? new Vector3(grips.heading.x + 0.15, grips.heading.y * side - EDGE_WRAP, 0)
+          : reachTurn(at, new Vector3(SHOULDER.x * side, SHOULDER.y, SHOULDER.z), side);
       } else if (thing) {
         at = HOLD.at.clone();
         turn = HOLD.turn;
@@ -212,8 +223,11 @@ export class FirstPersonHands {
     return held && ITEM_KINDS[held.kind].hands === 1 ? this.hands[hand].anchor : undefined;
   }
 
-  /** Where each wrist goes on a big thing held in both hands, in camera space. */
-  private gripPoints(held: Held): Record<Hand, Vector3> {
+  /**
+   * Where each wrist goes on a big thing held in both hands, in camera space, and on one carried
+   * alone, the way its sides run ahead, as a pitch and yaw in `heading`.
+   */
+  private gripPoints(held: Held): Record<Hand, Vector3> & { heading?: Vector3 } {
     const [width, height, depth] = ITEM_KINDS[held.kind].size;
     const toCamera = Matrix.Invert(this.camera.computeWorldMatrix());
     const item = held.node.computeWorldMatrix(true).multiply(toCamera);
@@ -224,33 +238,35 @@ export class FirstPersonHands {
     const axisZ = at(0, 0, 1).subtract(centre);
     const down = centre.subtract(at(0, 1, 0));
 
-    let points: Vector3[];
     if (ITEM_KINDS[held.kind].carriers > 1) {
       // Carried with someone else: both hands under our end of its length.
       const end = axisX.scale(
         centre.add(axisX).length() < centre.subtract(axisX).length() ? 1 : -1,
       );
       const base = centre.add(end.scale(width / 2 - 0.15)).add(down.scale(height / 2));
-      points = [-1, 1].map((s) => base.add(axisZ.scale(s * (depth / 2 - GRIP_BACK))));
-    } else {
-      // Alone: on both sides, near the end closest to us. Which way it's turned doesn't matter.
-      const acrossIsX = Math.abs(axisX.x) >= Math.abs(axisZ.x);
-      const across = acrossIsX ? axisX : axisZ;
-      const halfAcross = (acrossIsX ? width : depth) / 2;
-      let ahead = acrossIsX ? axisZ : axisX;
-      const halfAhead = (acrossIsX ? depth : width) / 2;
-      if (ahead.z < 0) ahead = ahead.negate();
-      const near = centre
-        .subtract(ahead.scale(halfAhead - Math.min(halfAhead, 0.12)))
-        .add(down.scale(height * 0.15));
-      points = [-1, 1].map((s) => near.add(across.scale(s * (halfAcross + 0.01))));
+      const points = [-1, 1].map((s) => base.add(axisZ.scale(s * (depth / 2 - GRIP_BACK))));
+      // Wrists sit back from where the fingers close.
+      for (const p of points) p.z -= GRIP_BACK;
+      return byHand(points);
     }
-    const [a, b] = points;
-    const [left, right] = a.x < b.x ? [a, b] : [b, a];
-    // Wrists sit back from where the fingers close.
-    left.z -= GRIP_BACK;
-    right.z -= GRIP_BACK;
-    return { left, right };
+    // Alone: on the front edges of its sides, the near end's, a little below the middle. Which way
+    // it's turned doesn't matter.
+    const acrossIsX = Math.abs(axisX.x) >= Math.abs(axisZ.x);
+    const across = acrossIsX ? axisX : axisZ;
+    const halfAcross = (acrossIsX ? width : depth) / 2;
+    let ahead = acrossIsX ? axisZ : axisX;
+    const halfAhead = (acrossIsX ? depth : width) / 2;
+    if (ahead.z < 0) ahead = ahead.negate();
+    const near = centre.subtract(ahead.scale(halfAhead + EDGE_BACK)).add(down.scale(height * 0.15));
+    const points = [-1, 1].map((s) => near.add(across.scale(s * (halfAcross + EDGE_OUT))));
+    return {
+      ...byHand(points),
+      heading: new Vector3(
+        Math.atan2(-ahead.y, Math.hypot(ahead.x, ahead.z)),
+        Math.atan2(ahead.x, ahead.z),
+        0,
+      ),
+    };
   }
 
   private place(hand: Hand, parts: HandParts, at: Vector3, turn: Vector3, follow: number) {
@@ -274,6 +290,11 @@ export class FirstPersonHands {
 function reachTurn(wrist: Vector3, shoulder: Vector3, side: number): Vector3 {
   const d = wrist.subtract(shoulder);
   return new Vector3(Math.atan2(-d.y, Math.hypot(d.x, d.z)), Math.atan2(d.x, d.z) * side, 0);
+}
+
+/** Two points, the left one first. */
+function byHand([a, b]: Vector3[]): Record<Hand, Vector3> {
+  return a.x < b.x ? { left: a, right: b } : { left: b, right: a };
 }
 
 function setVisible(entries: InstantiatedEntries | undefined, visible: boolean) {
