@@ -17,6 +17,8 @@ client/src/main.ts         render loop: input → player → views and items; jo
 client/src/input.ts        Device: the keyboard and mouse, controllers (Gamepad API), and `input`, all of them at once
 client/src/localPlayer.ts  LocalPlayer: the player at this screen: device + first-person camera + connection
 client/src/tired.ts        TiredEffect: the screen closes in, drains of colour and heaves with breaths as stamina runs out
+client/src/tuning.ts       the registry of tunables: tunables() turns a module's constants into live settings; addSetting()
+client/src/tuningPanel.ts  the tuning panel, `__game.tune()`: every registered setting as a slider or checkbox
 client/src/hands.ts        FirstPersonHands: the player's own gloved hands at the camera: resting, reaching, holding, carrying
 client/src/players.ts      PlayerView: animated character (capsule if the model is missing) + billboard name tag
 client/src/items.ts        ItemView: a phone, TV, box or sofa, drawn where the server says: models/props/<kind>.glb, else boxes
@@ -55,6 +57,12 @@ scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`p
   server runs `stepMover` for each at 30 Hz and syncs state. Each client **predicts its own
   player** with the same step and **interpolates everyone else**, so `shared/movement.ts` must stay
   a pure function of `(state, input, dt)`: no clocks, randomness or other state.
+- **Mechanics** (`shared/mechanics.ts`): the numbers players move by, walk and run speed, stamina,
+  gravity and the rest, are a `Mechanics` value that `stepMover` and `paceAt` are given, never read
+  from constants. The room owns them in `state.mechanics`; the client predicts with the synced
+  values, so changing them doesn't rubber-band. The constants in `shared/constants.ts` are the
+  defaults. In dev, the `tune` message changes them for the room, held to `MECHANICS_RANGE`.
+  Client code that depends on one (as the tired effect does on `runAgain`) reads the room's.
 - **Physics runs on the server only** (`PhysicsWorld`, Havok). Clients interpolate the poses it
   syncs and never run it; player movement stays in `stepMover`, not in physics. Players are
   kinematic: they shove objects, objects don't stop them.
@@ -124,7 +132,13 @@ This is a solo, local project. Start everything with **`pnpm run dev`** (require
   dearer (`UPHILL`). Anything that walks the level, enemies included, should move at its pace.
 - **Running** (Shift, or click the left stick) takes stamina; running out leaves a player winded
   until it's back to `RUN_AGAIN`. Both are in `MoverState`, so they're predicted like position.
-- Console (dev only): `window.__game` → `{ player(), views, items, world, engine }`.
+- Console (dev only): `window.__game` → `{ player(), views, items, world, engine, tune }`.
+- **Tunables:** values worth tuning by ear and eye go through `tunables()` in `client/src/tuning.ts`
+  instead of bare constants: `const STEPS = tunables("Sound/Footsteps", { own: { value: 0.21, min:
+  0, max: 1, hint } })`, then read `STEPS.own` where it's used, so changes apply live. Values that
+  must be pushed into something, like a Babylon pipeline, go through its `onChange`; ones kept
+  elsewhere, like the room's mechanics, through `addSetting({ get, set, ... })`. The group is
+  `"Section/Group"` in the panel. Register new features' feel, sound and look settings this way.
 - Controllers need a secure page (HTTPS or localhost), and a button press before they show up.
   Holding both sticks down for a second reloads the page.
 
@@ -136,6 +150,14 @@ You can't see the browser, so check your work from the terminal, with `pnpm run 
   file doesn't compile.
 - **Bot players:** `pnpm exec tsx scripts/bot.ts [name] [seconds]` joins your game server, walks in a
   square and prints every player's position each second.
+- **Tuning panel:** `__game.tune()` in the browser console opens and closes a panel of every
+  registered tunable: sound, rendering, feel, controls and the room's mechanics. Keys typed in it
+  don't reach the game. In dev, what it changes is kept in that browser's localStorage until reset,
+  and mechanics are sent to the room again on every join. `__game.tune.changes()` (or the panel's
+  Copy changes) lists what differs from the code, as `Group › key: default → now`: to bake one in,
+  change the `value` (or the constant) in the code. Mechanics are the room's, so tuning them in the
+  playground changes them for everyone there: try them in a level of your own, like
+  `?level=generated-1`.
 
 ## Committing
 
