@@ -1,5 +1,6 @@
 import type { ItemKind } from "../../shared/constants";
 import { levelNamed } from "../../shared/level";
+import { modeFor } from "../../shared/modes";
 import { addAmbience } from "./ambience";
 import { FOOTSTEPS } from "./footsteps";
 import { createEngine } from "./graphics";
@@ -13,6 +14,7 @@ import { PlayerView } from "./players";
 import { addPlayground } from "./playground";
 import { addProps } from "./props";
 import { reloadOnNewBuild } from "./reload";
+import { roundLines } from "./round";
 import { createWorld } from "./scene";
 import { addScreens } from "./screens";
 import { addShelves } from "./store";
@@ -22,11 +24,15 @@ import { toggleTuning } from "./tuningPanel";
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const hint = document.getElementById("hint") as HTMLDivElement;
 const status = document.getElementById("status") as HTMLDivElement;
+const round = document.getElementById("round") as HTMLDivElement;
 
 const engine = await createEngine(canvas);
 // The building to play in: `?level=store` for the store, `?level=generated-<seed>` for a generated
 // one, else the playground, the hall to try things out in. Roofed levels are halls like the playground.
-const world = createWorld(engine, levelNamed(new URLSearchParams(location.search).get("level")));
+const params = new URLSearchParams(location.search);
+const world = createWorld(engine, levelNamed(params.get("level")));
+// What the room is for: `?mode=game` or `?mode=playground`, else the level's own (shared/modes.ts).
+const mode = modeFor(world.level.name, params.get("mode"));
 const playground = world.level.roof !== undefined ? addPlayground(world) : undefined;
 if (!playground) {
   void addProps(world);
@@ -63,7 +69,7 @@ function playerName(): string {
 }
 
 function join() {
-  player = new LocalPlayer(world, input, playerName());
+  player = new LocalPlayer(world, input, playerName(), mode);
   world.scene.activeCamera = player.camera;
   sessionStorage.setItem(JOINED_KEY, "1");
 }
@@ -89,6 +95,7 @@ function pollInput() {
   grabWasHeld = grabHeld;
   if (input.dropPressed()) player?.drop();
   if (input.lightPressed()) player?.toggleLight();
+  if (input.readyPressed()) player?.ready();
   if (player && leavePressed) leave();
   else if (!player && joinPressed) join();
 }
@@ -103,8 +110,15 @@ function syncViews(dt: number) {
     views.delete(sessionId);
   }
   if (!session) return;
+  const watched = player?.watched();
   for (const [sessionId, state] of session.room.state.players) {
     if (sessionId === session.sessionId) continue;
+    // Those out of the building aren't in it to be seen.
+    if (state.role !== "playing") {
+      views.get(sessionId)?.dispose();
+      views.delete(sessionId);
+      continue;
+    }
     let view = views.get(sessionId);
     if (!view) {
       view = new PlayerView(world, state.name, state.color);
@@ -116,6 +130,7 @@ function syncViews(dt: number) {
     // The carry pose holds things in both arms; one-handed things just hang at the side.
     const inBothArms = state.left !== "" && state.left === state.right;
     view.update(x, y, z, state.yaw, inBothArms, state.vy === 0, dt);
+    view.setVisible(sessionId !== watched);
   }
 }
 
@@ -153,9 +168,25 @@ function syncItems() {
 function showStatus() {
   status.textContent = player?.status ?? "";
   status.style.display = status.textContent ? "" : "none";
-  hint.textContent = player
-    ? "Click to look with the mouse | Jump: Space · A | Grab: E · RB | Drop: Q · LB | Flashlight: F · Y | Leave: Esc · Back"
-    : "Join: Space or Enter · A or Start on a controller";
+  const session = player?.session;
+  const watched = player?.watched();
+  const lines = session
+    ? roundLines(
+        session.room.state,
+        session.self,
+        world.level.dock,
+        watched ? session.room.state.players.get(watched) : undefined,
+      )
+    : [];
+  const text = lines.join("\n");
+  if (round.textContent !== text) round.textContent = text;
+  round.style.display = text ? "" : "none";
+  const ready = mode === "game" ? " | Ready / leave: R · X" : "";
+  hint.textContent = !player
+    ? "Join: Space or Enter · A or Start on a controller"
+    : player.spectating
+      ? "Watch the next: E · RB | The one before: Q · LB | Leave: Esc · Back"
+      : `Click to look with the mouse | Jump: Space · A | Grab: E · RB | Drop: Q · LB | Flashlight: F · Y${ready} | Leave: Esc · Back`;
 }
 
 if (sessionStorage.getItem(JOINED_KEY)) join();

@@ -3,7 +3,8 @@
  *
  *   pnpm exec tsx scripts/bot.ts [name] [seconds]     (defaults: bot, 10)
  *
- * Joins your game server (SERVER_PORT, else 2567) in the playground (LEVEL=store for the store),
+ * Joins your game server (SERVER_PORT, else 2567) in the playground (LEVEL=store for the store,
+ * MODE=game or playground for other than the level's own mode),
  * walks in a square and prints every player's position once a second. Run several at once for
  * several players. JUMP=1 holds jump the whole time, so it hops as it goes.
  */
@@ -11,13 +12,19 @@ import { ColyseusSDK } from "@colyseus/sdk";
 import type server from "../server/src/app";
 import type { MoveInput } from "../server/src/rooms/schema";
 import { MOVE_SCALE, TICK_RATE } from "../shared/constants";
+import { modeFor } from "../shared/modes";
 
 const name = process.argv[2] ?? "bot";
 const seconds = Number(process.argv[3] ?? 10);
 const port = process.env.SERVER_PORT ?? "2567";
 
 const client = new ColyseusSDK<typeof server>(`ws://127.0.0.1:${port}`);
-const room = await client.joinOrCreate("game", { name, level: process.env.LEVEL ?? "playground" });
+const level = process.env.LEVEL ?? "playground";
+const room = await client.joinOrCreate("game", {
+  name,
+  level,
+  mode: modeFor(level, process.env.MODE),
+});
 const input = room.input<MoveInput>({ mode: "reliable" });
 room.onLeave((code) => console.log(`left (code ${code})`));
 console.log(`${name} joined as ${room.sessionId} on port ${port}`);

@@ -312,6 +312,14 @@ export class FirstPersonHands {
     Quaternion.SlerpToRef(q, target, follow, q);
   }
 
+  /** Hidden while the player isn't in the building, and watches through someone else's eyes. */
+  setVisible(visible: boolean) {
+    for (const hand of HANDS) {
+      const { pose } = this.hands[hand];
+      if (pose.isEnabled(false) !== visible) pose.setEnabled(visible);
+    }
+  }
+
   dispose() {
     this.disposed = true;
     for (const hand of HANDS) this.hands[hand].pose.dispose(false, true);

@@ -14,7 +14,11 @@ import { MOVE_SCALE, TICK_RATE, YAW_SCALE } from "../shared/constants";
 
 const port = process.env.SERVER_PORT ?? "2567";
 const client = new ColyseusSDK<typeof server>(`ws://127.0.0.1:${port}`);
-const room = await client.joinOrCreate("game", { name: "playground-bot", level: "playground" });
+const room = await client.joinOrCreate("game", {
+  name: "playground-bot",
+  level: "playground",
+  mode: "playground",
+});
 const input = room.input<MoveInput>({ mode: "reliable" });
 await new Promise<void>((resolve) => room.onStateChange.once(() => resolve()));
 

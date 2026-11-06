@@ -22,6 +22,18 @@ import {
 } from "../../../shared/constants";
 import { type Level, levelNamed } from "../../../shared/level";
 import { clampMechanics, MECHANICS, type Mechanics as Rules } from "../../../shared/mechanics";
+import {
+  GAME_LIGHT,
+  inside,
+  itemValue,
+  modeFor,
+  type Phase,
+  quotaFor,
+  RAID_TIME,
+  RESULTS_TIME,
+  type Role,
+  START_TIME,
+} from "../../../shared/modes";
 import { stepMover } from "../../../shared/movement";
 import { load, save } from "../persist";
 import { PhysicsWorld } from "../physics";
@@ -54,16 +66,31 @@ const DIMMER_HAND = 1.3;
 const FALL_TIME = 1;
 /** Whether players may tune the room's mechanics: everywhere but a production server. */
 const TUNABLE = process.env.NODE_ENV !== "production";
+/** Seconds to dawn, which `RAID_TIME` in the environment shortens for testing. */
+const RAID_SECONDS = Number(process.env.RAID_TIME) || RAID_TIME;
+/** How far apart players stand in the truck at the start of a round. */
+const TRUCK_SPACING = 0.8;
 
 export interface JoinOptions {
   name?: string;
   /** Which building, from shared/level.ts: each has rooms of its own. */
   level?: string;
+  /** What the room is for, from shared/modes.ts, else the level's own: each has rooms of its own. */
+  mode?: string;
 }
 
 export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   maxClients = MAX_PLAYERS;
-  state = new GameState({ light: 1, mechanics: new Mechanics({ ...MECHANICS }) });
+  state = new GameState({
+    mode: "playground",
+    phase: "lobby",
+    timeLeft: 0,
+    loot: 0,
+    quota: 0,
+    cleared: false,
+    light: 1,
+    mechanics: new Mechanics({ ...MECHANICS }),
+  });
 
   /** Per-client input buffer. `sanitize` clamps every field as it's decoded — never trust the wire. */
   inputs = this.defineInput(MoveInput, {
@@ -100,7 +127,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     /** Grab what's in front, with the right hand if it's free, else the left. */
     /** A dimmer in front of the player gets held instead, until `release`. */
     grab: (client: Client) => {
-      const player = this.state.players.get(client.sessionId);
+      const player = this.playing(client.sessionId);
       if (!player) return;
       if (this.atDimmer(player)) {
         // Each push fades the other way from the last.
@@ -117,7 +144,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     },
     /** Switch the flashlights in the player's hands on, or off if any is on. */
     light: (client: Client) => {
-      const player = this.state.players.get(client.sessionId);
+      const player = this.playing(client.sessionId);
       if (!player) return;
       const held = [...new Set(HANDS.map((hand) => player[hand]))]
         .map((id) => this.state.items.get(id))
@@ -127,9 +154,19 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     },
     /** Let go of the last thing grabbed. */
     drop: (client: Client) => {
-      const player = this.state.players.get(client.sessionId);
+      const player = this.playing(client.sessionId);
       const hand = player && droppingHand(player);
       if (hand) this.drop(client.sessionId, hand);
+    },
+    /**
+     * In a game's lobby, ready to start, or not any more; in the raid, wanting to leave, which only
+     * counts in the truck. The truck leaves once everyone alive in the building wants to.
+     */
+    ready: (client: Client) => {
+      const player = this.playing(client.sessionId);
+      if (!player || this.state.mode !== "game") return;
+      if (this.state.phase === "lobby") player.ready = !player.ready;
+      else if (this.state.phase === "raid" && this.inTruck(player)) player.ready = !player.ready;
     },
     /**
      * Change the room's mechanics, for everyone in it (dev only): any of them, each held to its
@@ -147,6 +184,10 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
 
   onCreate(options: JoinOptions) {
     this.level = levelNamed(options?.level);
+    this.state.mode = modeFor(this.level.name, options?.mode);
+    this.state.quota = quotaFor(this.level);
+    // The playground's lights are on the dimmer; a game's are dim.
+    if (this.state.mode === "game") this.state.light = GAME_LIGHT;
     this.physics = new PhysicsWorld(this.level);
     for (const [i, { kind, x, y, z }] of this.level.items.entries()) {
       const id = `item${i}`;
@@ -164,7 +205,13 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   onJoin(client: Client, options: JoinOptions) {
     const index = this.joinCount++;
     const name = (options?.name ?? "").trim().slice(0, 16) || `player-${index + 1}`;
-    const spawn = { y: 0, ...(this.lastSeen[this.seenKey(name)] ?? this.level.spawnPoint(index)) };
+    const game = this.state.mode === "game";
+    // A game starts everyone in the truck; the playground puts them back where they were.
+    const spawn = game
+      ? this.truckSpot(index)
+      : { y: 0, ...(this.lastSeen[this.seenKey(name)] ?? this.level.spawnPoint(index)) };
+    // Once a raid has begun, newcomers watch until the next round.
+    const role: Role = game && this.state.phase !== "lobby" ? "waiting" : "playing";
     this.state.players.set(
       client.sessionId,
       new Player({
@@ -181,10 +228,14 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
         yaw: 0,
         left: "",
         right: "",
+        role,
+        ready: false,
       }),
     );
-    this.playerBodies.set(client.sessionId, this.physics.addPlayer(spawn.x, spawn.y, spawn.z));
-    console.log(`${name} (${client.sessionId}) joined`);
+    if (role === "playing") {
+      this.playerBodies.set(client.sessionId, this.physics.addPlayer(spawn.x, spawn.y, spawn.z));
+    }
+    console.log(`${name} (${client.sessionId}) joined, ${role}`);
   }
 
   onLeave(client: Client, code: CloseCode) {
@@ -192,7 +243,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     for (const hand of HANDS) this.drop(client.sessionId, hand);
     this.dimming.delete(client.sessionId);
     const player = this.state.players.get(client.sessionId);
-    if (player) {
+    if (player && this.state.mode === "playground") {
       // Not while falling, or they'd come back in mid-air.
       if (player.vy === 0) {
         this.lastSeen[this.seenKey(player.name)] = { x: player.x, y: player.y, z: player.z };
@@ -219,10 +270,128 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
    * one-handed thing needs only this hand free, a two-handed one needs both. Shared items must have
    * room for another carrier.
    */
-  /** Whether the player is in reach of the dimmer and looking at it. */
+  /** The player of this session, if they're in the building: not dead, lost or waiting. */
+  private playing(sessionId: string): Player | undefined {
+    const player = this.state.players.get(sessionId);
+    return player?.role === "playing" ? player : undefined;
+  }
+
+  /** Whether the player stands in the truck, the level's dock for now. */
+  private inTruck(player: Player): boolean {
+    return inside(this.level.dock, player.x, player.z);
+  }
+
+  /** Where the index-th player stands in the truck at the start of a round: in rows across it. */
+  private truckSpot(index: number): { x: number; y: number; z: number } {
+    const dock = this.level.dock;
+    if (!dock) return { ...this.level.spawnPoint(index), y: 0 };
+    const across = (min: number, max: number) =>
+      Math.max(1, Math.floor((max - min - TRUCK_SPACING) / TRUCK_SPACING) + 1);
+    const cols = across(dock.minX, dock.maxX);
+    const rows = across(dock.minZ, dock.maxZ);
+    const spot = index % (cols * rows);
+    const offset = (min: number, max: number, count: number, i: number) =>
+      (min + max) / 2 + (i - (count - 1) / 2) * TRUCK_SPACING;
+    return {
+      x: offset(dock.minX, dock.maxX, cols, spot % cols),
+      y: 0,
+      z: offset(dock.minZ, dock.maxZ, rows, Math.floor(spot / cols)),
+    };
+  }
+
+  /**
+   * Make a player one of those in the building, at a point, or take them out of it: they drop what
+   * they hold, and leave no body for things to bump into.
+   */
+  private setRole(sessionId: string, player: Player, role: Role, at?: { x: number; z: number }) {
+    for (const hand of HANDS) this.drop(sessionId, hand);
+    player.role = role;
+    player.ready = false;
+    const body = this.playerBodies.get(sessionId);
+    if (body) this.physics.removeBody(body);
+    this.playerBodies.delete(sessionId);
+    if (role !== "playing") return;
+    if (at) {
+      player.x = at.x;
+      player.y = 0;
+      player.z = at.z;
+    }
+    player.vx = 0;
+    player.vy = 0;
+    player.vz = 0;
+    player.stamina = 1;
+    player.winded = false;
+    this.playerBodies.set(sessionId, this.physics.addPlayer(player.x, player.y, player.z));
+  }
+
+  /** Every player back in the building, standing in the truck, and every item where it started. */
+  private resetRound() {
+    let index = 0;
+    for (const [sessionId, player] of this.state.players) {
+      this.setRole(sessionId, player, "playing", this.truckSpot(index++));
+    }
+    for (const [id, item] of this.state.items) {
+      const body = this.itemBodies.get(id);
+      if (body) this.putBack(id, body);
+      item.on = false;
+    }
+    this.state.timeLeft = 0;
+  }
+
+  /**
+   * A game's round: the lobby starts the raid once everyone is ready, the raid ends once everyone
+   * alive in the building is in the truck and wants to leave, or at dawn, and the results show for a
+   * while before the next round's lobby.
+   */
+  private runRound(dt: number) {
+    const players = [...this.state.players];
+    const crew = players.filter(([, player]) => player.role === "playing");
+    const phase = this.state.phase as Phase;
+    /** Counts the clock down; true as it runs out. */
+    const runsOut = () => {
+      this.state.timeLeft = Math.max(0, this.state.timeLeft - dt);
+      return this.state.timeLeft === 0;
+    };
+    if (phase === "lobby") {
+      const ready = crew.length > 0 && crew.every(([, player]) => player.ready);
+      if (!ready) this.state.timeLeft = 0;
+      else if (this.state.timeLeft === 0) this.state.timeLeft = START_TIME;
+      else if (runsOut()) {
+        this.resetRound();
+        this.state.phase = "raid";
+        this.state.timeLeft = RAID_SECONDS;
+        console.log("The raid begins");
+      }
+    } else if (phase === "raid") {
+      for (const [, player] of crew) if (!this.inTruck(player)) player.ready = false;
+      runsOut();
+      // Everyone alive wants to go, which is also true once nobody is.
+      const leaving = crew.every(([, player]) => player.ready);
+      if (this.state.timeLeft === 0) {
+        // Dawn: the truck goes, and anyone not in it is left behind.
+        for (const [sessionId, player] of crew) {
+          if (!this.inTruck(player)) this.setRole(sessionId, player, "lost");
+        }
+      }
+      if (leaving || this.state.timeLeft === 0) {
+        this.state.cleared = this.state.loot >= this.state.quota;
+        this.state.phase = "results";
+        this.state.timeLeft = RESULTS_TIME;
+        console.log(
+          `The raid ends: ${this.state.loot} of ${this.state.quota}, ${this.state.cleared ? "cleared" : "failed"}`,
+        );
+      }
+    } else if (runsOut()) {
+      this.resetRound();
+      this.state.phase = "lobby";
+      this.state.cleared = false;
+    }
+  }
+
+  /** Whether the player is in reach of the dimmer and looking at it: only in the playground. */
   private atDimmer(player: Player): boolean {
     const target = this.level.dimmer;
-    if (!target) return false;
+    if (!target || this.state.mode !== "playground") return false;
     const dx = target.x - player.x;
     const dz = target.z - player.z;
     const distance = Math.hypot(dx, dz);
@@ -292,18 +461,21 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     }
   }
 
-  /** Fell to their death: back to the start, empty-handed. */
-  private respawn(sessionId: string, player: Player) {
-    for (const hand of HANDS) this.drop(sessionId, hand);
-    const spawn = this.level.spawnPoint(this.joinCount++);
-    player.x = spawn.x;
-    player.y = 0;
-    player.z = spawn.z;
-    player.vx = 0;
-    player.vy = 0;
-    player.vz = 0;
-    player.stamina = 1;
-    player.winded = false;
+  /**
+   * Fell to their death. In a raid, that's them out until the next round; anywhere else, back to the
+   * start, empty-handed.
+   */
+  private fell(sessionId: string, player: Player) {
+    if (this.state.mode === "game" && this.state.phase === "raid") {
+      this.setRole(sessionId, player, "dead");
+      console.log(`${player.name} fell to their death`);
+      return;
+    }
+    const spawn =
+      this.state.mode === "game"
+        ? this.truckSpot(this.joinCount++)
+        : this.level.spawnPoint(this.joinCount++);
+    this.setRole(sessionId, player, "playing", spawn);
     console.log(`${player.name} fell`);
   }
 
@@ -313,7 +485,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     const item = this.state.items.get(id);
     if (!spawn || !item) return;
     this.dropItem(id);
-    this.falling.delete(id);
+    // Dropped just now, or a while ago and still falling: solid to players again.
+    if (this.falling.delete(id)) this.physics.settle(body, item.kind as ItemKind);
     this.physics.place(body, spawn.x, spawn.y, spawn.z);
     this.physics.readPose(body, item);
   }
@@ -436,20 +609,22 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
 
   private step(ctx: StepContext) {
     // 1. Apply every buffered input — the same step the client predicts with.
+    // Only those in the building move; everyone else's inputs are used up and ignored.
     for (const [sessionId, player] of this.state.players) {
       const channel = this.inputs.get(sessionId);
       if (!channel) continue;
       for (const input of channel) {
+        if (player.role !== "playing") continue;
         stepMover(player, input, ctx.dt, this.level, this.state.mechanics, canClimb(player));
         player.yaw = input.yaw / YAW_SCALE;
       }
-      if (player.y < this.level.killY) this.respawn(sessionId, player);
+      if (player.role === "playing" && player.y < this.level.killY) this.fell(sessionId, player);
     }
 
     this.dim(ctx.dt);
 
     // 2. Push overlapping players apart (server-only; clients get corrected).
-    const players = [...this.state.players.values()];
+    const players = [...this.state.players.values()].filter((p) => p.role === "playing");
     for (let i = 0; i < players.length; i++) {
       for (let j = i + 1; j < players.length; j++) {
         if (Math.abs(players[i].y - players[j].y) > PLAYER_HEIGHT) continue;
@@ -480,19 +655,19 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       }
     }
     this.physics.step(ctx.dt);
+    let loot = 0;
     for (const [id, item] of this.state.items) {
       const body = this.itemBodies.get(id);
       if (body) this.physics.readPose(body, item);
       if (body && item.y < this.level.killY) this.putBack(id, body);
-      const dock = this.level.dock;
-      item.delivered =
-        !!dock &&
-        !this.lifted.has(id) &&
-        item.x > dock.minX &&
-        item.x < dock.maxX &&
-        item.z > dock.minZ &&
-        item.z < dock.maxZ;
+      const inDock = inside(this.level.dock, item.x, item.z);
+      item.delivered = inDock && !this.lifted.has(id);
+      // In the truck, even still in someone's hands.
+      if (inDock) loot += itemValue(item.kind as ItemKind);
     }
+    this.state.loot = loot;
+
+    if (this.state.mode === "game") this.runRound(ctx.dt);
   }
 }
 

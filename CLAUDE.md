@@ -16,6 +16,7 @@ the roadmap for the game, Night shift at the megastore.
 client/src/main.ts         render loop: input → player → views and items; join, leave and the player name
 client/src/input.ts        Device: the keyboard and mouse, controllers (Gamepad API), and `input`, all of them at once
 client/src/localPlayer.ts  LocalPlayer: the player at this screen: device + first-person camera + connection
+client/src/round.ts        roundLines(): the overlay at the top in a game: the phase, the clock, loot and quota, who we watch
 client/src/tired.ts        TiredEffect: the screen closes in, drains of colour and heaves with breaths as stamina runs out
 client/src/tuning.ts       the registry of tunables: tunables() turns a module's constants into live settings; addSetting()
 client/src/tuningPanel.ts  the tuning panel, `__game.tune()`: every registered setting as a slider or checkbox
@@ -99,6 +100,23 @@ scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`p
   item with `front` in `ITEM_KINDS` is carried. Surfaces take `MAX_LIGHTS` lights, chosen by
   `LIGHT_PRIORITY` (`client/src/scene.ts`): the sky and sun, then our own, then others'.
 - Lasting state goes through `server/src/persist.ts`, keyed by player name, never `sessionId`.
+- **Modes** (`shared/modes.ts`, `state.mode`): `?mode=playground` or `?mode=game`, else the
+  level's own: the playground level is playground, the store and generated levels are game. Each
+  level and mode has its own rooms, so clients and bots always send the mode they resolved with
+  `modeFor()`. The **playground** has no rounds, nobody dies (falling respawns), the lights are on
+  the dimmer and players come back where they left. A **game** runs rounds in `state.phase`:
+  `lobby` (everyone in the truck, R / X to ready; all ready starts a short countdown), `raid`
+  (`RAID_TIME` to dawn; ends when everyone alive stands in the truck and has pressed R / X to leave,
+  or at dawn), `results` (cleared if `state.loot` reached `state.quota`, then the next lobby). Both
+  the raid starting and the lobby put every item back and everyone in the truck. Its lights stay at
+  `GAME_LIGHT`, and the dimmer does nothing.
+- **Roles** (`Player.role`): only those `playing` are in the building, move and have a physics
+  body. Falling in a raid makes a player `dead`, being outside the truck at dawn `lost`, and joining
+  during a raid `waiting`. They all spectate until the next round: the camera looks through the
+  eyes of someone still playing, E / Q (RB / LB) step through them, and that player's character is
+  hidden on their screen.
+- **The truck** is the level's `dock` for now. Loot is whatever's in it, even still in someone's
+  hands; `ITEM_KINDS[kind].value` is what each sells for.
 
 ## Running
 
@@ -155,7 +173,9 @@ You can't see the browser, so check your work from the terminal, with `pnpm run 
 - **Compile errors:** `curl -s http://127.0.0.1:5173/src/main.ts` returns an HTML error page if the
   file doesn't compile.
 - **Bot players:** `pnpm exec tsx scripts/bot.ts [name] [seconds]` joins your game server, walks in a
-  square and prints every player's position each second.
+  square and prints every player's position each second (`LEVEL=` and `MODE=` choose the room).
+- **Rounds:** start a second server with a short raid, `SERVER_PORT=2601 RAID_TIME=12 pnpm exec tsx
+  server/src/index.ts`, and point bots at it, rather than waiting ten minutes for dawn.
 - **Tuning panel:** `__game.tune()` in the browser console opens and closes a panel of every
   registered tunable: sound, rendering, feel, controls and the room's mechanics. Keys typed in it
   don't reach the game. In dev, what it changes is kept in that browser's localStorage until reset,

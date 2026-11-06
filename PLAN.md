@@ -103,6 +103,12 @@ screen.
 - A timer to dawn ends the raid. Players outside the truck at dawn are lost.
 - Show the quota, the loot so far, the time left and the results in a DOM overlay.
 - **Done when:** a round can be cleared or failed, and the "one more trip?" decision exists.
+- **Started:** modes (`shared/modes.ts`): the playground for trying things out, and games, with a
+  round in phases: lobby in the truck until everyone is ready, the raid until everyone alive is in
+  the truck and wants to leave or until dawn, then results against the quota. Items have values.
+  Falling in a raid kills, dawn leaves those outside the truck behind, and latecomers wait: all of
+  them spectate through the eyes of those still playing. The truck is the level's dock for now, and
+  the overlay is plain text. Next: a real truck in the harbour and the route to the building.
 
 ### 3. The dark building and proximity voice
 

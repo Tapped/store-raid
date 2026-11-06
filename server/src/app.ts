@@ -4,8 +4,8 @@ import { GameRoom } from "./rooms/GameRoom";
 /** Room registry. Add new room types here. The client imports this file's *type* only. */
 const server = defineServer({
   rooms: {
-    // One set of rooms per building: players join the one named by their `level` option.
-    game: defineRoom(GameRoom).filterBy(["level"]),
+    // One set of rooms per building and mode: players join the one their `level` and `mode` name.
+    game: defineRoom(GameRoom).filterBy(["level", "mode"]),
   },
 });
 

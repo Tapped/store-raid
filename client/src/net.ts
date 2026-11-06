@@ -1,5 +1,6 @@
 import { ColyseusSDK } from "@colyseus/sdk";
 import type server from "../../server/src/app";
+import type { Mode } from "../../shared/modes";
 
 /**
  * The game server sits under `${BASE}ws` on the page's own origin; the Vite proxy forwards it.
@@ -30,11 +31,11 @@ const client = createClient();
 let joins: Promise<unknown> = Promise.resolve();
 
 /**
- * Join the shared room for this level. One at a time: players pressing join in the same instant must not each
- * create a room of their own.
+ * Join the shared room for this level and mode. One at a time: players pressing join in the same
+ * instant must not each create a room of their own.
  */
-export function joinGame(name: string, level: string) {
-  const join = joins.then(() => client.joinOrCreate("game", { name, level }));
+export function joinGame(name: string, level: string, mode: Mode) {
+  const join = joins.then(() => client.joinOrCreate("game", { name, level, mode }));
   joins = join.catch(() => {});
   return join;
 }

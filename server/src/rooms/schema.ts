@@ -36,6 +36,10 @@ export const Player = schema({
   /** Id of the item in each hand, or "". A two-handed item is in both. */
   left: t.string(),
   right: t.string(),
+  /** Who they are this round, a `Role` from shared/modes.ts: only those playing are in the building. */
+  role: t.string(),
+  /** In the lobby, ready to start; in the raid, in the truck and wanting to leave. */
+  ready: t.boolean(),
 });
 export type Player = SchemaType<typeof Player>;
 
@@ -71,6 +75,17 @@ export const Mechanics = schema({
 export type Mechanics = SchemaType<typeof Mechanics>;
 
 export const GameState = schema({
+  /** What the room is for, a `Mode` from shared/modes.ts: the playground has no rounds. */
+  mode: t.string(),
+  /** Where a game's round is, a `Phase` from shared/modes.ts. */
+  phase: t.string(),
+  /** Seconds left: to the raid starting, to dawn, or to the next round. 0 while waiting in the lobby. */
+  timeLeft: t.number(),
+  /** What the loot in the truck sells for, and what it must reach to clear the level. */
+  loot: t.number(),
+  quota: t.number(),
+  /** After a raid: whether the truck held the quota. */
+  cleared: t.boolean(),
   players: t.map(Player),
   items: t.map(Item),
   /** How bright the lights are, from 0 (off) to 1, as the dimmer leaves them. */

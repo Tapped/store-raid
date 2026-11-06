@@ -182,6 +182,11 @@ export class PlayerView {
     }
   }
 
+  /** Hidden while we watch through this player's eyes, so the camera isn't inside their head. */
+  setVisible(visible: boolean) {
+    if (this.root.isEnabled(false) !== visible) this.root.setEnabled(visible);
+  }
+
   dispose() {
     this.disposed = true;
     // First, and on its own: the root's dispose below would take the shared materials with it.

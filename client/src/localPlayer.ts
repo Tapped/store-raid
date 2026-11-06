@@ -18,6 +18,7 @@ import {
   YAW_SCALE,
 } from "../../shared/constants";
 import { MECHANICS, MECHANICS_KEYS, MECHANICS_RANGE, type Mechanics } from "../../shared/mechanics";
+import type { Mode } from "../../shared/modes";
 import { stepMover } from "../../shared/movement";
 import { Gait, playOwnFootstep } from "./footsteps";
 import { addCameraEffects } from "./graphics";
@@ -84,6 +85,8 @@ const CARRY_TRAIL = 1 / CARRY_GAIN - 1 / TICK_RATE;
 const CARRY_SLACK = 0.3;
 /** How quickly being held back shows, per second. */
 const CARRY_FOLLOW = 12;
+/** How quickly a spectator's view turns with whoever they watch, per second: yaw syncs at 30 Hz. */
+const WATCH_TURN = 15;
 
 function openInput(room: GameConnection) {
   return room.input<MoveInput>({ mode: "reliable" });
@@ -112,11 +115,14 @@ export class LocalPlayer {
   private carrying: { id: string; held: Vector3; turned: boolean } | undefined;
   /** The mechanics this player tuned, sent again on every join: a restarted server forgets them. */
   private readonly tuned: Partial<Mechanics> = {};
+  /** Out of the building, the session of whoever we watch through the eyes of. */
+  private watching: string | undefined;
 
   constructor(
     private readonly world: World,
     readonly device: Device,
     readonly name: string,
+    readonly mode: Mode,
   ) {
     this.camera = createPlayerCamera(world.scene, `camera-${name}`);
     this.removeCameraEffects = addCameraEffects(world.scene, this.camera);
@@ -151,7 +157,7 @@ export class LocalPlayer {
   private async connect(): Promise<void> {
     while (!this.left) {
       try {
-        const room = await joinGame(this.name, this.world.level.name);
+        const room = await joinGame(this.name, this.world.level.name, this.mode);
         if (this.left) {
           await room.leave();
           return;
@@ -218,10 +224,51 @@ export class LocalPlayer {
     this.status = "";
   }
 
-  /** Grab what's in front, with the right hand if it's free, else the left. */
+  /** Whether we're out of the building this round, dead, lost or waiting, and watch others. */
+  get spectating(): boolean {
+    const role = this.session?.self.role;
+    return role !== undefined && role !== "playing";
+  }
+
+  /** Everyone still in the building, in a steady order to step through. */
+  private crew(): string[] {
+    const players = this.session?.room.state.players;
+    if (!players) return [];
+    return [...players]
+      .filter(([id, player]) => player.role === "playing" && id !== this.session?.sessionId)
+      .map(([id]) => id)
+      .sort();
+  }
+
+  /** Who we watch, while we're out of the building and anyone is still in it. */
+  watched(): string | undefined {
+    if (!this.spectating) return undefined;
+    const crew = this.crew();
+    if (!this.watching || !crew.includes(this.watching)) this.watching = crew[0];
+    return this.watching;
+  }
+
+  /** Watch the next one in the building, or the one before. */
+  private watchNext(step: number) {
+    const crew = this.crew();
+    if (crew.length === 0) return;
+    const at = this.watching ? crew.indexOf(this.watching) : -1;
+    this.watching = crew[(at + step + crew.length) % crew.length];
+  }
+
+  /** In a game's lobby, ready (or not); in the truck in a raid, wanting to leave (or not). */
+  ready(): void {
+    this.session?.room.send("ready");
+  }
+
+  /** Grab what's in front, with the right hand if it's free, else the left. Watching, the next player. */
   grab(): void {
     const self = this.session?.self;
     if (!self) return;
+    if (this.spectating) {
+      this.watchNext(1);
+      return;
+    }
     // Sent even with both hands full: it may be a dimmer they reach for.
     const hand = grabbingHand(self);
     if (hand) this.hands.reach(hand);
@@ -238,9 +285,10 @@ export class LocalPlayer {
     this.session?.room.send("light");
   }
 
-  /** Let go of the last thing grabbed. */
+  /** Let go of the last thing grabbed. Watching, the player before. */
   drop(): void {
-    this.session?.room.send("drop");
+    if (this.spectating) this.watchNext(-1);
+    else this.session?.room.send("drop");
   }
 
   /**
@@ -269,6 +317,7 @@ export class LocalPlayer {
       : 0;
     const grounded = session ? session.predict.value(session.self, "vy") === 0 : false;
     if (this.gait.update(dt, speed, grounded)) playOwnFootstep(this.world.scene, this.gait.volume);
+    this.hands.setVisible(!this.spectating);
     this.hands.update(dt, held, this.gait);
   }
 
@@ -327,13 +376,45 @@ export class LocalPlayer {
   update(dt: number): void {
     const controls = this.device.read();
     const { rotation } = this.camera;
+    const session = this.session;
+    const watched = this.watched();
+    const target = watched ? session?.room.state.players.get(watched) : undefined;
+    if (session && this.spectating) {
+      this.tired.update(1, false, MECHANICS.runAgain, dt);
+      // Still one input per step, standing still, so the server's input count keeps up.
+      const steps = session.predict.tick(performance.now());
+      for (let i = 0; i < steps; i++) {
+        session.input.data.moveX = 0;
+        session.input.data.moveZ = 0;
+        session.input.data.run = false;
+        session.input.data.jump = false;
+        session.input.send();
+      }
+      if (target) {
+        // Through their eyes: where they stand, looking where they look, level.
+        const follow = 1 - Math.exp(-WATCH_TURN * dt);
+        const turn = Math.atan2(
+          Math.sin(target.yaw - rotation.y),
+          Math.cos(target.yaw - rotation.y),
+        );
+        rotation.y += turn * follow;
+        rotation.x += (0 - rotation.x) * follow;
+        this.camera.position.set(
+          session.predict.value(target, "x"),
+          session.predict.value(target, "y") + EYE_HEIGHT,
+          session.predict.value(target, "z"),
+        );
+        return;
+      }
+      // Nobody left to watch: look around from where we are.
+    }
     // Babylon's yaw turns right as it grows, and its pitch looks down as it grows.
     rotation.y += controls.lookX * LOOK.lookSpeed * dt + controls.dragX * LOOK.dragSpeed;
     rotation.y = Math.atan2(Math.sin(rotation.y), Math.cos(rotation.y));
     rotation.x -= controls.lookY * LOOK.lookSpeed * dt - controls.dragY * LOOK.dragSpeed;
     rotation.x = Math.max(-LOOK.maxPitch, Math.min(LOOK.maxPitch, rotation.x));
+    if (this.spectating) return;
 
-    const session = this.session;
     this.tired.update(
       session ? session.predict.value(session.self, "stamina") : 1,
       session?.self.winded ?? false,
