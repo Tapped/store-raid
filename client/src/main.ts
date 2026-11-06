@@ -111,7 +111,7 @@ function syncViews(dt: number) {
     const z = session.predict.value(state, "z");
     // The carry pose holds things in both arms; one-handed things just hang at the side.
     const inBothArms = state.left !== "" && state.left === state.right;
-    view.update(x, y, z, state.yaw, inBothArms, dt);
+    view.update(x, y, z, state.yaw, inBothArms, state.vy === 0, dt);
   }
 }
 

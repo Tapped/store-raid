@@ -6,15 +6,9 @@ import {
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
-import {
-  HANDS,
-  type Hand,
-  ITEM_KINDS,
-  type ItemKind,
-  PLAYER_SPEED,
-  RUN_SPEED,
-} from "../../shared/constants";
+import { HANDS, type Hand, ITEM_KINDS, type ItemKind } from "../../shared/constants";
 import { loadContainer } from "./assets";
+import type { Gait } from "./footsteps";
 import type { World } from "./scene";
 
 /** Models built by scripts/models/hand.py: a right hand, mirrored for the left. */
@@ -56,9 +50,8 @@ const FOLLOW = 16;
 /** How long a grab's reach takes, in seconds, and how far it goes. */
 const REACH_TIME = 0.28;
 const REACH = new Vector3(0, 0.06, 0.2);
-/** Walking bob, at walking speed: meters across and up, and steps per second. Running bobs more. */
+/** Walking bob, at walking speed: meters across and up. Running bobs more. */
 const BOB = new Vector3(0.012, 0.016, 0);
-const STEP_RATE = 2.2;
 /** How far the hands lag behind turning the head, in meters per radian per second. */
 const SWAY = 0.012;
 const MAX_SWAY = 0.05;
@@ -88,7 +81,6 @@ interface HandParts {
  */
 export class FirstPersonHands {
   private readonly hands: Record<Hand, HandParts>;
-  private phase = 0;
   private readonly sway = new Vector3();
   private lastYaw: number | undefined;
   private lastPitch = 0;
@@ -150,10 +142,10 @@ export class FirstPersonHands {
   }
 
   /**
-   * One frame. `held` is what each hand holds, `speed` how fast the player moves (m/s), and
+   * One frame. `held` is what each hand holds, `gait` how the player's feet go, and
    * `yaw`/`pitch` where they look, for the sway.
    */
-  update(dt: number, held: Record<Hand, Held | undefined>, speed: number) {
+  update(dt: number, held: Record<Hand, Held | undefined>, gait: Gait) {
     const { rotation } = this.camera as Camera & { rotation: Vector3 };
     const turnRate = this.lastYaw === undefined ? 0 : angleDelta(rotation.y, this.lastYaw) / dt;
     const pitchRate = (rotation.x - this.lastPitch) / dt;
@@ -166,11 +158,11 @@ export class FirstPersonHands {
     );
     Vector3.LerpToRef(this.sway, swayTarget, 1 - Math.exp(-10 * dt), this.sway);
 
-    const pace = Math.min(RUN_SPEED / PLAYER_SPEED, speed / PLAYER_SPEED);
-    this.phase += dt * STEP_RATE * Math.PI * (0.3 + pace);
+    // Lowest as a foot lands, at every multiple of π.
+    const { phase, pace } = gait;
     const bob = new Vector3(
-      Math.sin(this.phase) * BOB.x * pace,
-      -Math.abs(Math.cos(this.phase)) * BOB.y * pace,
+      Math.sin(phase) * BOB.x * pace,
+      -Math.abs(Math.cos(phase)) * BOB.y * pace,
       0,
     );
 

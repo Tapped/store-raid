@@ -11,6 +11,7 @@ import {
 } from "@babylonjs/core";
 import { PLAYER_HEIGHT, PLAYER_RADIUS, PLAYER_SPEED } from "../../shared/constants";
 import { loadContainer } from "./assets";
+import { Gait, playFootstep } from "./footsteps";
 import { surfaceMaterial } from "./graphics";
 import type { World } from "./scene";
 
@@ -50,6 +51,7 @@ export class PlayerView {
   private lastX: number | undefined;
   private lastZ = 0;
   private speed = 0;
+  private readonly gait = new Gait();
   private disposed = false;
 
   constructor(
@@ -135,8 +137,19 @@ export class PlayerView {
     else this.clip("-walk")?.start(true, 1, STAND_FRAME, STAND_FRAME + 0.01);
   }
 
-  /** Once per rendered frame, wherever the player is now and wherever they look. */
-  update(x: number, y: number, z: number, yaw: number, carrying: boolean, dt: number) {
+  /**
+   * Once per rendered frame, wherever the player is now and wherever they look, and whether they're
+   * on the ground, where their feet make a sound.
+   */
+  update(
+    x: number,
+    y: number,
+    z: number,
+    yaw: number,
+    carrying: boolean,
+    grounded: boolean,
+    dt: number,
+  ) {
     const dx = x - (this.lastX ?? x);
     const dz = z - this.lastZ;
     this.lastX = x;
@@ -147,6 +160,9 @@ export class PlayerView {
     const blend = 1 - Math.exp(-SPEED_SMOOTHING * dt);
     this.speed += (Math.hypot(dx, dz) / dt - this.speed) * blend;
     const moving = this.speed > MOVING_SPEED;
+    if (this.gait.update(dt, this.speed, grounded)) {
+      playFootstep(this.world.scene, this.root.position, this.gait.volume);
+    }
 
     // Facing where they look, the shortest way round, so nobody spins the long way across ±180°.
     const turn = Math.atan2(
