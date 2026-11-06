@@ -7,6 +7,7 @@ import HavokPhysics, {
   type QTransform,
 } from "@babylonjs/havok";
 import {
+  CARRY_GAIN,
   ITEM_KINDS,
   type ItemKind,
   PLAYER_HEIGHT,
@@ -18,7 +19,6 @@ import type { Level } from "../../shared/level";
 const GRAVITY = -9.81;
 const ITEM_DENSITY = 25; // kg per cubic meter
 /** How hard a carried item is pulled towards where it should be, per second of error. */
-const CARRY_GAIN = 12;
 const CARRY_MAX_SPEED = 14;
 const DROP_SPIN = 5; // radians per second, at most
 // What collides with what. Carried items miss players, or their carriers would knock them about.

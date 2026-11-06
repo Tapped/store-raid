@@ -42,6 +42,11 @@ const EDGE_BACK = 0.08;
 const EDGE_OUT = 0.02;
 /** How far the hands on a big thing's front edges turn in to wrap them, in radians. */
 const EDGE_WRAP = 0.25;
+/**
+ * How far a wrist can be from its shoulder, in meters: a little more than an arm, so a grip that's
+ * out of reach for a moment, on a thing swinging round, doesn't stretch the sleeve.
+ */
+const ARM_REACH = 0.8;
 
 /** The rendering group drawn after the world, with the depth cleared. */
 const OVER_WORLD = 1;
@@ -177,10 +182,11 @@ export class FirstPersonHands {
       let at: Vector3;
       let turn: Vector3;
       if (grips) {
-        at = grips[hand];
+        const shoulder = new Vector3(SHOULDER.x * side, SHOULDER.y, SHOULDER.z);
+        at = withinReach(grips[hand], shoulder);
         turn = grips.heading
           ? new Vector3(grips.heading.x + 0.15, grips.heading.y * side - EDGE_WRAP, 0)
-          : reachTurn(at, new Vector3(SHOULDER.x * side, SHOULDER.y, SHOULDER.z), side);
+          : reachTurn(at, shoulder, side);
       } else if (thing) {
         at = HOLD.at.clone();
         turn = HOLD.turn;
@@ -282,6 +288,13 @@ export class FirstPersonHands {
 function reachTurn(wrist: Vector3, shoulder: Vector3, side: number): Vector3 {
   const d = wrist.subtract(shoulder);
   return new Vector3(Math.atan2(-d.y, Math.hypot(d.x, d.z)), Math.atan2(d.x, d.z) * side, 0);
+}
+
+/** The wrist, brought in towards the shoulder if it's further than an arm reaches. */
+function withinReach(wrist: Vector3, shoulder: Vector3): Vector3 {
+  const arm = wrist.subtract(shoulder);
+  const length = arm.length();
+  return length > ARM_REACH ? shoulder.add(arm.scale(ARM_REACH / length)) : wrist;
 }
 
 /** Two points, the left one first. */

@@ -6,6 +6,7 @@ import {
   PBRMaterial,
   Quaternion,
   TransformNode,
+  type Vector3,
 } from "@babylonjs/core";
 import { ITEM_KINDS, type ItemKind } from "../../shared/constants";
 import { loadContainer } from "./assets";
@@ -40,6 +41,8 @@ export class ItemView {
   /** Where the server puts it, or in a hand on its holder's own screen (see hold()). */
   readonly node: TransformNode;
   private holder: TransformNode | undefined;
+  /** Drawn where its carrier holds it, on their own screen (see carryAt()). */
+  private carried = false;
   private materials: Glowing[];
   private readonly ownGlow = new Map<Glowing, Color3>();
   private boxes: Mesh[] = [];
@@ -104,7 +107,7 @@ export class ItemView {
   }
 
   setPose(x: number, y: number, z: number, qx: number, qy: number, qz: number, qw: number) {
-    if (this.holder) return;
+    if (this.holder || this.carried) return;
     this.node.position.set(x, y, z);
     // Interpolated field by field, so no longer exactly unit length.
     this.node.rotationQuaternion?.set(qx, qy, qz, qw).normalize();
@@ -124,6 +127,17 @@ export class ItemView {
       this.node.position.setAll(0);
       this.node.rotationQuaternion?.copyFrom(Quaternion.Identity());
     }
+  }
+
+  /**
+   * Draw it here instead of where the server says, or back there with undefined: on its carrier's
+   * own screen, a big thing carried alone stays in their arms, however far the server's lags behind.
+   */
+  carryAt(position: Vector3 | undefined, rotation?: Quaternion) {
+    this.carried = !!position;
+    if (!position) return;
+    this.node.position.copyFrom(position);
+    if (rotation) this.node.rotationQuaternion?.copyFrom(rotation);
   }
 
   setDelivered(delivered: boolean) {

@@ -25,6 +25,16 @@ export const ITEM_KINDS = {
 } as const;
 export type ItemKind = keyof typeof ITEM_KINDS;
 
+/** How high above their feet a player holds things in both arms, in meters. */
+export const CARRY_HEIGHT = 1;
+/** How hard a carried thing is pulled to where it's held: its speed there, per meter of the gap. */
+export const CARRY_GAIN = 12;
+
+/** How far ahead of a player's centre a thing this deep is held when they carry it alone in both arms. */
+export function carryDistance(depth: number): number {
+  return PLAYER_RADIUS + depth / 2 + 0.2;
+}
+
 /** Every player has two hands, each holding one thing, or both holding the same two-handed thing. */
 export const HANDS = ["left", "right"] as const;
 export type Hand = (typeof HANDS)[number];

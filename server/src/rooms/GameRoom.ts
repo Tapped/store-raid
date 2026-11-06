@@ -2,7 +2,9 @@ import type { HP_BodyId } from "@babylonjs/havok";
 import { type Client, type CloseCode, Room, type StepContext } from "@colyseus/core";
 import { resolveCircleCircle } from "../../../shared/collision";
 import {
+  CARRY_HEIGHT,
   canClimb,
+  carryDistance,
   DIM_TIME,
   droppingHand,
   grabbingHand,
@@ -32,8 +34,7 @@ import { GameState, Item, Mechanics, MoveInput, Player } from "./schema";
 const REACH = 1.2;
 /** Only what's within this angle either side of where the player looks can be grabbed. */
 const GRAB_CONE = (70 * Math.PI) / 180;
-/** How high things are held: in both arms, or hanging from one hand. */
-const CARRY_HEIGHT = 1;
+/** How high a thing hanging from one hand is held. */
 const HAND_HEIGHT = 0.8;
 /** How far out to the side of the player's centre a one-handed thing hangs. */
 const HAND_SIDE = PLAYER_RADIUS + 0.15;
@@ -402,7 +403,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     const facing = { x: Math.sin(first.yaw), z: Math.cos(first.yaw) };
     if (kind.hands === 2) {
       // Crosswise in both arms, its long side along the player's right, like a TV.
-      const distance = PLAYER_RADIUS + depth / 2 + 0.2;
+      const distance = carryDistance(depth);
       return {
         x: first.x + facing.x * distance,
         y: first.y + CARRY_HEIGHT,
