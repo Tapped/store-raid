@@ -18,11 +18,14 @@ import type { Device } from "./input";
 import type { ItemView } from "./items";
 import { type GameConnection, joinGame, waitForServer } from "./net";
 import { createPlayerCamera, type World } from "./scene";
+import { TiredEffect } from "./tired";
 
 const LOOK_SPEED = 2.5; // radians per second at full stick
 const DRAG_SPEED = 0.005; // radians per pixel
 /** How far up or down the player can look, in radians from level. */
 const MAX_PITCH = 1.45;
+/** Meters the camera rises and sinks with each breath when winded. */
+const BREATH_HEAVE = 0.015;
 /** Two patches behind, with a little spring: a carried item stays ahead of its carrier. */
 const ITEM_SMOOTHING = { mode: "lerp", delay: 67, smoothMs: 40 } as const;
 
@@ -47,6 +50,7 @@ export class LocalPlayer {
   status = "Connecting…";
   private left = false;
   private readonly removeCameraEffects: () => void;
+  private readonly tired: TiredEffect;
 
   constructor(
     private readonly world: World,
@@ -56,6 +60,7 @@ export class LocalPlayer {
     this.camera = createPlayerCamera(world.scene, `camera-${name}`);
     this.removeCameraEffects = addCameraEffects(world.scene, this.camera);
     this.hands = new FirstPersonHands(world, this.camera);
+    this.tired = new TiredEffect(world.scene.imageProcessingConfiguration);
     void this.connect();
   }
 
@@ -112,7 +117,7 @@ export class LocalPlayer {
     // Predict locally with the exact step the server runs, reconcile on correction.
     predict.reconciler(self, {
       input,
-      fields: ["x", "y", "z", "vx", "vy", "vz"],
+      fields: ["x", "y", "z", "vx", "vy", "vz", "stamina", "winded"],
       // With what our hands hold now: a replay after picking something up may differ for a tick.
       step: (ctx, predicted, command) =>
         stepMover(predicted, command, ctx.dt, this.world.level, canClimb(self)),
@@ -178,6 +183,11 @@ export class LocalPlayer {
     rotation.x = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, rotation.x));
 
     const session = this.session;
+    this.tired.update(
+      session ? session.predict.value(session.self, "stamina") : 1,
+      session?.self.winded ?? false,
+      dt,
+    );
     if (!session) return;
 
     // Stick directions are relative to where we look; the simulation wants world directions.
@@ -199,7 +209,7 @@ export class LocalPlayer {
 
     this.camera.position.set(
       session.predict.value(session.self, "x"),
-      session.predict.value(session.self, "y") + EYE_HEIGHT,
+      session.predict.value(session.self, "y") + EYE_HEIGHT + this.tired.heave * BREATH_HEAVE,
       session.predict.value(session.self, "z"),
     );
   }
@@ -208,6 +218,7 @@ export class LocalPlayer {
     this.left = true;
     void this.session?.room.leave();
     this.removeCameraEffects();
+    this.tired.dispose();
     this.hands.dispose();
     this.camera.dispose();
   }

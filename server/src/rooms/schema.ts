@@ -25,6 +25,10 @@ export const Player = schema({
   vx: t.number(),
   vy: t.number(),
   vz: t.number(),
+  /** 1 rested, 0 spent: see RUN_TIME. */
+  stamina: t.number(),
+  /** Ran out of stamina, and can't run until it's back to RUN_AGAIN. */
+  winded: t.boolean(),
   /** Where the player looks around y, in radians. */
   yaw: t.number(),
   /** Id of the item in each hand, or "". A two-handed item is in both. */

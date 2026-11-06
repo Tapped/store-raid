@@ -55,6 +55,14 @@ export function droppingHand(holding: Holding): Hand | undefined {
 export const PLAYER_SPEED = 6;
 /** Units per second at full input while running. */
 export const RUN_SPEED = 9;
+/**
+ * Stamina is 1 when rested and 0 when spent. Running drains it, in RUN_TIME seconds from full, and
+ * not running brings it back, in REST_TIME seconds to full. Running out leaves a player winded:
+ * they can't run again until it is back to RUN_AGAIN.
+ */
+export const RUN_TIME = 5;
+export const REST_TIME = 6;
+export const RUN_AGAIN = 0.4;
 
 /** How high a player steps up without noticing, and how far down they follow the floor before falling. */
 export const STEP_UP = 0.35;

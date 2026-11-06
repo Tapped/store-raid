@@ -6,7 +6,10 @@ import {
   PLAYER_HEIGHT,
   PLAYER_RADIUS,
   PLAYER_SPEED,
+  REST_TIME,
+  RUN_AGAIN,
   RUN_SPEED,
+  RUN_TIME,
   STEP_DOWN,
   STEP_UP,
 } from "./constants";
@@ -24,6 +27,10 @@ export interface MoverState {
   vx: number;
   vy: number;
   vz: number;
+  /** 1 rested, 0 spent: see RUN_TIME. */
+  stamina: number;
+  /** Ran out of stamina, and can't run until it's back to RUN_AGAIN. */
+  winded: boolean;
 }
 
 /** What players walk on and bump into. */
@@ -85,7 +92,17 @@ export function stepMover(
     }
   }
 
-  const speed = input.run ? RUN_SPEED : PLAYER_SPEED;
+  // Running takes stamina, and only happens on the ground, moving, with some left.
+  const running = input.run === true && climb === undefined && length > 0 && !mover.winded;
+  if (running) {
+    mover.stamina = Math.max(0, mover.stamina - dt / RUN_TIME);
+    if (mover.stamina === 0) mover.winded = true;
+  } else {
+    mover.stamina = Math.min(1, mover.stamina + dt / REST_TIME);
+    if (mover.stamina >= RUN_AGAIN) mover.winded = false;
+  }
+
+  const speed = running ? RUN_SPEED : PLAYER_SPEED;
   let vx = dirX * speed;
   let vz = dirZ * speed;
 

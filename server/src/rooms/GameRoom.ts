@@ -151,6 +151,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
         vx: 0,
         vy: 0,
         vz: 0,
+        stamina: 1,
+        winded: false,
         yaw: 0,
         left: "",
         right: "",
@@ -275,6 +277,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     player.vx = 0;
     player.vy = 0;
     player.vz = 0;
+    player.stamina = 1;
+    player.winded = false;
     console.log(`${player.name} fell`);
   }
 
