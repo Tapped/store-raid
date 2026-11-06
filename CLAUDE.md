@@ -165,6 +165,26 @@ You can't see the browser, so check your work from the terminal, with `pnpm run 
   playground changes them for everyone there: try them in a level of your own, like
   `?level=generated-1`.
 
+## Testing in a browser
+
+- Drive Chrome with the `mcp__chrome__*` tools (`new_page`, then `take_screenshot`,
+  `list_console_messages`, `evaluate_script`), pointed at the checkout's dev server. Use
+  `isolatedContext` to give each player its own page, and a `?name=` per player.
+- The tools connect to `127.0.0.1:9222`. If nothing listens there, start Chrome **headless and
+  muted**, with its own profile in the scratchpad. Headless, so input on the user's desktop can't
+  steer the test player; muted, because the game's sound otherwise plays out of the user's
+  speakers:
+  `"/c/Program Files (x86)/Google/Chrome/Application/chrome.exe" --headless=new --mute-audio --remote-debugging-port=9222 --user-data-dir=<scratchpad>/chrome --no-first-run about:blank`.
+  If one is already running without `--mute-audio`, stop it and start this one.
+- Close every page you opened when you're done (`close_page`), and leave none of the game open
+  behind you: a page left open keeps a player in the room and keeps making sound.
+- It renders on the GPU, not in software: WebGPU on the RTX 4070 SUPER and WebGL through
+  ANGLE/D3D11, at 60 fps. To check, in `evaluate_script`: `(await navigator.gpu.requestAdapter()).info`
+  says `nvidia` and `isFallbackAdapter: false`. `__game.engine.getFps()` reads low for a few
+  seconds after a page loads.
+- Keys can be pressed from a script with `dispatchEvent(new KeyboardEvent("keydown", { code }))`
+  and a matching `keyup`; set `__game.player().camera.rotation` to look around.
+
 ## Committing
 
 - `pnpm run check` must pass. `pnpm run format` fixes formatting.
