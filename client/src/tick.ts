@@ -10,6 +10,7 @@ import {
 } from "@babylonjs/core";
 import { loadContainer } from "./assets";
 import { audioEngine, OneShots, SPATIAL, soundBuffer } from "./audio";
+import { occlude } from "./occlusion";
 
 /**
  * A large tick, walked procedurally on the rig scripts/models/tick.py gives it: every frame each
@@ -59,7 +60,15 @@ const IK_ITERATIONS = 10;
 
 /** A claw tapping the floor, one of these at random each time a foot lands. */
 const TAPS = ["audio/sfx/tick-tap-1.wav", "audio/sfx/tick-tap-2.wav", "audio/sfx/tick-tap-3.wav"];
-const TAP_VOLUME = 0.3;
+const TAP_VOLUME = 0.22;
+/**
+ * Four feet land within a few hundredths of a second of each other, which played one tap each
+ * sounds like a machine gun. A foot landing sooner than TAP_GAP.min seconds after the last tap is
+ * silent, and taps sooner than TAP_GAP.max after it are softer, down to TAP_SOFTEST of full volume,
+ * so a group lands as one accented tap and a few quiet ones.
+ */
+const TAP_GAP = { min: 0.07, max: 0.3 };
+const TAP_SOFTEST = 0.35;
 const HISS = "audio/sfx/tick-hiss.wav";
 const HISS_VOLUME = 0.9;
 /** Seconds of quiet between hisses while it keeps questing, at least and at most. */
@@ -111,6 +120,8 @@ export class TickView {
   private hiss?: StaticSound;
   /** When it may hiss next, on its own clock. */
   private nextHiss = 0;
+  /** When the last tap played, on its own clock. */
+  private lastTap = Number.NEGATIVE_INFINITY;
 
   constructor(
     private scene: Scene,
@@ -247,6 +258,7 @@ export class TickView {
       );
       // From its mouth, wherever that goes.
       this.hiss.spatial.attach(head);
+      occlude(this.hiss);
     }
   }
 
@@ -410,7 +422,7 @@ export class TickView {
       leg.foot.y = this.root.position.y + STEP_HEIGHT * Math.sin(Math.PI * step.t) ** 2;
       if (step.t >= 1) {
         leg.step = undefined;
-        this.taps?.play(leg.foot, TAP_VOLUME);
+        this.tap(leg.foot);
       }
     }
 
@@ -433,6 +445,15 @@ export class TickView {
         time: Math.max(SETTLE_TIME, most / FOOT_SPEED),
       };
     }
+  }
+
+  /** A claw tap where a foot lands: dropped or softened if the last one was only just now. */
+  private tap(at: Vector3) {
+    const gap = this.clock - this.lastTap;
+    if (!this.taps || gap < TAP_GAP.min) return;
+    this.lastTap = this.clock;
+    const t = Math.min(1, (gap - TAP_GAP.min) / (TAP_GAP.max - TAP_GAP.min));
+    this.taps.play(at, TAP_VOLUME * lerp(TAP_SOFTEST, 1, t), 0.15);
   }
 
   /** Bend a leg so its claw tip reaches `target` (rig frame), with the body moved by bodyMotion. */

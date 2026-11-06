@@ -16,6 +16,7 @@ the roadmap for the game, Night shift at the megastore.
 client/src/main.ts         render loop: input → player → views and items; join, leave and the player name
 client/src/input.ts        Device: the keyboard and mouse, controllers (Gamepad API), and `input`, all of them at once
 client/src/localPlayer.ts  LocalPlayer: the player at this screen: device + first-person camera + connection
+client/src/tired.ts        TiredEffect: the screen closes in, drains of colour and heaves with breaths as stamina runs out
 client/src/hands.ts        FirstPersonHands: the player's own gloved hands at the camera: resting, reaching, holding, carrying
 client/src/players.ts      PlayerView: animated character (capsule if the model is missing) + billboard name tag
 client/src/items.ts        ItemView: a phone, TV, box or sofa, drawn where the server says: models/props/<kind>.glb, else boxes
@@ -29,6 +30,7 @@ client/src/harbour.ts      addHarbour(): the harbour around the store, as instan
 client/src/paving.ts       addPavingVariation(): world-space brightness and damp patches on harbour paving
 client/src/lamps.ts        addStreetLamps(): glowing lamp faces, and lamp light summed in every PBR shader (not scene lights)
 client/src/scene.ts        world, lights and fog, first-person camera, lobby camera
+client/src/screens.ts     addScreens(): the TVs of `tv` tiles, showing static and droning a loop
 client/src/sky.ts          addSky(): overcast sky dome, painted at startup; HORIZON, the colour fog fades to
 client/src/graphics.ts     engine (WebGPU, else WebGL2), one pipeline of TAA with MSAA, contact SSAO, bloom and sharpen, all in half floats (`?quality=high` for finer shadows and SSAO), `surfaceMaterial()` for PBR, `gradePicture()` for the colour look, `drawInstances()` for static copies, camera effects
 client/src/reload.ts       production builds reload when a served .game-build file changes; nothing writes that file locally
@@ -98,7 +100,7 @@ This is a solo, local project. Start everything with **`pnpm run dev`** (require
   in the playground through `CONCEPTS` in `client/src/playground.ts`. Each level has its own
   rooms; bots join the playground unless `LEVEL` says otherwise.
 - **Tiles** (`shared/tiles.ts`): the playground is a grid of 4 m cells on storeys 3 m apart,
-  written as characters (`F` floor, `#` solid, `P` pit, `|`/`=` plank bridge, `^>v<` stairs and
+  written as characters (`F` floor, `T` a TV showing static, `#` solid, `P` pit, `|`/`=` plank bridge, `^>v<` stairs and
   `nesw` ladders, both up towards that side, `.` open air). Storeys below ground are basements,
   dug out of `#`; stairs going down are stairs on the storey below. Open air above stairs or a
   ladder is its well, and under a pit a shaft: the parser works out which. Rooms are walls on the

@@ -47,6 +47,8 @@ export const OFFSET: Record<Side, [number, number]> = {
 export type Tile =
   /** Walkable all over. */
   | { kind: "floor" }
+  /** A floor with a TV on a cabinet against a wall, showing static and droning (client/src/screens.ts). */
+  | { kind: "tv" }
   /** Rock, or masonry: filled from its floor to the next. Basements are dug out of it. */
   | { kind: "solid" }
   /** A hole down to `PIT_DEPTH`, with shafts under it: falling in kills. */
@@ -70,6 +72,7 @@ export type Tile =
  */
 export const TILE_CHARS: Record<string, Tile> = {
   F: { kind: "floor" },
+  T: { kind: "tv" },
   "#": { kind: "solid" },
   P: { kind: "pit" },
   "|": { kind: "bridge", along: "z" },
@@ -114,6 +117,8 @@ export function socket(tile: Tile, side: Side): Socket {
     case "pit":
     case "open":
       return tile.kind;
+    case "tv":
+      return "floor";
     case "shaft":
       return "solid";
     case "bridge":
@@ -322,11 +327,24 @@ export function checkTiles(grid: ParsedGrid): string | undefined {
   return undefined;
 }
 
-/** The floors, boxes and ladders of a grid of tiles; throws if the tiles don't fit together. */
+/** A TV a tile stands somewhere: the middle of the floor under it, and the side its screen faces. */
+export interface Screen {
+  x: number;
+  y: number;
+  z: number;
+  faces: Side;
+}
+
+/** The cabinet a TV stands on, and the TV on it: wide, deep and high, in all. */
+export const SCREEN_CABINET = { width: 1.4, depth: 0.45, height: 0.5 };
+const SCREEN_HEIGHT = 1.3;
+
+/** The floors, boxes, ladders and TVs of a grid of tiles; throws if the tiles don't fit together. */
 export function composeTiles(source: TileGrid): {
   floors: Floor[];
   boxes: LevelBox[];
   ladders: Ladder[];
+  screens: Screen[];
 } {
   const grid = parseTiles(source);
   const problem = checkTiles(grid);
@@ -335,6 +353,7 @@ export function composeTiles(source: TileGrid): {
   const floors: Floor[] = [];
   const boxes: LevelBox[] = [];
   const ladders: Ladder[] = [];
+  const screens: Screen[] = [];
 
   for (let storey = -basements; storey < grid.tiles.length - basements; storey++) {
     for (let row = 0; row < rows; row++) {
@@ -368,6 +387,7 @@ export function composeTiles(source: TileGrid): {
 
         switch (tile.kind) {
           case "floor":
+          case "tv":
           case "ladder": {
             floors.push({ ...cell, y: base, thickness, kind: "floor" });
             // A railing where it meets open air, unless a wall is there already.
@@ -378,6 +398,22 @@ export function composeTiles(source: TileGrid): {
               boxes.push({ ...edge(cell, side, RAIL), y: base, height: RAIL_HEIGHT, kind: "rail" });
             }
             if (tile.kind === "floor") break;
+            if (tile.kind === "tv") {
+              const screen = placeScreen(cell, base, (side) => {
+                const next = neighbour(side);
+                return (
+                  !next || next.kind === "solid" || grid.edge(storey, col, row, side) === "wall"
+                );
+              });
+              screens.push(screen);
+              boxes.push({
+                ...screenFootprint(screen),
+                y: base,
+                height: SCREEN_HEIGHT,
+                kind: "furniture",
+              });
+              break;
+            }
             // The wall it stands against, up to the floor it leads to: climbers press against it.
             const wall = edge(cell, tile.up, LADDER_WALL);
             boxes.push({ ...wall, y: base, height: STOREY, kind: "wall" });
@@ -457,7 +493,29 @@ export function composeTiles(source: TileGrid): {
       }
     }
   }
-  return { floors, boxes, ladders };
+  return { floors, boxes, ladders, screens };
+}
+
+/**
+ * Where a TV stands in its cell: its back to the first side with a wall, or rock, behind it, facing
+ * away; with none, in the middle, facing south. Never against a doorway.
+ */
+function placeScreen(cell: Box, y: number, walled: (side: Side) => boolean): Screen {
+  const middle = { x: (cell.minX + cell.maxX) / 2, z: (cell.minZ + cell.maxZ) / 2 };
+  const back = SIDES.find(walled);
+  if (!back) return { ...middle, y, faces: "s" };
+  const [dx, dz] = OFFSET[back];
+  const away = CELL / 2 - WALL / 2 - SCREEN_CABINET.depth / 2 - 0.05;
+  return { x: middle.x + dx * away, y, z: middle.z + dz * away, faces: OPPOSITE[back] };
+}
+
+/** The ground a TV's cabinet stands on. */
+function screenFootprint({ x, z, faces }: Screen): Box {
+  const alongX = faces === "n" || faces === "s";
+  const [halfX, halfZ] = alongX
+    ? [SCREEN_CABINET.width / 2, SCREEN_CABINET.depth / 2]
+    : [SCREEN_CABINET.depth / 2, SCREEN_CABINET.width / 2];
+  return { minX: x - halfX, maxX: x + halfX, minZ: z - halfZ, maxZ: z + halfZ };
 }
 
 /** A wall along one side of a cell, astride the edge, with a doorway in the middle if asked. */

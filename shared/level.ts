@@ -1,7 +1,7 @@
 import type { Box } from "./collision";
 import { ARENA_SIZE, type ItemKind } from "./constants";
 import { type GenerateOptions, generate } from "./generate";
-import { CELL, composeTiles, type Side, STOREY } from "./tiles";
+import { CELL, composeTiles, type Screen, type Side, STOREY } from "./tiles";
 
 const HALF = ARENA_SIZE / 2;
 const WALL = 1;
@@ -27,7 +27,7 @@ export type LevelBox = Box & {
   y: number;
   height: number;
   /** A partition is a wall between rooms, inside a building. */
-  kind: "wall" | "partition" | "shelf" | "rail" | "pit" | "stairs";
+  kind: "wall" | "partition" | "shelf" | "rail" | "pit" | "stairs" | "furniture";
 };
 
 /**
@@ -89,6 +89,13 @@ export interface Level {
   dimmer: { x: number; y: number; z: number; turn: number } | undefined;
   /** Where finished items go: an item whose centre is in here counts as delivered. */
   dock: Box | undefined;
+  /**
+   * The way in and out, in the outer wall, where a vent above it hums: the level's ambience is
+   * loudest there (client/src/ambience.ts).
+   */
+  entrance: { x: number; y: number; z: number };
+  /** TVs showing static, from `tv` tiles (client/src/screens.ts). */
+  screens: Screen[];
   items: ItemSpawn[];
   /** Where the index-th player to join starts, unless they've been here before. */
   spawnPoint(index: number): { x: number; z: number };
@@ -161,6 +168,9 @@ const STORE: Level = {
   killY: -10,
   dimmer: undefined,
   dock: DOCK,
+  // Above the opening onto the dock.
+  entrance: { x: 0, y: 2.6, z: HALF },
+  screens: [],
   items: STORE_ITEMS,
   // Along the front of the store, by the dock.
   spawnPoint: (index) => ({ x: -12 + (index % 8) * 3.4, z: 13 + (index % 2) * 2 }),
@@ -171,8 +181,8 @@ const STORE: Level = {
 // (shared/tiles.ts) inside four walls. Items wait in a row along the west wall, with a dock to
 // deliver to in the north-west corner; a pit with a plank across fills the east side; stairs and a
 // ladder go up to a mezzanine along the north wall, and stairs on to a platform above that; stairs
-// and a ladder go down to a basement under the middle; new things to look at stand in the
-// south-east corner (client/src/playground.ts).
+// and a ladder go down to a basement under the middle, where a TV shows static; new things to look
+// at stand in the south-east corner (client/src/playground.ts).
 const HALL_X = 16; // half the hall's width (x) and length (z), inside the walls
 const HALL_Z = 12;
 const HALL_HEIGHT = 9;
@@ -186,7 +196,7 @@ const PLAYGROUND_TILES = composeTiles({
   z: -HALL_Z,
   basements: 1,
   storeys: [
-    ["########", "#####...", "#####...", "#F^F#...", "#FFFe###", "########"],
+    ["########", "#####...", "#####...", "#F^F#...", "#TFFe###", "########"],
     ["FFFFFFFF", "FFFFFP|P", "FFF^nP|P", "FF.FFP|P", "FFFF.FFF", "FFFFFFFF"],
     [".F<FF...", ".FFFF..."],
     ["FF......"],
@@ -212,6 +222,9 @@ const PLAYGROUND: Level = {
   // On the south wall, behind where players start.
   dimmer: { x: -6, y: 1.3, z: -HALL_Z, turn: 0 },
   dock: { minX: -HALL_X, maxX: -HALL_X + CELL, minZ: HALL_Z - 3, maxZ: HALL_Z },
+  // The hall has no door: this is the south wall, behind where players start.
+  entrance: { x: 0, y: 2.6, z: -HALL_Z },
+  screens: PLAYGROUND_TILES.screens,
   items: [
     { kind: "phone", x: -14, y: 0.1, z: -9 },
     { kind: "phone", x: -14, y: 0.1, z: -8 },
@@ -265,6 +278,8 @@ function generatedLevel(seed: number): Level {
     killY: -basements * STOREY - 4,
     dimmer: { x: entrance.x - 1.2, y: 1.3, z: z + 0.1, turn: 0 },
     dock: { minX: entrance.x - 1.5, maxX: entrance.x + 1.5, minZ: z + 0.2, maxZ: z + 1.6 },
+    entrance: { x: entrance.x, y: 2.6, z },
+    screens: tiles.screens,
     items: spots.slice(0, kinds.length).map((cell, i) => ({
       kind: kinds[i],
       ...centre(cell),

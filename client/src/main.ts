@@ -1,16 +1,19 @@
 import type { ItemKind } from "../../shared/constants";
 import { levelNamed } from "../../shared/level";
+import { addAmbience } from "./ambience";
 import { createEngine } from "./graphics";
 import { POSES } from "./hands";
 import { addHarbour } from "./harbour";
 import { attachMouse, input } from "./input";
 import { ItemView } from "./items";
 import { LocalPlayer } from "./localPlayer";
+import { occludeIn } from "./occlusion";
 import { PlayerView } from "./players";
 import { addPlayground } from "./playground";
 import { addProps } from "./props";
 import { reloadOnNewBuild } from "./reload";
 import { createWorld } from "./scene";
+import { addScreens } from "./screens";
 import { addShelves } from "./store";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
@@ -27,6 +30,9 @@ if (!playground) {
   void addShelves(world);
   void addHarbour(world.scene);
 }
+occludeIn(world.scene, world.level);
+void addAmbience(world);
+void addScreens(world);
 attachMouse(canvas);
 addEventListener("resize", () => engine.resize());
 

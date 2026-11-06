@@ -56,6 +56,8 @@ const MAX_ATTEMPTS = 50;
 /** Every tile there is, and how likely each is wherever it fits, on the ground and higher up. */
 const VARIANTS: { tile: Tile; ground: number; high: number }[] = [
   { tile: { kind: "floor" }, ground: 12, high: 8 },
+  // One a level at most, most of the time (see ONLY_ONE).
+  { tile: { kind: "tv" }, ground: 0.4, high: 0.4 },
   { tile: { kind: "solid" }, ground: 1.5, high: 0.5 },
   { tile: { kind: "pit" }, ground: 1.2, high: 0 },
   { tile: { kind: "bridge", along: "x" }, ground: 0.5, high: 0 },
@@ -67,6 +69,8 @@ const VARIANTS: { tile: Tile; ground: number; high: number }[] = [
   { tile: { kind: "shaft" }, ground: 1, high: 1 },
 ];
 const COUNT = VARIANTS.length;
+/** Tiles there's only one of in a level: once a cell has one, no other cell can. */
+const ONLY_ONE = VARIANTS.flatMap((variant, v) => (variant.tile.kind === "tv" ? [v] : []));
 
 /** Sockets a doorway can open onto, and those a wall can't close off; as in shared/tiles.ts. */
 const PASSABLE: readonly Socket[] = ["floor", "plank", "stairs-foot", "arrival"];
@@ -301,7 +305,17 @@ function tryGenerate(options: GenerateOptions, next: () => number) {
     }
     here.fill(false);
     here[chosen] = true;
-    if (!propagate([best])) return "a cell ran out of tiles";
+    const changed = [best];
+    if (ONLY_ONE.includes(chosen)) {
+      for (const cell of cells) {
+        const there = possible[index(cell.storey, cell.col, cell.row)];
+        if (cell === best || !there[chosen]) continue;
+        there[chosen] = false;
+        if (!there.includes(true)) return "a cell ran out of tiles";
+        changed.push(cell);
+      }
+    }
+    if (!propagate(changed)) return "a cell ran out of tiles";
   }
 
   const tiles = new Map<string, Tile>();
@@ -349,6 +363,7 @@ function tryGenerate(options: GenerateOptions, next: () => number) {
   }
   const walkable = (tile: Tile) =>
     tile.kind === "floor" ||
+    tile.kind === "tv" ||
     tile.kind === "ladder" ||
     tile.kind === "stairs" ||
     tile.kind === "bridge";

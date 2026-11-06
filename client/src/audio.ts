@@ -10,6 +10,7 @@ import {
   type Vector3,
 } from "@babylonjs/core";
 import { assetUrl } from "./assets";
+import { occlude, snapOcclusion } from "./occlusion";
 
 /**
  * Sound, through Babylon's audio engine: one for the page, heard from wherever the scene's active
@@ -62,7 +63,8 @@ export const SPATIAL: Partial<IStaticSoundOptions> = {
 /**
  * Short sounds played at places in the world, such as footsteps: each play picks one of the
  * variants at random, at a slightly different pitch and volume, so repeats don't sound the same.
- * Each variant has a few voices, so a sound can start while the last one is still ringing.
+ * Each variant has a few voices, so a sound can start while the last one is still ringing. Walls
+ * between a voice and the listener muffle it (occlusion.ts).
  */
 export class OneShots {
   private constructor(private variants: { voices: StaticSound[]; next: number }[]) {}
@@ -74,9 +76,16 @@ export class OneShots {
     const variants = await Promise.all(
       loaded.map(async (buffer) => ({
         voices: await Promise.all(
-          Array.from({ length: voices }, (_, i) =>
-            CreateSoundAsync(`${buffer.name}-${i}`, buffer, { ...SPATIAL, maxInstances: 1 }, audio),
-          ),
+          Array.from({ length: voices }, async (_, i) => {
+            const voice = await CreateSoundAsync(
+              `${buffer.name}-${i}`,
+              buffer,
+              { ...SPATIAL, maxInstances: 1 },
+              audio,
+            );
+            occlude(voice);
+            return voice;
+          }),
         ),
         next: 0,
       })),
@@ -92,6 +101,7 @@ export class OneShots {
     voice.spatial.position = at.clone();
     voice.volume = volume * (0.75 + 0.25 * Math.random());
     voice.playbackRate = 1 + pitch * (2 * Math.random() - 1);
+    snapOcclusion(voice);
     voice.play();
   }
 
