@@ -28,10 +28,16 @@ const POST = 0.04;
 const POST_SPACING = 1.2;
 
 /**
- * A box from `min` to `max` with texture coordinates in world space, in `SURFACE_TILE`s: boxes side
- * by side carry on the same pattern, so a floor made of cells shows no seams.
+ * A box from `min` to `max` with texture coordinates in world space, in `tile`s: boxes side by side
+ * carry on the same pattern, so a floor made of cells shows no seams.
  */
-export function worldBox(name: string, min: Vector3, max: Vector3, scene: Scene): Mesh {
+export function worldBox(
+  name: string,
+  min: Vector3,
+  max: Vector3,
+  scene: Scene,
+  tile = SURFACE_TILE,
+): Mesh {
   const size = max.subtract(min);
   const box = MeshBuilder.CreateBox(name, { width: size.x, height: size.y, depth: size.z }, scene);
   const centre = min.add(max).scale(0.5);
@@ -47,7 +53,7 @@ export function worldBox(name: string, min: Vector3, max: Vector3, scene: Scene)
     ];
     const [nx, ny] = [Math.abs(normals[i]), Math.abs(normals[i + 1])];
     const [u, v] = ny > 0.5 ? [x, z] : nx > 0.5 ? [z, y] : [x, y];
-    uvs.push(u / SURFACE_TILE, v / SURFACE_TILE);
+    uvs.push(u / tile, v / tile);
   }
   box.setVerticesData(VertexBuffer.UVKind, uvs);
   return box;

@@ -12,7 +12,6 @@ import {
   Scene,
   ShadowGenerator,
   Vector3,
-  Vector4,
 } from "@babylonjs/core";
 import type { Level } from "../../shared/level";
 import { assetUrl } from "./assets";
@@ -25,7 +24,8 @@ import {
 } from "./graphics";
 import { addSky, HORIZON } from "./sky";
 import { storeSurface } from "./store";
-import { addTerrain, SURFACE_TILE as FLOOR_TILE } from "./terrain";
+import { addTerrain, SURFACE_TILE as FLOOR_TILE, worldBox } from "./terrain";
+import { addSurfaceVariation } from "./variation";
 
 const WALL_TILE = 3;
 const LOBBY_TARGET = new Vector3(91.5, 3, -45); // on the harbour street between the rows of street lights
@@ -96,6 +96,7 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
   // Dark and damp, like wet asphalt: the sky glances off it.
   floorMat.albedoColor = new Color3(0.32, 0.33, 0.36);
   floorMat.roughness = 0.6;
+  addSurfaceVariation(floorMat, { sampling: { kind: "hex" }, brightness: 0.2 });
   addTerrain(scene, level, shadows, floorMat);
 
   if (level.dock) {
@@ -112,12 +113,15 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
       (maxZ - minZ) / FLOOR_TILE,
     ]);
     dockMaterial.albedoColor = new Color3(0.85, 0.58, 0.08);
+    addSurfaceVariation(dockMaterial, { sampling: { kind: "hex", cells: 3 }, patch: 4 });
     dock.material = dockMaterial;
     dock.receiveShadows = true;
   }
 
   const wallMat = storeSurface("wall", scene);
   wallMat.albedoColor = new Color3(0.85, 0.82, 0.82);
+  // The brick texture has 20 courses.
+  addSurfaceVariation(wallMat, { sampling: { kind: "courses", rows: 20 }, grime: 0.35 });
   const plainShelves: Mesh[] = [];
   // Painted plaster between rooms, so a building's inside doesn't look like its outside.
   const plaster = surfaceMaterial("plaster", scene, new Color3(0.72, 0.7, 0.66), {
@@ -129,29 +133,14 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
   for (const [i, box] of level.boxes.entries()) {
     // Railings, pits and stairs are drawn by addTerrain.
     if (box.kind !== "wall" && box.kind !== "partition" && box.kind !== "shelf") continue;
-    const width = box.maxX - box.minX;
-    const depth = box.maxZ - box.minZ;
-    const tiled = (u: number, v: number) => new Vector4(0, 0, u / WALL_TILE, v / WALL_TILE);
-    const mesh = MeshBuilder.CreateBox(
+    // World-space texture coordinates: walls built of many boxes carry on one pattern.
+    const mesh = worldBox(
       `box${i}`,
-      {
-        width,
-        depth,
-        height: box.height,
-        wrap: true,
-        // Back, front, right, left, top, bottom, so the bricks stay the same size on every face.
-        faceUV: [
-          tiled(width, box.height),
-          tiled(width, box.height),
-          tiled(depth, box.height),
-          tiled(depth, box.height),
-          tiled(width, depth),
-          tiled(width, depth),
-        ],
-      },
+      new Vector3(box.minX, box.y, box.minZ),
+      new Vector3(box.maxX, box.y + box.height, box.maxZ),
       scene,
+      WALL_TILE,
     );
-    mesh.position.set((box.minX + box.maxX) / 2, box.y + box.height / 2, (box.minZ + box.maxZ) / 2);
     mesh.material = { shelf: shelfMat, partition: plaster, wall: wallMat }[box.kind];
     mesh.receiveShadows = true;
     shadows.addShadowCaster(mesh);
