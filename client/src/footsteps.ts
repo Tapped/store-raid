@@ -10,6 +10,8 @@ const STEP_RATE = 2.2;
 const MOVING_SPEED = 0.5;
 /** How loud a step is at walking speed; running steps are louder, slow ones softer. */
 const STEP_VOLUME = 0.5;
+/** How loud our own steps are, next to someone else's from a meter away. */
+const OWN_VOLUME = 0.6;
 
 /**
  * How someone's feet go: a phase that turns faster the faster they go, with a foot landing every
@@ -35,10 +37,17 @@ export class Gait {
   }
 }
 
-let sounds: Promise<OneShots | undefined> | undefined;
+let theirs: Promise<OneShots | undefined> | undefined;
+let ours: Promise<OneShots | undefined> | undefined;
 
-/** Plays a footstep at someone's feet: the concrete steps, shared by everyone on the page. */
+/** Plays a footstep at someone else's feet, heard from there: the concrete steps. */
 export function playFootstep(scene: Scene, at: Vector3, volume: number): void {
-  sounds ??= OneShots.load(scene, STEPS, 4);
-  void sounds.then((steps) => steps?.play(at, volume));
+  theirs ??= OneShots.load(scene, STEPS, 4);
+  void theirs.then((steps) => steps?.play(at, volume));
+}
+
+/** Plays one of our own footsteps: heard straight, as from our own feet, not from a place. */
+export function playOwnFootstep(scene: Scene, volume: number): void {
+  ours ??= OneShots.load(scene, STEPS, 2, { spatial: false });
+  void ours.then((steps) => steps?.play(undefined, volume * OWN_VOLUME));
 }

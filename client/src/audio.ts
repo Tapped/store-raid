@@ -65,11 +65,22 @@ export const SPATIAL: Partial<IStaticSoundOptions> = {
  * variants at random, at a slightly different pitch and volume, so repeats don't sound the same.
  * Each variant has a few voices, so a sound can start while the last one is still ringing. Walls
  * between a voice and the listener muffle it (occlusion.ts).
+ *
+ * Or, loaded with `spatial: false`, sounds the listener makes themselves, such as their own
+ * footsteps: heard straight, not from a place, so they don't fade or pan as the listener moves on.
  */
 export class OneShots {
-  private constructor(private variants: { voices: StaticSound[]; next: number }[]) {}
+  private constructor(
+    private variants: { voices: StaticSound[]; next: number }[],
+    private readonly spatial: boolean,
+  ) {}
 
-  static async load(scene: Scene, paths: string[], voices = 3): Promise<OneShots | undefined> {
+  static async load(
+    scene: Scene,
+    paths: string[],
+    voices = 3,
+    { spatial = true } = {},
+  ): Promise<OneShots | undefined> {
     const audio = await audioEngine(scene);
     const loaded = (await Promise.all(paths.map((p) => soundBuffer(scene, p)))).filter((b) => !!b);
     if (!loaded.length) return undefined;
@@ -80,28 +91,31 @@ export class OneShots {
             const voice = await CreateSoundAsync(
               `${buffer.name}-${i}`,
               buffer,
-              { ...SPATIAL, maxInstances: 1 },
+              { ...(spatial ? SPATIAL : {}), maxInstances: 1 },
               audio,
             );
-            occlude(voice);
+            if (spatial) occlude(voice);
             return voice;
           }),
         ),
         next: 0,
       })),
     );
-    return new OneShots(variants);
+    return new OneShots(variants, spatial);
   }
 
-  /** Play one at `at`, at about `volume`, its pitch varied by up to `pitch` either way (0.1 is 10%). */
-  play(at: Vector3, volume: number, pitch = 0.1) {
+  /**
+   * Play one at `at` (ignored if they aren't spatial), at about `volume`, its pitch varied by up to
+   * `pitch` either way (0.1 is 10%).
+   */
+  play(at: Vector3 | undefined, volume: number, pitch = 0.1) {
     const variant = this.variants[Math.floor(Math.random() * this.variants.length)];
     const voice = variant.voices[variant.next];
     variant.next = (variant.next + 1) % variant.voices.length;
-    voice.spatial.position = at.clone();
+    if (at && this.spatial) voice.spatial.position = at.clone();
     voice.volume = volume * (0.75 + 0.25 * Math.random());
     voice.playbackRate = 1 + pitch * (2 * Math.random() - 1);
-    snapOcclusion(voice);
+    if (this.spatial) snapOcclusion(voice);
     voice.play();
   }
 

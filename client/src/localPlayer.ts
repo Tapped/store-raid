@@ -1,4 +1,4 @@
-import { type FreeCamera, Vector3 } from "@babylonjs/core";
+import type { FreeCamera } from "@babylonjs/core";
 import { CloseCode } from "@colyseus/sdk";
 import { Predict } from "@colyseus/sdk/predict";
 import type { MoveInput } from "../../server/src/rooms/schema";
@@ -12,7 +12,7 @@ import {
   YAW_SCALE,
 } from "../../shared/constants";
 import { stepMover } from "../../shared/movement";
-import { Gait, playFootstep } from "./footsteps";
+import { Gait, playOwnFootstep } from "./footsteps";
 import { addCameraEffects } from "./graphics";
 import { FirstPersonHands, type Held } from "./hands";
 import type { Device } from "./input";
@@ -164,19 +164,16 @@ export class LocalPlayer {
       const hand = HANDS.find((h) => self?.[h] && items.get(self[h]) === view);
       view.hold(hand && this.hands.anchorFor(hand, held[hand]));
     }
-    // Footsteps at our feet, only on the ground: not falling, nor climbing, which goes nowhere across.
+    // Our footsteps, only on the ground: not falling, nor climbing, which goes nowhere across.
     const session = this.session;
-    if (session) {
-      const value = (field: "x" | "y" | "z" | "vx" | "vy" | "vz") =>
-        session.predict.value(session.self, field);
-      const speed = Math.hypot(value("vx"), value("vz"));
-      if (this.gait.update(dt, speed, value("vy") === 0)) {
-        const feet = new Vector3(value("x"), value("y"), value("z"));
-        playFootstep(this.world.scene, feet, this.gait.volume);
-      }
-    } else {
-      this.gait.update(dt, 0, false);
-    }
+    const speed = session
+      ? Math.hypot(
+          session.predict.value(session.self, "vx"),
+          session.predict.value(session.self, "vz"),
+        )
+      : 0;
+    const grounded = session ? session.predict.value(session.self, "vy") === 0 : false;
+    if (this.gait.update(dt, speed, grounded)) playOwnFootstep(this.world.scene, this.gait.volume);
     this.hands.update(dt, held, this.gait);
   }
 
