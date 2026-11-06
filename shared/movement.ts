@@ -13,8 +13,9 @@ import {
   RUN_TIME,
   STEP_DOWN,
   STEP_UP,
+  UPHILL,
 } from "./constants";
-import { floorHeight, type Ladder, type Level, type LevelBox } from "./level";
+import { type Floor, floorHeight, type Ladder, type Level, type LevelBox } from "./level";
 import { LADDER_WALL, OFFSET } from "./tiles";
 
 /**
@@ -99,17 +100,20 @@ export function stepMover(
     }
   }
 
-  // Running takes stamina, and only happens on the ground, moving, with some left.
+  // Stairs slow them down, and running up them is harder work. A ladder has its own pace.
+  const pace = climb === undefined ? paceAt(terrain, mover.x, mover.y, mover.z, dirX, dirZ) : FLAT;
+
+  // Running takes stamina, more going up, and only happens on the ground, moving, with some left.
   const running = input.run === true && climb === undefined && length > 0 && !mover.winded;
   if (running) {
-    mover.stamina = Math.max(0, mover.stamina - dt / RUN_TIME);
+    mover.stamina = Math.max(0, mover.stamina - (dt * pace.effort) / RUN_TIME);
     if (mover.stamina === 0) mover.winded = true;
   } else {
     mover.stamina = Math.min(1, mover.stamina + dt / REST_TIME);
     if (mover.stamina >= RUN_AGAIN) mover.winded = false;
   }
 
-  const speed = running ? RUN_SPEED : PLAYER_SPEED;
+  const speed = (running ? RUN_SPEED : PLAYER_SPEED) * pace.speed;
   let vx = dirX * speed;
   let vz = dirZ * speed;
 
@@ -188,15 +192,63 @@ function ladderAt(terrain: Terrain, x: number, y: number, z: number): Ladder | u
   );
 }
 
-/** The top of the highest floor under a point that isn't above `below`; -Infinity over a hole. */
-export function groundUnder(terrain: Terrain, x: number, z: number, below: number): number {
+/** How a walker's speed and effort change with the ground under them: see `paceAt`. */
+export interface Pace {
+  /** The share of their speed on the flat that they keep. */
+  speed: number;
+  /** How much harder than on the flat it is to go: 1 or more. */
+  effort: number;
+}
+
+const FLAT: Pace = { speed: 1, effort: 1 };
+
+/**
+ * The pace of anything walking the level from here in this direction: players, and anything that
+ * chases them, so all of them are slowed the same. On stairs their speed is along the slope, not
+ * across the ground, and going up costs more, by UPHILL for every meter it rises per meter across:
+ * they go slower, and running there tires them faster. Flat ground, the air, and across the stairs
+ * leave them as they are.
+ *
+ * `dirX`, `dirZ` is the way they're going, of any length. Pure, like `stepMover`.
+ */
+export function paceAt(
+  terrain: Terrain,
+  x: number,
+  y: number,
+  z: number,
+  dirX: number,
+  dirZ: number,
+): Pace {
+  const length = Math.hypot(dirX, dirZ);
+  const floor = floorUnder(terrain, x, z, y + STEP_UP);
+  if (length === 0 || !floor?.rise || y - floorHeight(floor, x, z) > STEP_DOWN) return FLAT;
+  const [towardX, towardZ] = OFFSET[floor.rise.toward];
+  const across = towardX !== 0 ? floor.maxX - floor.minX : floor.maxZ - floor.minZ;
+  // Meters up per meter across in this direction: below 0 going down.
+  const grade = ((floor.rise.height / across) * (dirX * towardX + dirZ * towardZ)) / length;
+  const effort = 1 + UPHILL * Math.max(0, grade);
+  return { speed: 1 / Math.hypot(1, grade) / effort, effort };
+}
+
+/** The highest floor under a point that isn't above `below`, if any. */
+function floorUnder(terrain: Terrain, x: number, z: number, below: number): Floor | undefined {
+  let found: Floor | undefined;
   let ground = Number.NEGATIVE_INFINITY;
   for (const floor of terrain.floors) {
     if (x < floor.minX || x > floor.maxX || z < floor.minZ || z > floor.maxZ) continue;
     const height = floorHeight(floor, x, z);
-    if (height <= below && height > ground) ground = height;
+    if (height <= below && height > ground) {
+      ground = height;
+      found = floor;
+    }
   }
-  return ground;
+  return found;
+}
+
+/** The top of the highest floor under a point that isn't above `below`; -Infinity over a hole. */
+export function groundUnder(terrain: Terrain, x: number, z: number, below: number): number {
+  const floor = floorUnder(terrain, x, z, below);
+  return floor ? floorHeight(floor, x, z) : Number.NEGATIVE_INFINITY;
 }
 
 /** The bottom of the lowest floor over a point that is above `above`; Infinity under open sky. */

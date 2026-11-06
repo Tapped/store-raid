@@ -64,6 +64,12 @@ export const RUN_TIME = 5;
 export const REST_TIME = 6;
 export const RUN_AGAIN = 0.4;
 
+/**
+ * How much harder going up stairs is, per meter of rise per meter across: see `paceAt`. Stairs
+ * rise 3 m in 4, so walking up them goes about half as fast across the ground as on the flat.
+ */
+export const UPHILL = 0.8;
+
 /** How high a player steps up without noticing, and how far down they follow the floor before falling. */
 export const STEP_UP = 0.35;
 export const STEP_DOWN = 0.3;

@@ -119,6 +119,11 @@ This is a solo, local project. Start everything with **`pnpm run dev`** (require
   the floor down `STEP_DOWN`, and fall under `GRAVITY`; boxes only block where they overlap in
   height. On a ladder, walking into it climbs and backing away climbs down. Falling below the
   level's `killY` respawns a player, and puts an item back where it started.
+- **Stairs slow walkers down:** `paceAt()` in `shared/movement.ts` gives the share of flat speed
+  kept and the effort for going one way from a point, with speed along the slope and climbing
+  dearer (`UPHILL`). Anything that walks the level, enemies included, should move at its pace.
+- **Running** (Shift, or click the left stick) takes stamina; running out leaves a player winded
+  until it's back to `RUN_AGAIN`. Both are in `MoverState`, so they're predicted like position.
 - Console (dev only): `window.__game` → `{ player(), views, items, world, engine }`.
 - Controllers need a secure page (HTTPS or localhost), and a button press before they show up.
   Holding both sticks down for a second reloads the page.
