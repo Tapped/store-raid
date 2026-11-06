@@ -10,6 +10,8 @@ export const MoveInput = schema({
   moveZ: t.int8(),
   /** Where the player looks, in YAW_SCALE units. Movement ignores it; carrying and others' views use it. */
   yaw: t.int16(),
+  /** Whether the run button is held: full input then goes RUN_SPEED instead of PLAYER_SPEED. */
+  run: t.boolean(),
 });
 export type MoveInput = SchemaType<typeof MoveInput>;
 

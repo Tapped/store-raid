@@ -9,7 +9,7 @@ import {
   StandardMaterial,
   TransformNode,
 } from "@babylonjs/core";
-import { PLAYER_HEIGHT, PLAYER_RADIUS } from "../../shared/constants";
+import { PLAYER_HEIGHT, PLAYER_RADIUS, PLAYER_SPEED } from "../../shared/constants";
 import { loadContainer } from "./assets";
 import { surfaceMaterial } from "./graphics";
 import type { World } from "./scene";
@@ -153,6 +153,13 @@ export class PlayerView {
 
     if (carrying) this.setPose(moving ? "carry-walk" : "carry-stand");
     else this.setPose(moving ? "walk" : "stand");
+
+    // Runners stride faster: the walk clips speed up with them, never slowing below a walk.
+    if (moving) {
+      const rate = WALK_RATE * Math.max(1, this.speed / PLAYER_SPEED);
+      for (const group of this.model?.animationGroups ?? [])
+        if (group.isPlaying) group.speedRatio = rate;
+    }
   }
 
   dispose() {

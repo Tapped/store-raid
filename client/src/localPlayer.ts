@@ -185,6 +185,7 @@ export class LocalPlayer {
     const forwardZ = Math.cos(rotation.y);
     const worldX = controls.moveX * forwardZ + controls.moveY * forwardX;
     const worldZ = -controls.moveX * forwardX + controls.moveY * forwardZ;
+    const running = this.device.runHeld();
 
     // One input per simulation step, independent of frame rate.
     const steps = session.predict.tick(performance.now());
@@ -192,6 +193,7 @@ export class LocalPlayer {
       session.input.data.moveX = Math.round(worldX * MOVE_SCALE);
       session.input.data.moveZ = Math.round(worldZ * MOVE_SCALE);
       session.input.data.yaw = Math.round(rotation.y * YAW_SCALE);
+      session.input.data.run = running;
       session.input.send();
     }
 

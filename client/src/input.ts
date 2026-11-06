@@ -20,6 +20,8 @@ export interface Device {
   grabHeld(): boolean;
   /** True once per press: let go of the last thing grabbed. */
   dropPressed(): boolean;
+  /** Whether the player runs: Shift held, or a click of the left stick until the stick is let go. */
+  runHeld(): boolean;
   /** True once the reload combo has been held long enough. Keyboards have F5 instead. */
   reloadHeld(): boolean;
 }
@@ -99,6 +101,7 @@ const keyboard: Device = {
   grabPressed: () => anyPressed("KeyE"),
   grabHeld: () => held.has("KeyE"),
   dropPressed: () => anyPressed("KeyQ"),
+  runHeld: () => keys("ShiftLeft", "ShiftRight"),
   reloadHeld: () => false,
 };
 
@@ -136,6 +139,8 @@ function controller(index: number): Device {
   // Sticks still held from before a reload must be let go first, or it would reload forever.
   let reloadArmed = false;
   let reloadHeldSince: number | undefined;
+  // Clicking the stick in starts a run, which lasts until the stick comes back to the middle.
+  let running = false;
   return {
     read() {
       const axes = pad()?.axes ?? [];
@@ -154,6 +159,12 @@ function controller(index: number): Device {
     grabPressed: () => edge(BUTTON_RIGHT_BUMPER),
     grabHeld: () => pad()?.buttons[BUTTON_RIGHT_BUMPER]?.pressed ?? false,
     dropPressed: () => edge(BUTTON_LEFT_BUMPER),
+    runHeld() {
+      const axes = pad()?.axes ?? [];
+      if (edge(BUTTON_LEFT_STICK)) running = true;
+      if (Math.hypot(axes[0] ?? 0, axes[1] ?? 0) < DEADZONE) running = false;
+      return running;
+    },
     reloadHeld() {
       const buttons = pad()?.buttons;
       if (!buttons?.[BUTTON_LEFT_STICK]?.pressed || !buttons[BUTTON_RIGHT_STICK]?.pressed) {
@@ -208,5 +219,6 @@ export const input: Device = {
   grabPressed: () => any((device) => device.grabPressed()),
   grabHeld: () => any((device) => device.grabHeld()),
   dropPressed: () => any((device) => device.dropPressed()),
+  runHeld: () => any((device) => device.runHeld()),
   reloadHeld: () => any((device) => device.reloadHeld()),
 };

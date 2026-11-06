@@ -6,6 +6,7 @@ import {
   PLAYER_HEIGHT,
   PLAYER_RADIUS,
   PLAYER_SPEED,
+  RUN_SPEED,
   STEP_DOWN,
   STEP_UP,
 } from "./constants";
@@ -31,6 +32,7 @@ export type Terrain = Pick<Level, "boxes" | "floors" | "ladders">;
 export interface MoveInputLike {
   moveX: number;
   moveZ: number;
+  run?: boolean;
 }
 
 /**
@@ -83,8 +85,9 @@ export function stepMover(
     }
   }
 
-  let vx = dirX * PLAYER_SPEED;
-  let vz = dirZ * PLAYER_SPEED;
+  const speed = input.run ? RUN_SPEED : PLAYER_SPEED;
+  let vx = dirX * speed;
+  let vz = dirZ * speed;
 
   const circle = { x: mover.x + vx * dt, z: mover.z + vz * dt, radius: PLAYER_RADIUS };
   // Below the top, a climber stays against the ladder, even having come onto it from above.

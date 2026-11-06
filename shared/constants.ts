@@ -53,6 +53,8 @@ export function droppingHand(holding: Holding): Hand | undefined {
 
 /** Units per second at full input. */
 export const PLAYER_SPEED = 6;
+/** Units per second at full input while running. */
+export const RUN_SPEED = 9;
 
 /** How high a player steps up without noticing, and how far down they follow the floor before falling. */
 export const STEP_UP = 0.35;
