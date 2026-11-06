@@ -22,8 +22,12 @@ const MOVING_SPEED = 0.5;
 const SPEED_SMOOTHING = 10;
 /** How quickly the character turns to face where its player looks, per second. */
 const TURN_SMOOTHING = 12;
-/** Playback rate of the walk clips: players move faster than the clips were recorded walking. */
-const WALK_RATE = 2;
+/**
+ * Playback rate of the walk clips per m/s, so the feet keep up with the ground: at 6 m/s they play
+ * twice as fast as recorded. WALK_RATE is where they start, at walking speed.
+ */
+const RATE_PER_SPEED = 1 / 3;
+const WALK_RATE = PLAYER_SPEED * RATE_PER_SPEED;
 /** The walk clip's frame where the feet are closest together: the standing pose, as there's no idle clip. */
 const STAND_FRAME = 2;
 const BLEND_SPEED = 0.08;
@@ -154,9 +158,9 @@ export class PlayerView {
     if (carrying) this.setPose(moving ? "carry-walk" : "carry-stand");
     else this.setPose(moving ? "walk" : "stand");
 
-    // Runners stride faster: the walk clips speed up with them, never slowing below a walk.
+    // The walk clips keep pace with however fast they go, never slower than half a walk.
     if (moving) {
-      const rate = WALK_RATE * Math.max(1, this.speed / PLAYER_SPEED);
+      const rate = Math.max(WALK_RATE / 2, this.speed * RATE_PER_SPEED);
       for (const group of this.model?.animationGroups ?? [])
         if (group.isPlaying) group.speedRatio = rate;
     }

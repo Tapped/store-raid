@@ -6,7 +6,14 @@ import {
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
-import { HANDS, type Hand, ITEM_KINDS, type ItemKind, PLAYER_SPEED } from "../../shared/constants";
+import {
+  HANDS,
+  type Hand,
+  ITEM_KINDS,
+  type ItemKind,
+  PLAYER_SPEED,
+  RUN_SPEED,
+} from "../../shared/constants";
 import { loadContainer } from "./assets";
 import type { World } from "./scene";
 
@@ -40,7 +47,7 @@ const FOLLOW = 16;
 /** How long a grab's reach takes, in seconds, and how far it goes. */
 const REACH_TIME = 0.28;
 const REACH = new Vector3(0, 0.06, 0.2);
-/** Walking bob, at full speed: meters across and up, and steps per second. */
+/** Walking bob, at walking speed: meters across and up, and steps per second. Running bobs more. */
 const BOB = new Vector3(0.012, 0.016, 0);
 const STEP_RATE = 2.2;
 /** How far the hands lag behind turning the head, in meters per radian per second. */
@@ -150,7 +157,7 @@ export class FirstPersonHands {
     );
     Vector3.LerpToRef(this.sway, swayTarget, 1 - Math.exp(-10 * dt), this.sway);
 
-    const pace = Math.min(1, speed / PLAYER_SPEED);
+    const pace = Math.min(RUN_SPEED / PLAYER_SPEED, speed / PLAYER_SPEED);
     this.phase += dt * STEP_RATE * Math.PI * (0.3 + pace);
     const bob = new Vector3(
       Math.sin(this.phase) * BOB.x * pace,
