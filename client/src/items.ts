@@ -34,8 +34,8 @@ const BEAM = tunables(
   {
     angle: { value: 0.75, min: 0.2, max: 1.6, hint: "The cone's full angle, in radians" },
     inner: { value: 0.25, min: 0, max: 1.6, hint: "The bright middle's full angle, in radians" },
-    intensity: { value: 90, min: 0, max: 400, hint: "How bright it is a meter out" },
-    range: { value: 35, min: 5, max: 80, hint: "Meters until it has faded out" },
+    intensity: { value: 220, min: 0, max: 800, hint: "How bright it is a meter out" },
+    range: { value: 45, min: 5, max: 100, hint: "Meters until it has faded out" },
   },
   () => {
     for (const beam of beams) shapeBeam(beam);
