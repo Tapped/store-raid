@@ -42,10 +42,17 @@ const BEAM = tunables(
   },
 );
 
+/**
+ * Beams switched on. A beam stays enabled and goes dark at intensity 0 instead: enabling or
+ * disabling a light changes how many lights every surface it reaches takes, and so recompiles
+ * every one of their shaders at once, a long stutter.
+ */
+const lit = new WeakSet<SpotLight>();
+
 function shapeBeam(beam: SpotLight) {
   beam.angle = BEAM.angle;
   beam.innerAngle = Math.min(BEAM.inner, BEAM.angle);
-  beam.intensity = BEAM.intensity;
+  beam.intensity = lit.has(beam) ? BEAM.intensity : 0;
   beam.range = BEAM.range;
 }
 const BEAM_COLOR = new Color3(1, 0.92, 0.78);
@@ -132,7 +139,6 @@ export class ItemView {
       beam.diffuse = BEAM_COLOR;
       beam.specular = BEAM_COLOR;
       beam.renderPriority = LIGHT_PRIORITY.other;
-      beam.setEnabled(false);
       this.beam = beam;
     }
     void this.loadModel(world, id, kind);
@@ -221,7 +227,9 @@ export class ItemView {
       clicks ??= OneShots.load(scene, [CLICK], 2);
       void clicks.then((sounds) => sounds?.play(at, SOUND.click, 0.05));
     }
-    this.beam.setEnabled(on);
+    if (on) lit.add(this.beam);
+    else lit.delete(this.beam);
+    shapeBeam(this.beam);
     this.glow();
   }
 
