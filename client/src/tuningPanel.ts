@@ -45,6 +45,9 @@ const STYLE = `
 #tuning .reset { padding: 0; width: 18px; height: 18px; line-height: 1; visibility: hidden; }
 #tuning .row.changed .reset { visibility: visible; }
 #tuning .note { color: #889; padding: 4px 8px 8px; }
+/* The controls hint would show through the panel in a narrow window, and the game isn't played
+   while it's open anyway. */
+body:has(#tuning) #hint { visibility: hidden; }
 `;
 
 interface Row {
