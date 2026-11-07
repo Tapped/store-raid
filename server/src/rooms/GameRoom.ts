@@ -284,7 +284,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   /** Where the index-th player stands in the truck at the start of a round: in rows across it. */
   private truckSpot(index: number): { x: number; y: number; z: number } {
     const dock = this.level.dock;
-    if (!dock) return { ...this.level.spawnPoint(index), y: 0 };
+    if (!dock) return { y: 0, ...this.level.spawnPoint(index) };
     const across = (min: number, max: number) =>
       Math.max(1, Math.floor((max - min - TRUCK_SPACING) / TRUCK_SPACING) + 1);
     const cols = across(dock.minX, dock.maxX);
@@ -303,7 +303,12 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
    * Make a player one of those in the building, at a point, or take them out of it: they drop what
    * they hold, and leave no body for things to bump into.
    */
-  private setRole(sessionId: string, player: Player, role: Role, at?: { x: number; z: number }) {
+  private setRole(
+    sessionId: string,
+    player: Player,
+    role: Role,
+    at?: { x: number; y?: number; z: number },
+  ) {
     for (const hand of HANDS) this.drop(sessionId, hand);
     player.role = role;
     player.ready = false;
@@ -313,7 +318,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     if (role !== "playing") return;
     if (at) {
       player.x = at.x;
-      player.y = 0;
+      player.y = at.y ?? 0;
       player.z = at.z;
     }
     player.vx = 0;

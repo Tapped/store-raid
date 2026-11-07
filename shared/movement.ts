@@ -2,6 +2,7 @@ import { resolveCircleBox } from "./collision";
 import { MOVE_SCALE, PLAYER_HEIGHT, PLAYER_RADIUS } from "./constants";
 import { type Floor, floorHeight, type Ladder, type Level, type LevelBox } from "./level";
 import type { Mechanics } from "./mechanics";
+import { near } from "./spatial";
 import { LADDER_WALL, OFFSET } from "./tiles";
 
 /**
@@ -122,7 +123,7 @@ export function stepMover(
     (mover.vy > 0 ||
       mover.y - groundUnder(terrain, mover.x, mover.z, mover.y + m.stepUp) > m.stepDown);
   const lift = airborne ? 0 : m.stepUp;
-  for (const box of terrain.boxes) {
+  for (const box of near(terrain.boxes, circle.x, circle.z)) {
     if (!blocks(box, mover.y, lift)) continue;
     const { dx, dz } = resolveCircleBox(circle, box);
     // Kill velocity heading into the wall so the reconciler replays the same stop.
@@ -231,7 +232,7 @@ export function paceAt(
 function floorUnder(terrain: Terrain, x: number, z: number, below: number): Floor | undefined {
   let found: Floor | undefined;
   let ground = Number.NEGATIVE_INFINITY;
-  for (const floor of terrain.floors) {
+  for (const floor of near(terrain.floors, x, z)) {
     if (x < floor.minX || x > floor.maxX || z < floor.minZ || z > floor.maxZ) continue;
     const height = floorHeight(floor, x, z);
     if (height <= below && height > ground) {
@@ -251,7 +252,7 @@ export function groundUnder(terrain: Terrain, x: number, z: number, below: numbe
 /** The bottom of the lowest floor over a point that is above `above`; Infinity under open sky. */
 function ceilingOver(terrain: Terrain, x: number, z: number, above: number): number {
   let ceiling = Number.POSITIVE_INFINITY;
-  for (const floor of terrain.floors) {
+  for (const floor of near(terrain.floors, x, z)) {
     if (x < floor.minX || x > floor.maxX || z < floor.minZ || z > floor.maxZ) continue;
     const height = floorHeight(floor, x, z) - floor.thickness;
     if (height >= above && height < ceiling) ceiling = height;

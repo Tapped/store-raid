@@ -80,6 +80,8 @@ export function addTerrain(
   const planks: Mesh[] = [];
   const railings: Mesh[] = [];
   for (const [i, floor] of level.floors.entries()) {
+    // Ground is drawn by its own model, like the harbour's paving.
+    if (floor.kind === "ground") continue;
     if (floor.kind === "stairs") {
       floors.push(...steps(scene, floor, i));
       railings.push(...stairRailings(scene, floor, i));

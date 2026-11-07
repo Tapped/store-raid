@@ -24,6 +24,9 @@ const BLOCKS: Record<string, number> = {
   rail: 0,
   pit: 0,
   stairs: 0,
+  // The harbour's houses and clutter, and its paving, which is never between two people on it.
+  scenery: 0.5,
+  ground: 0,
 };
 const OPEN_CUTOFF = 20000;
 const WALLS = tunables(

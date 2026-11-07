@@ -1,6 +1,7 @@
 import type { Box } from "./collision";
 import { ARENA_SIZE, type ItemKind } from "./constants";
 import { type GenerateOptions, generate } from "./generate";
+import HARBOUR_TERRAIN from "./harbour.json";
 import { CELL, composeTiles, type Screen, type Side, STOREY } from "./tiles";
 
 const HALF = ARENA_SIZE / 2;
@@ -26,19 +27,23 @@ const SHELF_SPANS = [
 export type LevelBox = Box & {
   y: number;
   height: number;
-  /** A partition is a wall between rooms, inside a building. */
-  kind: "wall" | "partition" | "shelf" | "rail" | "pit" | "stairs" | "furniture";
+  /**
+   * A partition is a wall between rooms, inside a building. Scenery is something a model draws,
+   * like the harbour's houses and clutter: the box only stops players.
+   */
+  kind: "wall" | "partition" | "shelf" | "rail" | "pit" | "stairs" | "furniture" | "scenery";
 };
 
 /**
  * Something to walk on: its top is at `y`, or for stairs a ramp rising `rise.height` from `y` at one
  * side to the other, `toward`. Players stand where their centre is over one, so they fall off the
- * edge of a plank. `thickness` is how far down it's solid.
+ * edge of a plank. `thickness` is how far down it's solid. Ground is drawn by a model, like the
+ * harbour's paving, so the floor only holds players up.
  */
 export interface Floor extends Box {
   y: number;
   thickness: number;
-  kind: "floor" | "plank" | "stairs";
+  kind: "floor" | "plank" | "stairs" | "ground";
   rise?: { toward: Side; height: number };
 }
 
@@ -97,8 +102,11 @@ export interface Level {
   /** TVs showing static, from `tv` tiles (client/src/screens.ts). */
   screens: Screen[];
   items: ItemSpawn[];
-  /** Where the index-th player to join starts, unless they've been here before. */
-  spawnPoint(index: number): { x: number; z: number };
+  /**
+   * Where the index-th player to join starts, unless they've been here before: on the ground, at
+   * `y` where that isn't 0.
+   */
+  spawnPoint(index: number): { x: number; y?: number; z: number };
   /** How high its roof is, or undefined if it's open to the sky. */
   roof: number | undefined;
 }
@@ -243,6 +251,44 @@ const PLAYGROUND: Level = {
   roof: HALL_HEIGHT,
 };
 
+// The harbour: the store where it stands, and the harbour around it to walk on, out of the dock
+// and up onto the quay, along the street between the warehouses and out to the water. The harbour's
+// model draws it (client/src/harbour.ts); its ground and what's in the way come from that model,
+// through scripts/harbour.ts, into shared/harbour.json. The store's lot is half a meter below the
+// quay, a step to jump. Falling in the water is a fall like any other.
+const HARBOUR: Level = {
+  ...STORE,
+  name: "harbour",
+  boxes: [
+    ...STORE_BOXES,
+    ...HARBOUR_TERRAIN.boxes.map(([minX, minZ, maxX, maxZ, y, height]) => ({
+      minX,
+      minZ,
+      maxX,
+      maxZ,
+      y,
+      height,
+      kind: "scenery" as const,
+    })),
+  ],
+  floors: [
+    ...STORE.floors,
+    ...HARBOUR_TERRAIN.floors.map(([minX, minZ, maxX, maxZ, y]) => ({
+      minX,
+      minZ,
+      maxX,
+      maxZ,
+      y,
+      thickness: 0.3,
+      kind: "ground" as const,
+    })),
+  ],
+  // The water is at -3.4.
+  killY: -3,
+  // On the street between the warehouses, by the lamps, in twos.
+  spawnPoint: (index) => ({ x: 90.5 + (index % 2) * 2, y: 0.7, z: -44 - (index % 8) }),
+};
+
 /** How big generated levels are, in cells and storeys. */
 export const GENERATED_SIZE: Omit<GenerateOptions, "seed"> = {
   cols: 8,
@@ -295,7 +341,10 @@ function generatedLevel(seed: number): Level {
 }
 
 /** Every level, by the name a room and `?level=` use. */
-export const LEVELS = { store: STORE, playground: PLAYGROUND } satisfies Record<string, Level>;
+export const LEVELS = { store: STORE, playground: PLAYGROUND, harbour: HARBOUR } satisfies Record<
+  string,
+  Level
+>;
 export type LevelName = keyof typeof LEVELS;
 
 const generatedLevels = new Map<number, Level>();

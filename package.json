@@ -20,6 +20,7 @@
     "assets:restore": "tsx scripts/assets.ts restore",
     "model": "tsx scripts/models/index.ts",
     "image": "tsx scripts/image.ts",
+    "harbour": "tsx scripts/harbour.ts",
     "sounds": "node F:/Dev/Libraries/SonnisSounds/sounds.mjs",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run build:verify"
   },

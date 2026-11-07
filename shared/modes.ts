@@ -9,10 +9,13 @@ import type { Level } from "./level";
 export const MODES = ["playground", "game"] as const;
 export type Mode = (typeof MODES)[number];
 
-/** The mode asked for, else the level's own: the playground hall is for trying things out. */
+/**
+ * The mode asked for, else the level's own: the playground hall is for trying things out, and the
+ * harbour for walking around.
+ */
 export function modeFor(levelName: string, asked?: unknown): Mode {
   if (MODES.includes(asked as Mode)) return asked as Mode;
-  return levelName === "playground" ? "playground" : "game";
+  return levelName === "playground" || levelName === "harbour" ? "playground" : "game";
 }
 
 /**

@@ -47,6 +47,7 @@ scripts/bot.ts             headless player
 scripts/hands.ts           bots check the hands in the store: phones, a TV and a two-person sofa, and report what worked
 scripts/playground.ts      a bot checks the playground: dimmer, stairs up and down, ladders, railing, plank and the pit
 scripts/generate.ts        draws a generated level from a seed, or checks how many seeds go
+scripts/harbour.ts         the harbour's ground and what's in the way, from its model, into shared/harbour.json (`pnpm run harbour`)
 scripts/unity-import/      prefabs from a Unity .unitypackage → textured .glb in assets/, through Blender
 scripts/models/            models made in code: one Python script per model, built in Blender (`pnpm run model`)
 scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`pnpm run image`, see the `image` skill)
@@ -103,8 +104,8 @@ scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`p
 - **Modes** (`shared/modes.ts`, `state.mode`): `?mode=playground` or `?mode=game`, else the
   level's own: the playground level is playground, the store and generated levels are game. Each
   level and mode has its own rooms, so clients and bots always send the mode they resolved with
-  `modeFor()`. The **playground** has no rounds, nobody dies (falling respawns), the lights are on
-  the dimmer and players come back where they left. A **game** runs rounds in `state.phase`:
+  `modeFor()`; the harbour level is playground by default too. The **playground** has no rounds,
+  nobody dies (falling respawns), the lights are on the dimmer and players come back where they left. A **game** runs rounds in `state.phase`:
   `lobby` (everyone in the truck, R / X to ready; all ready starts a short countdown), `raid`
   (`RAID_TIME` to dawn; ends when everyone alive stands in the truck and has pressed R / X to leave,
   or at dawn), `results` (cleared if `state.loot` reached `state.quota`, then the next lobby). Both
@@ -129,8 +130,13 @@ This is a solo, local project. Start everything with **`pnpm run dev`** (require
 - `PORT`, `SERVER_PORT` and `BASE` environment variables override the defaults.
 - **Levels** are in `shared/level.ts`. The playground is the default: a brick hall with each item
   kind, a dock, a pit with a plank across, stairs and ladders up two storeys and down to a
-  basement, and a dimmer for the lights, to try things out in. The store is at `http://127.0.0.1:5173/?level=store`. New models go on show
-  in the playground through `CONCEPTS` in `client/src/playground.ts`. Each level has its own
+  basement, and a dimmer for the lights, to try things out in. The store is at `http://127.0.0.1:5173/?level=store`.
+  The **harbour** (`?level=harbour`) is the store with the harbour around it to walk on: players
+  start on the street between the warehouses, the store's lot is a jump down from the quay, and the
+  water drowns. The harbour model draws it; `pnpm run harbour` works out its floors (`ground`) and
+  boxes (`scenery`) from that model into `shared/harbour.json`, which is in git: run it again when
+  the harbour changes. Lookups in big levels go through a grid (`near()` in `shared/spatial.ts`).
+  New models go on show in the playground through `CONCEPTS` in `client/src/playground.ts`. Each level has its own
   rooms; bots join the playground unless `LEVEL` says otherwise.
 - **Tiles** (`shared/tiles.ts`): the playground is a grid of 4 m cells on storeys 3 m apart,
   written as characters (`F` floor, `T` a TV showing static, `#` solid, `P` pit, `|`/`=` plank bridge, `^>v<` stairs and
