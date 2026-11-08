@@ -160,7 +160,7 @@ const AMBIENT_OCCLUSION =
 export const POST = tunables(
   "Rendering/Post-processing",
   {
-    ssaoStrength: { value: 1.2, min: 0, max: 4, hint: "Contact shadows where things meet" },
+    ssaoStrength: { value: 2, min: 0, max: 4, hint: "Contact shadows where things meet" },
     ssaoRadius: { value: 1.5, min: 0.1, max: 5, hint: "Meters around a point that darken it" },
     taaFactor: {
       value: 0.05,
