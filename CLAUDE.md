@@ -26,6 +26,8 @@ client/src/items.ts        ItemView: a phone, flashlight, TV, box or sofa, drawn
 client/src/props.ts        addProps(): scenery models, drawn only, with no collision
 client/src/playground.ts   addPlayground(): the playground hall: roof, beams, lights on the dimmer, and CONCEPTS on show
 client/src/terrain.ts      addTerrain(): a level's floors, planks, stairs, ladders, railings and pits; worldBox() for seamless tiling
+client/src/tileViewer.ts   the tile viewer at /tiles.html: generated levels, every tile and hand-written grids, drawn by the game's code, to inspect
+client/src/tileCatalogue.ts every tile in a small grid of its own, for the tile viewer
 client/src/tick.ts         TickView: the large tick, walked in code: leg IK, a tetrapod gait, questing front legs
 client/src/audio.ts        audioEngine(): one per page, heard from the active camera; soundBuffer(); OneShots: varied one-shot sounds placed in the world
 client/src/store.ts        addShelves(): stocked shelving over the shelf collision boxes; storeSurface(): textured walls and floor
@@ -182,6 +184,11 @@ You can't see the browser, so check your work from the terminal, with `pnpm run 
   square and prints every player's position each second (`LEVEL=` and `MODE=` choose the room).
 - **Rounds:** start a second server with a short raid, `SERVER_PORT=2601 RAID_TIME=12 pnpm exec tsx
   server/src/index.ts`, and point bots at it, rather than waiting ten minutes for dawn.
+- **Tile viewer:** `http://127.0.0.1:5173/tiles.html` draws tiles without a server, built and
+  drawn by the game's own code: a generated level by seed (`?source=generated&seed=7`, `[`/`]` step
+  through seeds), every tile on its own (`?source=catalogue`), the playground's grid, or one written
+  by hand in its text box. Cut storeys away, show collision boxes, click a cell for its sockets,
+  edges and neighbours, and Tab to fly through at eye height. `window.__tiles` in the console.
 - **Tuning panel:** `__game.tune()` in the browser console opens and closes a panel of every
   registered tunable: sound, rendering, feel, controls and the room's mechanics. Keys typed in it
   don't reach the game. In dev, what it changes is kept in that browser's localStorage until reset,

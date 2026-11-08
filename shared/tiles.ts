@@ -369,8 +369,10 @@ export function composeTiles(source: TileGrid): {
         const neighbour = (side: Side) =>
           grid.tile(storey, col + OFFSET[side][0], row + OFFSET[side][1]);
         const thickness = storey === 0 ? GROUND : SLAB;
-        // Up to the underside of whatever floor is above.
-        const ceiling = STOREY - SLAB;
+        // Up to the underside of whatever floor is above, or on the top storey right up to the
+        // roof, which a hall puts there, with no floor above to fill the gap.
+        const top = storey === grid.tiles.length - basements - 1;
+        const ceiling = top ? STOREY : STOREY - SLAB;
 
         // Walls on the north and east edges, and the south and west ones on the grid's edge, so each
         // edge is built once.

@@ -2,7 +2,7 @@ import type { Box } from "./collision";
 import { ARENA_SIZE, type ItemKind } from "./constants";
 import { type GenerateOptions, generate } from "./generate";
 import HARBOUR_TERRAIN from "./harbour.json";
-import { CELL, composeTiles, type Screen, type Side, STOREY } from "./tiles";
+import { CELL, composeTiles, type Screen, type Side, STOREY, type TileGrid } from "./tiles";
 
 const HALF = ARENA_SIZE / 2;
 const WALL = 1;
@@ -201,7 +201,7 @@ const HALL_HEIGHT = 9;
  * Eight cells across and six deep, on a basement, the ground and two storeys above. Each storey's
  * northern row comes first; the basement is dug out of rock, and open under the pit.
  */
-const PLAYGROUND_TILES = composeTiles({
+export const PLAYGROUND_GRID: TileGrid = {
   x: -HALL_X,
   z: -HALL_Z,
   basements: 1,
@@ -211,7 +211,8 @@ const PLAYGROUND_TILES = composeTiles({
     [".F<FF...", ".FFFF..."],
     ["FF......"],
   ],
-});
+};
+const PLAYGROUND_TILES = composeTiles(PLAYGROUND_GRID);
 
 const PLAYGROUND: Level = {
   name: "playground",
