@@ -224,8 +224,8 @@ export class ItemView {
     if (told) {
       const scene = this.node.getScene();
       const at = this.node.getAbsolutePosition().clone();
-      clicks ??= OneShots.load(scene, [CLICK], 2);
-      void clicks.then((sounds) => sounds?.play(at, SOUND.click, 0.05));
+      clicks ??= OneShots.load(scene, [CLICK]);
+      void clicks.then((sounds) => sounds?.play({ at, volume: SOUND.click }, { pitch: 0.05 }));
     }
     if (on) lit.add(this.beam);
     else lit.delete(this.beam);

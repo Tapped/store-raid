@@ -1,10 +1,8 @@
 import {
   Color3,
-  CreateSoundAsync,
   DynamicTexture,
   MeshBuilder,
   StandardMaterial,
-  type StaticSound,
   Texture,
   TransformNode,
   Vector3,
@@ -12,7 +10,7 @@ import {
 import { ITEM_KINDS } from "../../shared/constants";
 import { SCREEN_CABINET, type Side } from "../../shared/tiles";
 import { loadContainer } from "./assets";
-import { audioEngine, SPATIAL, soundBuffer } from "./audio";
+import { type Falloff, Loop } from "./audio";
 import { surfaceMaterial } from "./graphics";
 import type { World } from "./scene";
 import { tunables } from "./tuning";
@@ -33,10 +31,9 @@ const DRONE = tunables(
     for (const sound of drones) sound.volume = volume;
   },
 );
-const drones = new Set<StaticSound>();
-/** Full volume within this many meters, then half as loud each time the distance doubles. */
-const NEAR = 2;
-const FAR = 30;
+const drones: Loop[] = [];
+/** Full volume within 2 meters, then half as loud each time the distance doubles, to 30. */
+const REACH: Falloff = { near: 2, far: 30, rolloff: 1 };
 /** Grains across and down the screen, and how many times a second they change. */
 const GRAINS = [96, 60];
 const RATE = 24;
@@ -64,7 +61,6 @@ export async function addScreens(world: World): Promise<void> {
   });
 
   const tv = await loadContainer(scene, "models/props/tv.glb");
-  const [audio, buffer] = await Promise.all([audioEngine(scene), soundBuffer(scene, LOOP)]);
 
   for (const [i, { x, y, z, faces }] of level.screens.entries()) {
     // Built facing +z, then turned to face its way.
@@ -117,26 +113,13 @@ export async function addScreens(world: World): Promise<void> {
       shadows.addShadowCaster(mesh);
     }
 
-    if (!buffer) continue;
-    const sound = await CreateSoundAsync(
-      `screen-sound-${i}`,
-      buffer,
-      {
-        ...SPATIAL,
-        loop: true,
-        volume: DRONE.volume,
-        spatialMinDistance: NEAR,
-        spatialMaxDistance: FAR,
-        spatialRolloffFactor: 1,
-        spatialPosition: new Vector3(x, y + middle, z),
-      },
-      audio,
-    );
-    drones.add(sound);
-    sound.onDisposeObservable.addOnce(() => drones.delete(sound));
-    // Looping sounds played before the browser lets the page make sound start once it does. Each
-    // TV somewhere else in the loop, so two of them don't sound like one.
-    sound.play({ startOffset: (buffer.duration * i * 0.37) % buffer.duration });
+    // Each TV somewhere else in the loop, so two of them don't sound like one.
+    void Loop.play(scene, LOOP, {
+      at: new Vector3(x, y + middle, z),
+      volume: DRONE.volume,
+      falloff: REACH,
+      phase: i * 0.37,
+    }).then((drone) => drone && drones.push(drone));
   }
 }
 

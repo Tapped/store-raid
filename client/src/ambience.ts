@@ -1,6 +1,5 @@
-import { CreateSoundAsync, type StaticSound, Vector3 } from "@babylonjs/core";
-import { audioEngine, SPATIAL, soundBuffer } from "./audio";
-import { occlude } from "./occlusion";
+import { Vector3 } from "@babylonjs/core";
+import { type Falloff, Loop } from "./audio";
 import type { World } from "./scene";
 import { tunables } from "./tuning";
 
@@ -21,40 +20,25 @@ const VOLUME = tunables(
     vent: { value: 0.5, min: 0, max: 3, hint: "The vent above the entrance" },
   },
   ({ bed, vent }) => {
-    if (!sounds) return;
-    sounds.bed.volume = bed;
-    sounds.vent.volume = vent;
+    if (sounds?.bed) sounds.bed.volume = bed;
+    if (sounds?.vent) sounds.vent.volume = vent;
   },
 );
-let sounds: { bed: StaticSound; vent: StaticSound } | undefined;
-/** Full volume within this many meters of the vent, then half as loud each time the distance doubles. */
-const VENT_NEAR = 4;
-const VENT_FAR = 60;
+let sounds: { bed?: Loop; vent?: Loop } | undefined;
+/** Full volume within 4 meters of the vent, then half as loud each time the distance doubles, to 60. */
+const VENT_REACH: Falloff = { near: 4, far: 60, rolloff: 1 };
 
 export async function addAmbience(world: World): Promise<void> {
   const { scene, level } = world;
-  const [audio, buffer] = await Promise.all([audioEngine(scene), soundBuffer(scene, LOOP)]);
-  if (!buffer) return;
-  const [bed, vent] = [
-    await CreateSoundAsync("ambience-bed", buffer, { loop: true, volume: VOLUME.bed }, audio),
-    await CreateSoundAsync(
-      "ambience-vent",
-      buffer,
-      {
-        ...SPATIAL,
-        loop: true,
-        volume: VOLUME.vent,
-        spatialMinDistance: VENT_NEAR,
-        spatialMaxDistance: VENT_FAR,
-        spatialRolloffFactor: 1,
-        spatialPosition: new Vector3(level.entrance.x, level.entrance.y, level.entrance.z),
-      },
-      audio,
-    ),
-  ];
-  occlude(vent);
+  const { x, y, z } = level.entrance;
+  const [bed, vent] = await Promise.all([
+    Loop.play(scene, LOOP, { volume: VOLUME.bed }),
+    Loop.play(scene, LOOP, {
+      at: new Vector3(x, y, z),
+      volume: VOLUME.vent,
+      falloff: VENT_REACH,
+      phase: 0.5,
+    }),
+  ]);
   sounds = { bed, vent };
-  // Looping sounds played before the browser lets the page make sound start once it does.
-  bed.play();
-  vent.play({ startOffset: buffer.duration / 2 });
 }

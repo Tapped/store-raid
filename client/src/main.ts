@@ -39,7 +39,7 @@ if (!playground) {
   void addShelves(world);
   void addHarbour(world.scene);
 }
-occludeIn(world.scene, world.level);
+occludeIn(world.level);
 void addAmbience(world);
 void addScreens(world);
 attachMouse(canvas);

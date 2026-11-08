@@ -1,16 +1,13 @@
 import {
-  CreateSoundAsync,
   Matrix,
   Quaternion,
   type Scene,
   type ShadowGenerator,
-  type StaticSound,
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
 import { loadContainer } from "./assets";
-import { audioEngine, followFalloff, OneShots, SPATIAL, soundBuffer } from "./audio";
-import { occlude } from "./occlusion";
+import { OneShots } from "./audio";
 import { tunables } from "./tuning";
 
 /**
@@ -121,7 +118,7 @@ export class TickView {
   private cycle = 0;
   private disposed = false;
   private taps?: OneShots;
-  private hiss?: StaticSound;
+  private hiss?: OneShots;
   /** When it may hiss next, on its own clock. */
   private nextHiss = 0;
   /** When the last tap played, on its own clock. */
@@ -239,32 +236,17 @@ export class TickView {
         });
       }
     }
-    void this.loadSounds(name, headNode);
+    void this.loadSounds();
   }
 
-  private async loadSounds(name: string, head: TransformNode) {
-    const [taps, audio, hiss] = await Promise.all([
+  private async loadSounds() {
+    const [taps, hiss] = await Promise.all([
       OneShots.load(this.scene, TAPS),
-      audioEngine(this.scene),
-      soundBuffer(this.scene, HISS),
+      OneShots.load(this.scene, [HISS]),
     ]);
-    if (this.disposed) {
-      taps?.dispose();
-      return;
-    }
+    if (this.disposed) return;
     this.taps = taps;
-    if (hiss) {
-      this.hiss = await CreateSoundAsync(
-        `${name}-hiss`,
-        hiss,
-        { ...SPATIAL, volume: TICK_SOUND.hiss },
-        audio,
-      );
-      // From its mouth, wherever that goes.
-      this.hiss.spatial.attach(head);
-      followFalloff(this.hiss);
-      occlude(this.hiss);
-    }
+    this.hiss = hiss;
   }
 
   /** Where the rig's frame is in the world now. */
@@ -310,13 +292,10 @@ export class TickView {
     // A hiss as it rears up to quest, then now and then while it goes on.
     if (this.hiss && questing && this.quest > 0.3 && this.clock >= this.nextHiss) {
       const rate = 0.85 + 0.2 * Math.random();
-      this.hiss.playbackRate = rate;
-      this.hiss.volume = TICK_SOUND.hiss;
-      this.hiss.play();
+      // From its mouth, wherever that goes.
+      this.hiss.play({ at: this.head?.node, volume: TICK_SOUND.hiss }, { pitch: 0, rate });
       this.nextHiss =
-        this.clock +
-        this.hiss.buffer.duration / rate +
-        lerp(HISS_GAP.min, HISS_GAP.max, Math.random());
+        this.clock + this.hiss.duration / rate + lerp(HISS_GAP.min, HISS_GAP.max, Math.random());
     }
 
     this.stepLegs(x, z, yaw, speed, moving, dt);
@@ -459,7 +438,7 @@ export class TickView {
     if (!this.taps || gap < TAP_GAP.min) return;
     this.lastTap = this.clock;
     const t = Math.min(1, (gap - TAP_GAP.min) / (TAP_GAP.max - TAP_GAP.min));
-    this.taps.play(at, TICK_SOUND.taps * lerp(TAP_SOFTEST, 1, t), 0.15);
+    this.taps.play({ at, volume: TICK_SOUND.taps * lerp(TAP_SOFTEST, 1, t) }, { pitch: 0.15 });
   }
 
   /** Bend a leg so its claw tip reaches `target` (rig frame), with the body moved by bodyMotion. */

@@ -51,12 +51,12 @@ let ours: Promise<OneShots | undefined> | undefined;
 
 /** Plays a footstep at someone else's feet, heard from there: the concrete steps. */
 export function playFootstep(scene: Scene, at: Vector3, volume: number): void {
-  theirs ??= OneShots.load(scene, STEPS, 4);
-  void theirs.then((steps) => steps?.play(at, volume * FOOTSTEPS.theirs));
+  theirs ??= OneShots.load(scene, STEPS);
+  void theirs.then((steps) => steps?.play({ at, volume: volume * FOOTSTEPS.theirs }));
 }
 
 /** Plays one of our own footsteps: heard straight, as from our own feet, not from a place. */
 export function playOwnFootstep(scene: Scene, volume: number): void {
-  ours ??= OneShots.load(scene, STEPS, 2, { spatial: false });
-  void ours.then((steps) => steps?.play(undefined, volume * FOOTSTEPS.own));
+  ours ??= OneShots.load(scene, STEPS);
+  void ours.then((steps) => steps?.play({ volume: volume * FOOTSTEPS.own }));
 }

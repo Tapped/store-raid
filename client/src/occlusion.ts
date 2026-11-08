@@ -1,17 +1,14 @@
-import type { Scene, StaticSound, Vector3 } from "@babylonjs/core";
+import type { Vector3 } from "@babylonjs/core";
 import type { Level } from "../../shared/level";
 import { tunables } from "./tuning";
 
 /**
- * Sounds heard through walls: quieter and muffled. Each frame a straight line is drawn from the
- * listener's ears to every occluded sound, and every wall, floor and shelf it passes through adds
- * to how blocked the sound is. One wall turns a sound down to `wallGain` and cuts everything above
- * about `wallCutoff` Hz; two walls do that twice. The change glides over `glide` seconds, so stepping
- * past a doorframe doesn't jump, except when a one-shot starts, which takes the right value at once.
- *
- * Babylon's sounds have no filter of their own, so a low-pass filter and a gain go in between the
- * sound's last Web Audio node and the bus it plays into, which are Babylon internals. If they're
- * not where we expect (after a Babylon update), sounds play unoccluded and a warning says so.
+ * Sounds heard through walls: quieter and muffled. A straight line is drawn from the listener's
+ * ears to a placed sound, and every wall, floor and shelf it passes through adds to how blocked the
+ * sound is. One wall turns a sound down to `wallGain` and cuts everything above about `wallCutoff`
+ * Hz; two walls do that twice. audio.ts asks for every placed sound once a frame and glides to the
+ * new value over `glide` seconds, so stepping past a doorframe doesn't jump, except when a sound
+ * starts, which takes the right value at once.
  */
 
 /** How much each kind of thing blocks sound, as a share of one wall. */
@@ -29,26 +26,18 @@ const BLOCKS: Record<string, number> = {
   ground: 0,
 };
 const OPEN_CUTOFF = 20000;
-const WALLS = tunables(
-  "Sound/Occlusion",
-  {
-    wallGain: { value: 0.28, min: 0, max: 1, hint: "How loud a sound is through one wall" },
-    wallCutoff: { value: 700, min: 100, max: 8000, step: 10, hint: "Hz above which one wall cuts" },
-    minCutoff: { value: 180, min: 20, max: 2000, step: 10, hint: "Hz below which walls never cut" },
-    glide: {
-      value: 0.08,
-      min: 0.005,
-      max: 1,
-      step: 0.005,
-      hint: "Seconds the gain and filter take to get most of the way to a new value",
-    },
+const WALLS = tunables("Sound/Occlusion", {
+  wallGain: { value: 0.28, min: 0, max: 1, hint: "How loud a sound is through one wall" },
+  wallCutoff: { value: 700, min: 100, max: 8000, step: 10, hint: "Hz above which one wall cuts" },
+  minCutoff: { value: 180, min: 20, max: 2000, step: 10, hint: "Hz below which walls never cut" },
+  glide: {
+    value: 0.08,
+    min: 0.005,
+    max: 1,
+    step: 0.005,
+    hint: "Seconds the gain and filter take to get most of the way to a new value",
   },
-  // Every sound again, at once.
-  () => {
-    const ear = listening?.activeCamera?.globalPosition;
-    if (ear) for (const entry of occluded.values()) apply(entry, ear, true);
-  },
-);
+});
 /** A line has to go this many meters through something for it to count, so touching doesn't. */
 const THROUGH = 0.05;
 
@@ -58,29 +47,10 @@ interface Blocker {
   amount: number;
 }
 
-interface Occluded {
-  sound: StaticSound;
-  context: BaseAudioContext;
-  filter: BiquadFilterNode;
-  gain: GainNode;
-  /** Walls' worth between the sound and the listener, as last set. */
-  blocked: number;
-}
-
-/** The Babylon internals we wire into: the sound's output node and its bus's input node. */
-interface Internals {
-  _outNode?: AudioNode | null;
-  outBus?: { _inNode?: AudioNode | null } | null;
-  engine?: { _audioContext?: BaseAudioContext };
-}
-
 let blockers: Blocker[] = [];
-let listening: Scene | undefined;
-const occluded = new Map<StaticSound, Occluded>();
-let warned = false;
 
-/** Occlude sounds by this level's walls, floors and shelves, heard from the scene's active camera. */
-export function occludeIn(scene: Scene, level: Level) {
+/** Occlude sounds by this level's walls, floors and shelves. */
+export function occludeIn(level: Level) {
   blockers = [
     ...level.boxes.map((b) => ({
       min: [b.minX, b.y, b.minZ] as [number, number, number],
@@ -93,83 +63,22 @@ export function occludeIn(scene: Scene, level: Level) {
       amount: BLOCKS[f.kind] ?? 1,
     })),
   ].filter((b) => b.amount > 0);
-  if (listening) return;
-  listening = scene;
-  scene.onBeforeRenderObservable.add(() => {
-    const ear = scene.activeCamera?.globalPosition;
-    if (!ear) return;
-    for (const entry of occluded.values()) apply(entry, ear, false);
-  });
 }
 
-/** Have a placed (spatial) sound muffled by whatever is between it and the listener, from now on. */
-export function occlude(sound: StaticSound) {
-  const internals = sound as unknown as Internals;
-  const out = internals._outNode;
-  const bus = internals.outBus?._inNode;
-  const context = internals.engine?._audioContext;
-  if (!out || !bus || !context) {
-    if (!warned)
-      console.warn("Can't reach Babylon's audio nodes: sounds won't be muffled by walls");
-    warned = true;
-    return;
-  }
-  const filter = new BiquadFilterNode(context, {
-    type: "lowpass",
-    frequency: OPEN_CUTOFF,
-    Q: Math.SQRT1_2,
-  });
-  const gain = new GainNode(context);
-  try {
-    out.disconnect(bus);
-  } catch {
-    // Not connected yet: nothing to take apart.
-  }
-  out.connect(filter).connect(gain).connect(bus);
-  occluded.set(sound, { sound, context, filter, gain, blocked: 0 });
-  // Put Babylon's own connection back before it takes the sound apart, which expects it.
-  const dispose = sound.dispose.bind(sound);
-  sound.dispose = () => {
-    occluded.delete(sound);
-    out.disconnect(filter);
-    gain.disconnect();
-    out.connect(bus);
-    dispose();
+/**
+ * How a sound behind `blocked` walls' worth of stuff is heard: its gain, the frequency above which
+ * it's cut, and the seconds a change takes to get most of the way there.
+ */
+export function muffling(blocked: number): { gain: number; cutoff: number; glide: number } {
+  return {
+    gain: WALLS.wallGain ** blocked,
+    cutoff: Math.max(WALLS.minCutoff, OPEN_CUTOFF * (WALLS.wallCutoff / OPEN_CUTOFF) ** blocked),
+    glide: WALLS.glide,
   };
 }
 
-/** Set a sound's occlusion for where it is now, at once: for a one-shot just moved and started. */
-export function snapOcclusion(sound: StaticSound) {
-  const entry = occluded.get(sound);
-  const ear = listening?.activeCamera?.globalPosition;
-  if (entry && ear) apply(entry, ear, true);
-}
-
-function apply(entry: Occluded, ear: Vector3, snap: boolean) {
-  const blocked = blockedBetween(ear, entry.sound.spatial.position);
-  if (!snap && Math.abs(blocked - entry.blocked) < 0.01) return;
-  entry.blocked = blocked;
-  const gain = WALLS.wallGain ** blocked;
-  const cutoff = Math.max(
-    WALLS.minCutoff,
-    OPEN_CUTOFF * (WALLS.wallCutoff / OPEN_CUTOFF) ** blocked,
-  );
-  const now = entry.context.currentTime;
-  for (const [param, value] of [
-    [entry.gain.gain, gain],
-    [entry.filter.frequency, cutoff],
-  ] as const) {
-    if (snap) {
-      param.cancelScheduledValues(now);
-      param.setValueAtTime(value, now);
-    } else {
-      param.setTargetAtTime(value, now, WALLS.glide);
-    }
-  }
-}
-
 /** Walls' worth of stuff the straight line from a to b passes through. */
-function blockedBetween(a: Vector3, b: Vector3): number {
+export function blockedBetween(a: Vector3, b: Vector3): number {
   const from = [a.x, a.y, a.z];
   const delta = [b.x - a.x, b.y - a.y, b.z - a.z];
   const length = Math.hypot(delta[0], delta[1], delta[2]);
