@@ -29,7 +29,8 @@ client/src/terrain.ts      addTerrain(): a level's floors, planks, stairs, ladde
 client/src/tileViewer.ts   the tile viewer at /tiles.html: generated levels, every tile and hand-written grids, drawn by the game's code, to inspect
 client/src/tileCatalogue.ts every tile in a small grid of its own, for the tile viewer
 client/src/tick.ts         TickView: the large tick, walked in code: leg IK, a tetrapod gait, questing front legs
-client/src/audio.ts        audioEngine(): one per page, heard from the active camera; soundBuffer(); OneShots: varied one-shot sounds placed in the world
+client/src/audio.ts        sound on Web Audio, heard from the active camera: OneShots (varied one-shots) and Loop, placed or heard straight
+client/src/occlusion.ts    how many walls' worth lie between two points, and how muffled that makes a sound
 client/src/store.ts        addShelves(): stocked shelving over the shelf collision boxes; storeSurface(): textured walls and floor
 client/src/harbour.ts      addHarbour(): the harbour around the store, as instanced scenery with no collision
 client/src/paving.ts       addPavingVariation(): world-space brightness and damp patches on harbour paving
