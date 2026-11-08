@@ -50,7 +50,10 @@ const GRAB_CONE = (70 * Math.PI) / 180;
 const HAND_HEIGHT = 0.8;
 /** How far out to the side of the player's centre a one-handed thing hangs. */
 const HAND_SIDE = PLAYER_RADIUS + 0.15;
-/** Carried items fall if they stay this far from where they should be, say caught on a shelf. */
+/**
+ * Carried items fall if they stay this far from where they should be, say caught on a shelf; a
+ * one-handed one goes back into the hand instead.
+ */
 const MAX_CARRY_LAG = 1.5;
 /** Seconds that takes; a box swinging round when its carrier turns gets there well within it. */
 const CARRY_LAG_TIME = 0.4;
@@ -562,7 +565,14 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       const lag = this.physics.carry(body, target.x, target.y, target.z, target.yaw, front);
       const lagTime = lag > MAX_CARRY_LAG ? (this.lagging.get(id) ?? 0) + dt : 0;
       this.lagging.set(id, lagTime);
-      if (lagTime > CARRY_LAG_TIME) this.dropItem(id);
+      if (lagTime <= CARRY_LAG_TIME) continue;
+      if (kind.hands === 1) {
+        // Something small caught on a door frame as its carrier ran past: back into their hand, not
+        // dropped. Inside the carrier, whom carried things pass through, so never inside a wall.
+        const [[, carrier]] = carriers;
+        this.physics.place(body, carrier.x, carrier.y + HAND_HEIGHT, carrier.z);
+        this.lagging.delete(id);
+      } else this.dropItem(id);
     }
   }
 
