@@ -82,13 +82,17 @@ export interface ItemSpawn {
 
 /** What a room is for, which decides its surfaces, what stands in it and how it's lit. */
 export type RoomKind =
-  /** Where players come in: the best lit room there is. */
+  /** Where players come in, the loading bay: the best lit room there is. */
   | "entrance"
-  /** The shop floor: aisles of shelving, displays, tills. */
-  | "sales"
-  /** Back of house: pallet racking, crates, bare concrete. */
+  /** A storage hall: rows of pallet racking, shipping containers, crates. */
+  | "hall"
+  /** A smaller storeroom: shelving, crates, drums. */
   | "stock"
-  /** Desks, filing cabinets, carpet. */
+  /** A bonded store behind chain-link, where the valuable cargo is locked away. */
+  | "cage"
+  /** Workbenches, tools, a machine in pieces. */
+  | "workshop"
+  /** Desks, filing cabinets: the shipping office. */
   | "office"
   /** Lockers, a table, a vending machine. */
   | "staff"

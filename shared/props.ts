@@ -63,31 +63,44 @@ export const PROPS = {
   "cctv-camera": ceiling(0.15, 0.2, 0.3),
   /** A louvred grille. */
   "wall-vent": wall(0.6, 0.4, 0.05),
+  /** A high-bay lamp for halls: a metal dome on a short chain. Its lens glows. */
+  "high-bay": ceiling(0.45, 0.4, 0.45),
 
-  // The shop floor.
-  /** Low double-sided shop shelving, stocked on both sides: three ways of stocking the same frame. Three fill a cell end to end. */
-  "gondola-a": floor(1.33, 1.6, 0.9),
-  "gondola-b": floor(1.33, 1.6, 0.9),
-  "gondola-c": floor(1.33, 1.6, 0.9),
-  /** Tall single-sided shelving for along a wall, stocked: two ways. Origin on the floor, in the middle of its footprint. */
-  "wall-shelf-a": floor(1.33, 2.2, 0.5),
-  "wall-shelf-b": floor(1.33, 2.2, 0.5),
-  /** A till: counter, belt, screen and card reader. */
-  checkout: floor(2.2, 1.1, 0.9),
-  "shopping-cart": floor(0.6, 1, 1),
-  /** A table piled with goods on offer. */
-  "display-table": floor(1.6, 0.9, 1),
-  /** A rail of clothes on hangers. */
-  "clothes-rack": floor(1.5, 1.6, 0.6),
-  /** An upright cooler with glass doors, stocked with drinks. Its inside glows cold white. */
-  "fridge-cabinet": floor(1.33, 2.1, 0.75),
-  /** A chest freezer with sliding glass lids. */
-  "freezer-chest": floor(1.8, 0.9, 0.9),
-  /** A sign hanging over an aisle on two wires, with a number on it. */
-  "aisle-sign": ceiling(1.2, 0.5, 0.05),
-  mannequin: floor(0.5, 1.85, 0.35),
-  /** A cardboard promotional stand with products. */
-  "promo-stand": floor(0.6, 1.5, 0.4),
+  // Cargo: what a harbour warehouse stores.
+  /** A 20 ft shipping container, doors shut: three paint colours and states of wear. They stand in rows and against walls. */
+  "container-a": floor(2.44, 2.59, 6.06),
+  "container-b": floor(2.44, 2.59, 6.06),
+  "container-c": floor(2.44, 2.59, 6.06),
+  /** A wooden shipping crate with stencilled marks and steel corner straps. */
+  "crate-large": floor(1.2, 1.2, 1.2),
+  /** A long crate, for pipes or machine parts. */
+  "crate-long": floor(2.4, 0.8, 0.8),
+  /** Crates of several sizes stacked, one askew. */
+  "crate-stack": floor(1.6, 2, 1.2),
+  /** Four steel drums on a pallet, strapped, with hazard labels. */
+  "drum-group": floor(1.2, 1.05, 1.2),
+  /** A wooden cable reel standing on its rim, half wound with black cable. */
+  "cable-reel": floor(0.8, 1.4, 1.4),
+  /** A white woven bulk bag, full, on a pallet. */
+  "big-bag": floor(0.95, 1.2, 0.95),
+  /** A panel of chain-link partition between two posts: bonded stores are caged in with these, end to end. */
+  "cage-panel": floor(2, 2.4, 0.06),
+  /** A forklift, parked, forks down. The front is the forks. */
+  forklift: floor(1.2, 2.15, 3.2),
+  /** Machinery on a skid under a tied-down tarpaulin. */
+  "wrapped-machine": floor(1.8, 1.5, 1.2),
+  /** Truck tyres in a stack. */
+  "tyre-stack": floor(0.9, 1.2, 0.9),
+  /** A coil of thick mooring rope with a fender buoy on it. */
+  "rope-coil": floor(1, 0.5, 1),
+  /** Gas cylinders chained in a steel cage. */
+  "gas-cage": floor(1.2, 1.9, 0.8),
+  /** A platform scale with its read-out on a column. */
+  "weigh-scale": floor(1.2, 1.2, 1.5),
+  /** A sign hanging on two wires, with a bay number on it. */
+  "bay-sign": ceiling(1.2, 0.5, 0.05),
+  /** Clear PVC strips hanging in a doorway 1.4 m wide and 2.2 m high. Origin on the floor in the middle of the opening. */
+  "strip-curtain": floor(1.4, 2.2, 0.05, false),
 
   // Back of house.
   /** Heavy pallet racking, one bay, loaded with boxes and wrapped pallets: two loads. */
@@ -113,6 +126,13 @@ export const PROPS = {
   switchgear: floor(1.6, 2, 0.5),
   "hand-truck": floor(0.5, 1.2, 0.5, false),
   "trash-bin": floor(0.45, 0.7, 0.45),
+  /** Tall steel shelving for along a wall, with parts bins, boxes and tins: two ways of stocking it. */
+  "wall-shelf-a": floor(1.33, 2.2, 0.5),
+  "wall-shelf-b": floor(1.33, 2.2, 0.5),
+  /** A workbench with a vice, tools on a back board and clutter. */
+  workbench: floor(1.8, 1.5, 0.75),
+  /** A red tool cabinet on castors, a drawer open. */
+  "tool-cabinet": floor(0.7, 1, 0.46),
 } as const satisfies Record<string, PropKind>;
 
 export type PropName = keyof typeof PROPS;
