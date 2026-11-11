@@ -125,10 +125,10 @@ const ACCENTS = [
   rgb(0.3, 0.27, 0.36),
 ];
 const LIGHTS = [
-  rgb(0.78, 0.77, 0.72),
-  rgb(0.73, 0.76, 0.74),
-  rgb(0.8, 0.76, 0.68),
-  rgb(0.72, 0.73, 0.75),
+  rgb(0.7, 0.69, 0.64),
+  rgb(0.65, 0.68, 0.66),
+  rgb(0.72, 0.68, 0.6),
+  rgb(0.64, 0.65, 0.67),
 ];
 const DARKS = [
   rgb(0.4, 0.42, 0.43),
@@ -239,7 +239,7 @@ function finishFor(kind: RoomKind | "basement", livery: Livery, salt: number): F
         ...base,
         floor: plain("concrete-floor"),
         kick: undefined,
-        lower: plain("galvanised"),
+        lower: plain("painted-steel", vary(livery.steel, salt, 0.04).scale(1.6)),
         dado: 1.3,
         band: { height: 0.05, coat: plain("painted-steel", livery.accent) },
         dirt: 0.75,
@@ -1044,11 +1044,29 @@ function wallRect(ctx: Context, parts: PartBuilder, plan: Plan, face: WallFace) 
       fractions(rows(plan.base, y0, y1), y0, y1),
     );
   }
+  // Under the roof, a closure angle where the wall meets the deck, hiding the ribs' ends.
+  if (plan.storey === ctx.top && face.y1 >= plan.ceiling - EPS && face.code !== SLAB_EDGE) {
+    const tiled = finish.ceiling === "tile" && suspended(ctx, face.col, face.row);
+    if (!tiled) {
+      parts.paint = linear(ctx.livery.steel);
+      parts.wear = steelWear(ctx, plan.base, 0);
+      const out = face.sign * 0.05;
+      const [lo, hi] = [
+        Math.min(face.coord, face.coord + out),
+        Math.max(face.coord, face.coord + out),
+      ];
+      const y = plan.ceiling;
+      if (face.axis === "x")
+        parts.box("painted-steel", [lo, y - 0.07, face.a0], [hi, y, face.a1], 0.003, ["+y"]);
+      else parts.box("painted-steel", [face.a0, y - 0.07, lo], [face.a1, y, hi], 0.003, ["+y"]);
+    }
+  }
   // A trim where walls meet a tiled ceiling.
   if (finish.ceiling === "tile" && face.y1 >= plan.ceiling - EPS && face.code !== SLAB_EDGE) {
     parts.paint = linear(rgb(0.86, 0.86, 0.84));
+    parts.wear = steelWear(ctx, plan.base, 0);
     const out = face.sign * 0.022;
-    const y = plan.ceiling;
+    const y = plan.storey === ctx.top ? plan.ceiling - SUSPENDED_DROP : plan.ceiling;
     if (face.axis === "x") {
       parts.box(
         "painted-steel",
@@ -1284,6 +1302,18 @@ function floors(ctx: Context, parts: PartBuilder) {
   }
 }
 
+/** Bare concrete soffits, rougher than the walls' bake, so tubes close by don't glint on them. */
+const SOFFIT = { roughness: 1.35, bump: 0.7 };
+/** How far below the roof a suspended ceiling hangs: just clear of the deck's ribs. */
+const SUSPENDED_DROP = 0.045;
+
+/** Whether a cell on the top storey has a suspended ceiling instead of the roof's deck. */
+function suspended(ctx: Context, col: number, row: number): boolean {
+  const tile = ctx.tile(ctx.top, col, row);
+  if (tile?.kind !== "floor" && tile?.kind !== "tv" && tile?.kind !== "ladder") return false;
+  return ctx.finish(ctx.top, col, row).ceiling === "tile";
+}
+
 /** The undersides of floors over rooms, and shallow downstand beams in the bigger rooms. */
 function ceilings(ctx: Context, parts: PartBuilder) {
   const slabs = new Map<string, Floor>();
@@ -1314,7 +1344,30 @@ function ceilings(ctx: Context, parts: PartBuilder) {
       [0, -1, 0],
       fractions(cuts(floor.minX, floor.maxX, 1, 0.3), floor.minX, floor.maxX),
       fractions(cuts(floor.minZ, floor.maxZ, 1, 0.3), floor.minZ, floor.maxZ),
+      surface === "concrete-wall" ? SOFFIT : undefined,
     );
+  }
+  // Under the roof, offices and staff rooms get a suspended ceiling, just under the deck.
+  const top = ctx.top;
+  const roof = ctx.level.roof ?? (top + 1) * STOREY;
+  for (let row = 0; row < ctx.parsed.rows; row++) {
+    for (let col = 0; col < ctx.parsed.cols; col++) {
+      if (!suspended(ctx, col, row)) continue;
+      const cell = ctx.cellBox(col, row);
+      parts.chunk = `s${top}`;
+      const place = placeAt(ctx, top, (cell.minX + cell.maxX) / 2, (cell.minZ + cell.maxZ) / 2);
+      parts.wear = ceilingWear(ctx, place);
+      parts.paint = undefined;
+      parts.quad(
+        "ceiling-tile",
+        [cell.minX, roof - SUSPENDED_DROP, cell.minZ],
+        [CELL, 0, 0],
+        [0, 0, CELL],
+        [0, -1, 0],
+        fractions(cuts(cell.minX, cell.maxX, 1, 0.3), cell.minX, cell.maxX),
+        fractions(cuts(cell.minZ, cell.maxZ, 1, 0.3), cell.minZ, cell.maxZ),
+      );
+    }
   }
   // Beams along each room's long axis, on the edges between its cells.
   const BEAM = { width: 0.36, depth: 0.12 };
@@ -2063,7 +2116,7 @@ export function addRoof(scene: Scene, level: Level): Mesh[] {
   for (let row = 0; row < rowCount; row++) {
     for (let col = 0; col < cols; col++) {
       const tile = ctx.tile(storey, col, row);
-      if (tile?.kind === "solid") continue;
+      if (tile?.kind === "solid" || suspended(ctx, col, row)) continue;
       const cell = ctx.cellBox(col, row);
       if (col === 0) cell.minX = extent.minX;
       if (col === cols - 1) cell.maxX = extent.maxX;
@@ -2107,6 +2160,7 @@ export function addRoof(scene: Scene, level: Level): Mesh[] {
       )
         continue;
       if (here !== there || along(nc, nr) !== alongX) continue;
+      if (suspended(ctx, col, row) || suspended(ctx, nc, nr)) continue;
       if (ctx.parsed.edge(storey, col, row, alongX ? "n" : "e") !== "none") continue;
       const cell = ctx.cellBox(col, row);
       parts.paint = linear(ctx.livery.steel);
