@@ -31,7 +31,7 @@ function stiffener(a: number): number {
 export const metalDeck: Recipe = {
   cavity: { radius: 8, strength: 0.25 },
   sample(u, v, o) {
-    galvanised(o, u, v, TILE / 1000, 500, 0.2);
+    galvanised(o, u, v, TILE / 1000, 500, 0.08);
     const x = wrapDelta(u * RIBS, 0) * PITCH;
     const h = profile(x);
     o.h += h;
@@ -51,11 +51,11 @@ export const metalDeck: Recipe = {
       (1 - smoothstep(0, 60, Math.abs(lapX))) * smoothstep(0.55, 0.85, fbm01(u, v, 30, 4, 4, 501));
     rust(o, u, v, TILE / 1000, weep * 0.8, 502);
     // Condensation drip lines along the ribs' undersides, and tide marks where it pooled.
-    const drip = smoothstep(0.6, 0.85, fbm01(u, v, RIBS * 8, 3, 3, 503)) * (h / DEPTH);
+    const drip = smoothstep(0.65, 0.85, fbm01(u, v, RIBS * 2, 2, 3, 503)) * (h / DEPTH) * 0.5;
     cover(o, DIRT, drip * 0.3);
     const tide = smoothstep(0.7, 0.8, fbm01(u, v, 3, 3, 5, 504) + fbm(u, v, 40, 40, 2, 505) * 0.05);
     const tideLine = tide * (1 - smoothstep(0.8, 0.95, fbm01(u, v, 3, 3, 5, 504)));
-    cover(o, RUST, tideLine * 0.25);
+    cover(o, RUST, tideLine * 0.12);
     o.rough = mix(o.rough, 0.7, drip);
   },
 };

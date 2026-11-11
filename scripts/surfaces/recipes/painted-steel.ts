@@ -6,7 +6,7 @@ import { cover, DIRT, paintedMetal, SALT, STEEL } from "./common";
 export const paintedSteel: Recipe = {
   cavity: { radius: 3, strength: 0.4 },
   sample(u, v, o) {
-    paintedMetal(o, u, v, { tile: 1, seed: 100, damage: 0.55, age: 0.8, runs: 0.8, wash: 0.6 });
+    paintedMetal(o, u, v, { tile: 1, seed: 100, damage: 0.25, age: 0.8, runs: 0.8, wash: 0.5 });
     // Scratches through the paint, bright where fresh.
     const s = scratches(u, v, 5, 2, 110, 0.18, 0.0012, 0.3, 0.6);
     if (s > 0) {

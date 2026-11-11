@@ -35,7 +35,7 @@ const TABLE = {
   "concrete-floor": {
     tile: 4,
     size: 2048,
-    color: [0.47, 0.46, 0.44],
+    color: [0.52, 0.52, 0.5],
     // One slab per repeat, with half a saw cut along each side: every slab shows the bake turned
     // its own way, and the cuts still meet.
     variation: {
@@ -50,7 +50,7 @@ const TABLE = {
     tile: 2,
     size: 2048,
     tint: [0.85, 0.66, 0.08],
-    color: [0.62, 0.52, 0.2],
+    color: [0.73, 0.58, 0.22],
     variation: {
       sampling: { kind: "hex", cells: 2, rotate: 0, contrast: 0.3 },
       patch: 6,
@@ -63,7 +63,7 @@ const TABLE = {
     tile: 2.4,
     size: 2048,
     tint: [0.78, 0.76, 0.71],
-    color: [0.68, 0.66, 0.62],
+    color: [0.72, 0.7, 0.65],
     variation: {
       sampling: { kind: "cells", cells: [8, 8], turn: "any" },
       patch: 7,
@@ -76,7 +76,7 @@ const TABLE = {
     tile: 2,
     size: 2048,
     tint: [0.26, 0.29, 0.33],
-    color: [0.24, 0.26, 0.29],
+    color: [0.24, 0.26, 0.28],
     // Carpet tiles are laid quarter-turned anyway.
     variation: {
       sampling: { kind: "cells", cells: [4, 4], turn: "any" },
@@ -90,7 +90,7 @@ const TABLE = {
     tile: 3,
     size: 2048,
     tint: [0.8, 0.79, 0.74],
-    color: [0.72, 0.71, 0.66],
+    color: [0.78, 0.77, 0.72],
     upright: true,
     variation: {
       sampling: { kind: "hex", cells: 2.2, rotate: 0, keepHeight: true, contrast: 0.3 },
@@ -106,7 +106,7 @@ const TABLE = {
     tile: 3,
     size: 2048,
     tint: [0.78, 0.77, 0.73],
-    color: [0.7, 0.69, 0.65],
+    color: [0.75, 0.74, 0.7],
     upright: true,
     variation: { patch: 7, brightness: 0.07, roughness: 0.1, grime: 0.3 },
     about: "Painted blockwork, 16 courses a storey: mortar joints, chipped paint, scuffs",
@@ -115,7 +115,7 @@ const TABLE = {
     tile: 3.048,
     size: 2048,
     tint: [0.55, 0.6, 0.6],
-    color: [0.48, 0.5, 0.49],
+    color: [0.53, 0.56, 0.56],
     upright: true,
     variation: { patch: 6, brightness: 0.08, roughness: 0.12, grime: 0.2 },
     about:
@@ -124,7 +124,7 @@ const TABLE = {
   "concrete-wall": {
     tile: 3,
     size: 2048,
-    color: [0.5, 0.49, 0.47],
+    color: [0.51, 0.51, 0.48],
     upright: true,
     variation: { patch: 7, brightness: 0.1, roughness: 0.1, grime: 0.35 },
     about: "Board-formed concrete, cast in place: board marks, tie holes, water stains, salt bloom",
@@ -132,7 +132,7 @@ const TABLE = {
   "ceiling-tile": {
     tile: 2.4,
     size: 2048,
-    color: [0.74, 0.73, 0.69],
+    color: [0.83, 0.82, 0.78],
     variation: {
       sampling: { kind: "cells", cells: [4, 4], turn: "any" },
       patch: 9,
@@ -144,7 +144,7 @@ const TABLE = {
   "metal-deck": {
     tile: 1.8288,
     size: 2048,
-    color: [0.52, 0.53, 0.53],
+    color: [0.59, 0.6, 0.6],
     variation: { patch: 6, brightness: 0.1, roughness: 0.15 },
     about: "Galvanised roof deck from below: ribs 152 mm apart along v, a sheet lap every 6",
   },
@@ -152,7 +152,7 @@ const TABLE = {
     tile: 1,
     size: 1024,
     tint: [0.3, 0.36, 0.42],
-    color: [0.3, 0.33, 0.36],
+    color: [0.32, 0.36, 0.41],
     variation: {
       sampling: { kind: "hex", cells: 2, rotate: 0, contrast: 0.4 },
       patch: 4,
@@ -164,28 +164,28 @@ const TABLE = {
   galvanised: {
     tile: 1,
     size: 1024,
-    color: [0.58, 0.59, 0.6],
+    color: [0.59, 0.6, 0.6],
     variation: { sampling: { kind: "hex", cells: 2, rotate: 1 }, patch: 3, brightness: 0.1 },
     about: "Hot-dip galvanised steel: spangle, white rust, dull patches",
   },
   rust: {
     tile: 1,
     size: 1024,
-    color: [0.33, 0.19, 0.11],
+    color: [0.32, 0.19, 0.12],
     variation: { sampling: { kind: "hex", cells: 2, rotate: 1 }, patch: 3, brightness: 0.12 },
     about: "Heavily rusted steel: flaking layers, pits, mill scale",
   },
   "diamond-plate": {
     tile: 0.5,
     size: 1024,
-    color: [0.55, 0.56, 0.57],
+    color: [0.43, 0.43, 0.43],
     variation: { patch: 3, brightness: 0.08, roughness: 0.2 },
     about: "Steel tread plate, worn bright on the lugs, dirt between",
   },
   "wood-plank": {
     tile: 1.2,
     size: 1024,
-    color: [0.45, 0.33, 0.22],
+    color: [0.56, 0.45, 0.33],
     variation: {
       sampling: { kind: "courses", rows: 8, run: [0.5, 1.2], joint: 0.003 },
       patch: 4,
@@ -196,7 +196,7 @@ const TABLE = {
   cardboard: {
     tile: 1,
     size: 1024,
-    color: [0.55, 0.42, 0.29],
+    color: [0.58, 0.45, 0.31],
     variation: {
       sampling: { kind: "hex", cells: 1.5, rotate: 0, contrast: 0.2 },
       patch: 2,
@@ -207,7 +207,7 @@ const TABLE = {
   "wall-tile": {
     tile: 1.5,
     size: 2048,
-    color: [0.8, 0.8, 0.77],
+    color: [0.88, 0.87, 0.85],
     variation: {
       sampling: { kind: "cells", cells: [10, 10], turn: "mirror" },
       patch: 5,
@@ -220,7 +220,7 @@ const TABLE = {
   rubber: {
     tile: 1,
     size: 1024,
-    color: [0.09, 0.09, 0.09],
+    color: [0.14, 0.13, 0.13],
     variation: { sampling: { kind: "hex", cells: 2, rotate: 1 }, patch: 3, brightness: 0.15 },
     about: "Black rubber: mats, wheel stops, stair nosings; dust in the grain, polished wear",
   },
@@ -228,7 +228,7 @@ const TABLE = {
     tile: 1,
     size: 1024,
     tint: [0.86, 0.64, 0.05],
-    color: [0.45, 0.36, 0.1],
+    color: [0.59, 0.46, 0.22],
     variation: { patch: 3, brightness: 0.1, roughness: 0.1 },
     about: "Worn diagonal hazard stripes, tint and black, 25 cm apart along u",
   },
@@ -244,7 +244,7 @@ const TABLE = {
     tile: 1,
     size: 1024,
     tint: [0.16, 0.3, 0.5],
-    color: [0.17, 0.27, 0.4],
+    color: [0.19, 0.3, 0.48],
     variation: {
       sampling: { kind: "hex", cells: 1.5, rotate: 0, contrast: 0.2 },
       patch: 3,

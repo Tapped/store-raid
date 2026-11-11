@@ -104,6 +104,12 @@ export function surface(
   material.transparencyMode = PBRMaterial.PBRMATERIAL_OPAQUE;
   if (tint) new SurfaceTint(material, tint.toLinearSpace());
   if (spec.cutout) {
+    // The engine's own alpha test, at a low cut-off, lets its other passes (depth, the pre-pass,
+    // shadows) see the holes too; the plugin then cuts at the right threshold for the distance.
+    material.albedoTexture.hasAlpha = true;
+    material.useAlphaFromAlbedoTexture = true;
+    material.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHATEST;
+    material.alphaCutOff = 0.04;
     material.backFaceCulling = false;
     new SurfaceCutout(material, spec.size);
   }
@@ -193,18 +199,29 @@ class SurfaceCutout extends MaterialPluginBase {
     return true;
   }
 
+  // The size is a uniform: the base constructor asks for the code before this one has run.
+  override getUniforms() {
+    return {
+      ubo: [{ name: "cutSize", size: 1, type: "float" }],
+      fragment: "uniform float cutSize;",
+    };
+  }
+
+  override bindForSubMesh(ubo: UniformBuffer): void {
+    ubo.updateFloat("cutSize", this.size);
+  }
+
   override getCustomCode(
     shaderType: string,
     shaderLanguage: ShaderLanguage = ShaderLanguage.GLSL,
   ): Record<string, string> | null {
     if (shaderType !== "fragment") return null;
-    const size = this.size.toFixed(1);
     if (shaderLanguage === ShaderLanguage.WGSL) {
       return {
         CUSTOM_FRAGMENT_UPDATE_ALPHA: `
           #ifdef ALBEDO
           {
-            let cutFw = fwidth(fragmentInputs.vAlbedoUV) * ${size};
+            let cutFw = fwidth(fragmentInputs.vAlbedoUV) * uniforms.cutSize;
             let cutLod = log2(max(max(cutFw.x, cutFw.y), 1e-4));
             let cutNear = 0.5 * exp2(-clamp(cutLod - 1.0, 0.0, 4.0));
             let cutIgn = fract(52.9829189 * fract(dot(fragmentInputs.position.xy, vec2f(0.06711056, 0.00583715))));
@@ -220,7 +237,7 @@ class SurfaceCutout extends MaterialPluginBase {
       CUSTOM_FRAGMENT_UPDATE_ALPHA: `
         #ifdef ALBEDO
         {
-          vec2 cutFw = fwidth(vAlbedoUV) * ${size};
+          vec2 cutFw = fwidth(vAlbedoUV) * cutSize;
           float cutLod = log2(max(max(cutFw.x, cutFw.y), 1e-4));
           float cutNear = 0.5 * exp2(-clamp(cutLod - 1.0, 0.0, 4.0));
           float cutIgn = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
