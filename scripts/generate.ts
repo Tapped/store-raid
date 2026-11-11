@@ -125,7 +125,7 @@ function detailMap(level: Level, storey: number): string[] {
   // What players can't walk through, at waist height.
   for (const box of level.boxes) {
     if (box.y > base + 1 || box.y + box.height < base + 1) continue;
-    if (box.kind === "furniture" || box.kind === "shelf") continue;
+    if (box.kind === "furniture" || box.kind === "shelf" || box.kind === "mesh") continue;
     const char = box.kind === "rail" ? ":" : box.kind === "stairs" ? "/" : "|";
     for (let x = Math.floor(box.minX) + 0.5; x < box.maxX; x++) {
       for (let z = Math.floor(box.minZ) + 0.5; z < box.maxZ; z++) put(x, z, char);

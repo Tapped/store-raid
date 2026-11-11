@@ -93,6 +93,7 @@ const BOX_COLORS: Record<LevelBox["kind"] | "floor" | "ladder", string> = {
   pit: "#c77dff",
   stairs: "#ff9f40",
   furniture: "#4dd8ff",
+  mesh: "#c0c0c0",
   scenery: "#ffffff",
   floor: "#5bd16b",
   ladder: "#b6ff4d",

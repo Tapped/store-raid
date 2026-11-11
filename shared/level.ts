@@ -30,9 +30,19 @@ export type LevelBox = Box & {
   height: number;
   /**
    * A partition is a wall between rooms, inside a building. Scenery is something a model draws,
-   * like the harbour's houses and clutter: the box only stops players.
+   * like the harbour's houses and clutter: the box only stops players. A mesh is see-through, like
+   * chain-link: it stops players and things, not light or sound, and nothing draws it as a box.
    */
-  kind: "wall" | "partition" | "shelf" | "rail" | "pit" | "stairs" | "furniture" | "scenery";
+  kind:
+    | "wall"
+    | "partition"
+    | "shelf"
+    | "rail"
+    | "pit"
+    | "stairs"
+    | "furniture"
+    | "scenery"
+    | "mesh";
 };
 
 /**
@@ -409,7 +419,7 @@ export function generatedLevel(seed: number): Level & { dropped: number } {
   };
   const dock = { minX: entrance.x - 1.5, maxX: entrance.x + 1.5, minZ: z + 0.2, maxZ: z + 1.6 };
   // Where players start and the dock, and the space round them, are kept clear.
-  const start = { minX: entrance.x - 2, maxX: entrance.x + 2, minZ: z, maxZ: entrance.z + 1.5 };
+  const start = { minX: entrance.x - 2, maxX: entrance.x + 2, minZ: z, maxZ: entrance.z + 2 };
   const furnished = furnish(seed, generated, grid, tiles.boxes, { storey: 0, ...entrance }, [
     start,
     dock,

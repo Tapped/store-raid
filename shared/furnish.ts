@@ -550,7 +550,7 @@ interface Style {
 export interface Furnished {
   rooms: Room[];
   props: PropSpawn[];
-  /** The props' collision boxes, of kind "furniture" or "shelf", to add to the level's. */
+  /** The props' collision boxes, of kind "furniture", "shelf" or "mesh", to add to the level's. */
   boxes: LevelBox[];
   lights: LightSpawn[];
   items: ItemSpawn[];
@@ -568,6 +568,12 @@ interface PlacedProp {
   mount: "floor" | "wall" | "ceiling";
   solid: boolean;
   removed: boolean;
+}
+
+/** The kind of box a solid prop is: shelving, chain-link, or furniture. */
+function boxKind(model: string): LevelBox["kind"] {
+  if (model === "cage-panel") return "mesh";
+  return /rack|shelf/.test(model) ? "shelf" : "furniture";
 }
 
 /** Light colours, linear RGB, before each room's own tint. */
@@ -672,7 +678,7 @@ class Furnisher {
           ...prop.box,
           y: prop.bottom,
           height: prop.top - prop.bottom,
-          kind: /rack|shelf/.test(prop.spawn.model) ? ("shelf" as const) : ("furniture" as const),
+          kind: boxKind(prop.spawn.model),
         })),
       lights: this.lights,
       items,
@@ -1732,7 +1738,7 @@ class Furnisher {
         const out = depth / 2 + 0.02;
         const x = alongX ? middle : run.face + dx * out;
         const z = alongX ? run.face + dz * out : middle;
-        if (this.chance(0.25 * (1.2 - style.density))) {
+        if (this.chance(0.15 + 0.4 * (1.2 - style.density))) {
           at += width;
         } else if (this.stand(model, run.storey, x, z, TURN[faces], room.id)) {
           if (model === "desk") {
@@ -1742,7 +1748,7 @@ class Furnisher {
             const jitter = style.ransacked ? this.rng(-1.2, 1.2) : this.rng(-0.3, 0.3);
             this.stand("office-chair", run.storey, cx, cz, TURN[run.side] + jitter, room.id);
           }
-          at += width + 0.1;
+          at += width + 0.3;
         } else {
           at += STEP;
         }
@@ -2295,12 +2301,12 @@ class Furnisher {
     this.reach.update((storey) => this.solidsOn(storey));
     const items: ItemSpawn[] = [];
     const { start } = this;
-    for (const [i, dx] of [-1.8, -1.4, 1.4, 1.8].entries()) {
+    for (const [i, dx] of [-1.5, -1, 1, 1.5].entries()) {
       items.push({
         kind: "flashlight",
         x: start.x + dx,
         y: start.storey * STOREY + 0.05,
-        z: start.z + 1 + (i % 2) * 0.3,
+        z: start.z + 1 + (i % 2) * 0.2,
       });
     }
     // Every spot an item could go, scored by how far in, high up and dark it is.

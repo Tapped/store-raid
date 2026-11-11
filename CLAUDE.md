@@ -49,7 +49,7 @@ server/src/persist.ts      load()/save(): state that survives server restarts
 scripts/bot.ts             headless player
 scripts/hands.ts           bots check the hands in the store: phones, a TV and a two-person sofa, and report what worked
 scripts/playground.ts      a bot checks the playground: dimmer, stairs up and down, ladders, railing, plank and the pit
-scripts/generate.ts        draws a generated level from a seed, or checks how many seeds go
+scripts/generate.ts        draws a generated level from a seed, or checks the rules on many seeds
 scripts/harbour.ts         the harbour's ground and what's in the way, from its model, into shared/harbour.json (`pnpm run harbour`)
 scripts/unity-import/      prefabs from a Unity .unitypackage → textured .glb in assets/, through Blender
 scripts/models/            models made in code: one Python script per model, built in Blender (`pnpm run model`)
@@ -146,16 +146,20 @@ This is a solo, local project. Start everything with **`pnpm run dev`** (require
   `nesw` ladders, both up towards that side, `.` open air). Storeys below ground are basements,
   dug out of `#`; stairs going down are stairs on the storey below. Open air above stairs or a
   ladder is its well, and under a pit a shaft: the parser works out which. Rooms are walls on the
-  edges between cells, drawn in a storey written with `+` corners, `-`/`|` walls and `d`
-  doorways. `checkTiles` checks sockets side by side (`fits`) and stacked (`fitsAbove`), and
+  edges between cells, drawn in a storey written with `+` corners, `-`/`|` walls, `d`
+  doorways and `a` arches (3 m wide, between halls). `checkTiles` checks sockets side by side (`fits`) and stacked (`fitsAbove`), and
   `composeTiles` turns a grid into floors, boxes and ladders.
-- **Generated levels** (`shared/generate.ts`, `?level=generated-<seed>`): a layout layer splits
-  each storey into rooms (some open air above the ground), joins them with doorways and puts a way
-  up from every storey; then wave function collapse picks every tile; then whatever can't be
-  reached from the entrance is filled in or taken away. Pure and seeded, so server and clients
-  build the same level. `pnpm exec tsx scripts/generate.ts [seed]` draws one, `--many 200` checks
-  many. New kinds of room should be tiles, or room types in the layout layer; props will be a
-  third layer.
+- **Generated levels** (`shared/generate.ts`, `?level=generated-<seed>`): a harbour warehouse,
+  14 × 12 cells on a basement, the ground and two storeys (`GENERATED_SIZE`). A layout layer
+  splits each storey into rooms of a `RoomKind` (loading bay, halls with bonded cages, storerooms,
+  workshops, offices, staff and plant rooms, corridors, atriums), joins them with doorways and
+  arches and puts ways up from every storey; then wave function collapse picks every tile,
+  weighted by room kind; then whatever can't be reached from the entrance is filled in or taken
+  away. Then `shared/furnish.ts` places props from `shared/props.ts`, light fittings and loot,
+  and takes away props that block a 1.4 m way through; `shared/levelCheck.ts` checks the rules
+  on a finished level. Pure and seeded, so server and clients build the same level.
+  `pnpm exec tsx scripts/generate.ts [seed]` draws one with its rooms, props and lights,
+  `--many 200` checks every rule on many and times them.
 - **Height:** players stand on `floors` (flat, or ramps for stairs), step up `STEP_UP`, follow
   the floor down `STEP_DOWN`, and fall under `GRAVITY`; boxes only block where they overlap in
   height. On a ladder, walking into it climbs and backing away climbs down. Falling below the
