@@ -42,10 +42,9 @@ def build():
     br.boxes((0.7, -0.47, low + 0.002), (2, 1, 1), (0.22, 0.3, 0.16), card, rng, bevel=0.003,
              turn=0.15)
 
-    # The top: a tall wrapped pallet and an open one.
+    # The top: a tall wrapped pallet and one of sacks.
     z = br.pallet((left, 0, high), wood, rng)
     br.wrapped_stack((left, 0, z), (3, 2, 3), (0.4, 0.5, 0.2), card, film, rng, top_shrink=0.01)
     z = br.pallet((right, 0, high), wood, rng, worn=0.3)
-    br.boxes((right - 0.6, -0.5, z), (2, 2, 2), (0.6, 0.5, 0.32), card, rng, bevel=0.004,
-             shrink=0.04)
+    br.sacks((right, 0, z), 4, br.sacking(), rng)
     br.bounds_report("pallet-rack-a")

@@ -100,6 +100,7 @@ def mesh_object(name, verts, faces, mat, seed=0.0):
 
 def bounds_report(model):
     """Print the size of everything built so far, to compare with the catalogue."""
+    bpy.context.view_layer.update()
     pts = []
     for o in bpy.context.scene.objects:
         if o.type == "MESH":
@@ -135,8 +136,8 @@ def smooth(n, v, lo, hi):
     """0 below lo, 1 above hi, smoothly between (lo < hi)."""
     node = n.add("ShaderNodeMapRange", interpolation_type="SMOOTHSTEP")
     n.set(node.inputs["Value"], v)
-    node.inputs["From Min"].default_value = lo
-    node.inputs["From Max"].default_value = hi
+    n.set(node.inputs["From Min"], lo)
+    n.set(node.inputs["From Max"], hi)
     return node.outputs["Result"]
 
 
@@ -209,10 +210,11 @@ STEEL = (0.22, 0.22, 0.23)
 RUST = (0.13, 0.045, 0.015)
 DIRT = (0.035, 0.028, 0.02)
 DUST = (0.2, 0.185, 0.165)
+SALT = (0.42, 0.41, 0.38)
 
 
 def paint(name, color, size=1024, wear=1.0, rust=1.0, gloss=0.42, dust=1.0, grime=1.0,
-          primer=PRIMER, floor=0.0, detail=None):
+          primer=PRIMER, floor=0.0, detail=None, chalky=0.35, salt=0.6):
     """
     Painted steel fifteen years on: mottled, chipped in clusters and along edges to primer, bare
     steel and rust, scuffed near the floor (`floor` is where the floor is, in model z), grimy low
@@ -229,7 +231,7 @@ def paint(name, color, size=1024, wear=1.0, rust=1.0, gloss=0.42, dust=1.0, grim
     base = n.mix(mottle, tint(color, 0.82), tint(color, 1.12))
     # Chalking: paint fades and lightens in broad patches.
     chalk = smooth(n, n.noise(0.9, detail=2, vector=p), 0.55, 0.8)
-    base = n.mix(mul(n, chalk, 0.35), base, tint(color, 1.5))
+    base = n.mix(mul(n, chalk, chalky), base, tint(color, 1.5))
 
     edge = edges(n)
     crease = cavity(n)
@@ -262,6 +264,10 @@ def paint(name, color, size=1024, wear=1.0, rust=1.0, gloss=0.42, dust=1.0, grim
     up = smooth(n, nz, 0.55, 0.9)
     dusty = mul(n, up, smooth(n, n.noise(7, 4, vector=p), 0.2, 0.75), dust)
     color_ = n.mix(mul(n, dusty, 0.8), color_, DUST)
+    # Harbour air: a white salt bloom low down and round rust.
+    salty = mul(n, smooth(n, n.noise(6, 6, vector=p), 0.58, 0.72),
+                clamp01(n, add(n, low, mul(n, rusty, 2.0), mul(n, crease, 0.5))), salt)
+    color_ = n.mix(mul(n, salty, 0.55), color_, SALT)
 
     rough = add(n, gloss, mul(n, n.math("SUBTRACT", mottle, 0.5), 0.12), mul(n, chalk, 0.15))
     rough = n.lerp(to_primer, rough, 0.72)
@@ -269,6 +275,7 @@ def paint(name, color, size=1024, wear=1.0, rust=1.0, gloss=0.42, dust=1.0, grim
     rough = n.lerp(rusty, rough, 0.9)
     rough = n.lerp(dirt, rough, 0.85)
     rough = n.lerp(dusty, rough, 0.95)
+    rough = n.lerp(salty, rough, 0.9)
 
     height = add(n, 1.0, mul(n, to_primer, -0.5), mul(n, to_steel, -0.3), mul(n, scratch, -0.3),
                  mul(n, rusty, n.noise(90, 3, vector=p), -0.5))
@@ -335,7 +342,9 @@ def cardboard(name="cardboard", size=2048, dust=1.0):
     edge = smooth(n, rim, 1.5, 1.7)
 
     white = n.math("GREATER_THAN", s, 0.84)
-    kraft = n.mix(frac(7.31), (0.26, 0.15, 0.065), (0.4, 0.25, 0.11))
+    kraft = n.mix(frac(7.31), (0.24, 0.135, 0.058), (0.4, 0.25, 0.11))
+    # Recycled board, greyer and darker, on some.
+    kraft = n.mix(n.math("GREATER_THAN", frac(19.3), 0.72), kraft, (0.15, 0.11, 0.075))
     board = n.mix(white, kraft, (0.5, 0.48, 0.44))
     blotch = n.noise(4, 3, vector=p)
     board = n.mix(mul(n, blotch, 0.35), board, (0.17, 0.1, 0.045))
@@ -432,8 +441,12 @@ def stretch_wrap(name="wrap", size=1024):
         n.math("MULTIPLY", z, 5.0), n.math("MULTIPLY", add(n, x, y), 0.4), 2.0)), 0.5)), 0.0, 0.025))
     wrinkle = n.noise(1.0, 4, roughness=0.6, vector=vm(n, "MULTIPLY", p, (4.0, 4.0, 55.0)))
     fine = n.noise(1.0, 3, vector=vm(n, "MULTIPLY", p, (12.0, 12.0, 180.0)))
-    under = n.mix(n.noise(3, 2, vector=p), (0.2, 0.12, 0.05), (0.3, 0.18, 0.08))
-    c = n.mix(add(n, 0.22, mul(n, layers, 0.3), mul(n, overlap, 0.2)), under, (0.42, 0.42, 0.44))
+    seam = attr(n, "seam").outputs["Fac"]
+    gap = smooth(n, seam, 0.55, 0.95)
+    under = n.mix(n.noise(3, 2, vector=p), (0.2, 0.115, 0.05), (0.3, 0.18, 0.08))
+    under = n.mix(gap, under, (0.025, 0.016, 0.008))
+    milk = add(n, 0.12, mul(n, layers, 0.18), mul(n, overlap, 0.22), mul(n, gap, 0.1))
+    c = n.mix(milk, under, (0.45, 0.45, 0.47))
     up = smooth(n, normal_z(n), 0.6, 0.9)
     dusty = mul(n, up, smooth(n, n.noise(6, 3, vector=p), 0.2, 0.7))
     c = n.mix(mul(n, dusty, 0.6), c, DUST)
@@ -634,6 +647,7 @@ def wrap(lo, hi, joints, mat, rng, below=0.06, lip=0.05, dip=0.007, tear=None, e
     shape a tear.
     """
     m = 0.006
+    SEAM = 0.014  # noqa: N806 - half the width of the line a gap between boxes makes
     x0, y0, z0 = lo[0] - m, lo[1] - m, lo[2]
     x1, y1, z1 = hi[0] + m, hi[1] + m, hi[2]
     jx, jy, jz = (set(round(v, 5) for v in j) for j in joints)
@@ -641,8 +655,10 @@ def wrap(lo, hi, joints, mat, rng, below=0.06, lip=0.05, dip=0.007, tear=None, e
 
     def side(a, b, fixed, along, out, js, ex):
         """Points from a to b along one axis, the other coordinate fixed, outward normal out."""
-        ts = sorted({a + c * (1 if b > a else -1), *(t for t in js if min(a, b) + c < t < max(a, b) - c),
-                     *(t for t in ex if min(a, b) + c < t < max(a, b) - c)}, reverse=b < a)
+        lo_, hi_ = min(a, b) + c, max(a, b) - c
+        flanks = [t + f for t in js for f in (-SEAM, SEAM)]
+        ts = sorted({round(t, 5) for t in (lo_, hi_, *js, *ex, *flanks) if lo_ <= t <= hi_},
+                    reverse=b < a)
         pts = []
         for t in ts:
             p = (t, fixed) if along == "x" else (fixed, t)
@@ -651,17 +667,19 @@ def wrap(lo, hi, joints, mat, rng, below=0.06, lip=0.05, dip=0.007, tear=None, e
 
     ring = []
     ring += side(x0, x1, y0, "x", (0, -1), jx, extra[0])
-    ring += [((x1 - c * 0.3, y0 + c * 0.3), (0.7, -0.7), False)]
+    ring += [((x1 - c * 0.3, y0 + c * 0.3), (1, -1), False)]
     ring += side(y0, y1, x1, "y", (1, 0), jy, extra[1])
-    ring += [((x1 - c * 0.3, y1 - c * 0.3), (0.7, 0.7), False)]
+    ring += [((x1 - c * 0.3, y1 - c * 0.3), (1, 1), False)]
     ring += side(x1, x0, y1, "x", (0, 1), jx, extra[0])
-    ring += [((x0 + c * 0.3, y1 - c * 0.3), (-0.7, 0.7), False)]
+    ring += [((x0 + c * 0.3, y1 - c * 0.3), (-1, 1), False)]
     ring += side(y1, y0, x0, "y", (-1, 0), jy, extra[1])
-    ring += [((x0 + c * 0.3, y0 + c * 0.3), (-0.7, -0.7), False)]
+    ring += [((x0 + c * 0.3, y0 + c * 0.3), (-1, -1), False)]
 
-    zs = sorted({z0 - below, z0, *(z for z in jz if z0 < z < z1), *(z for z in extra[2] if z0 - below < z < z1), z1 - 0.004})
+    zflanks = [z + f for z in jz for f in (-SEAM, SEAM)]
+    zs = sorted({round(z, 5) for z in (z0 - below, z0, *jz, *zflanks, *extra[2], z1 - 0.004)
+                 if z0 - below <= z <= z1 - 0.004})
     levels = [(z, round(z, 5) in jz, 0.0) for z in zs] + [(z1 + 0.003, False, lip)]
-    verts, keep = [], []
+    verts, seams = [], []
     for z, zjoint, inset in levels:
         row = []
         for (px, py), (ox, oy), xjoint in ring:
@@ -671,9 +689,10 @@ def wrap(lo, hi, joints, mat, rng, below=0.06, lip=0.05, dip=0.007, tear=None, e
             puff = rng.uniform(-0.0015, 0.0025) if 0 < inset or z0 < z < z1 else 0
             o = puff - sink - inset
             row.append(Vector((px + ox * o, py + oy * o, z)))
+            seams.append(1.0 if (xjoint and z0 <= z) or zjoint else 0.0)
         verts.append(row)
     n = len(ring)
-    flat, faces = [], []
+    flat, faces, torn = [], [], set()
     for row in verts:
         flat += row
     for r in range(len(verts) - 1):
@@ -683,12 +702,24 @@ def wrap(lo, hi, joints, mat, rng, below=0.06, lip=0.05, dip=0.007, tear=None, e
             if tear is not None:
                 mid = sum((flat[q] for q in quad), Vector()) / 4
                 if tear(mid):
+                    torn.update(quad)
                     continue
             faces.append(quad)
     used = sorted({i for f in faces for i in f})
+    # Rag the torn edge: its points move about in the film's plane, and roll a little outward.
+    for i in sorted(torn.intersection(used)):
+        _, (ox, oy), _ = ring[i % n]
+        tangent = Vector((-oy, ox, 0)).normalized()
+        flat[i] += tangent * rng.uniform(-0.028, 0.028) + Vector((0, 0, rng.uniform(-0.025, 0.025)))
+        flat[i] += Vector((ox, oy, 0)).normalized() * 0.004
+        seams[i] = 0.6
     remap = {old: new for new, old in enumerate(used)}
     obj = mesh_object("wrap", [flat[i] for i in used], [tuple(remap[i] for i in f) for f in faces],
                       mat, rng.random())
+    # The gaps between boxes show through the film as dark lines.
+    seam = obj.data.attributes.new("seam", "FLOAT", "POINT")
+    for new, old in enumerate(used):
+        seam.data[new].value = seams[old]
     return obj
 
 
@@ -754,7 +785,7 @@ def _chevrons(n, p):
 def rack_materials():
     return {
         "upright": paint("upright", (0.012, 0.04, 0.15), detail=_upright_holes, gloss=0.4),
-        "beam": paint("beam", (0.4, 0.075, 0.006), gloss=0.36, primer=OXIDE),
+        "beam": paint("beam", (0.34, 0.036, 0.002), gloss=0.36, primer=OXIDE, chalky=0.12),
         "guard": paint("guard", (0.42, 0.26, 0.006), wear=2.2, gloss=0.5, detail=_chevrons),
         "galv": galvanised(),
     }
@@ -772,10 +803,12 @@ def rack(mats, rng, levels):
     c_section = [(-hw, 0), (hw, 0), (hw, d), (0.028, d), (0.028, d - t), (hw - t, d - t),
                  (hw - t, t), (-hw + t, t), (-hw + t, d - t), (-0.028, d - t), (-0.028, d),
                  (-hw, d)]
-    g, gw, front = 0.006, 0.075, RACK_D / 2
+    # The guard is wider than the upright, so it sits inboard of it, inside the bay's width.
+    g, gw, front = 0.006, 0.07, RACK_D / 2
     u_guard = [(-gw, front), (gw, front), (gw, FRAME_Y - 0.03), (gw - g, FRAME_Y - 0.03),
                (gw - g, front - g), (-gw + g, front - g), (-gw + g, FRAME_Y - 0.03),
                (-gw, FRAME_Y - 0.03)]
+    guard_x = RACK_W / 2 - gw
     for sx in (-1, 1):
         xc = sx * (RACK_W / 2 - hw)
         for sy in (-1, 1):
@@ -784,11 +817,11 @@ def rack(mats, rng, levels):
             profile("upright", pts, RACK_H - 0.008, (0, 0, RACK_H / 2 + 0.004), "z", blue,
                     rng.random())
             yc = sy * (FRAME_Y - d / 2)
-            part("baseplate", (0.13, 0.12, 0.008), (xc, yc, 0.004), galv, rng.random())
+            part("baseplate", (0.12, 0.12, 0.008), (sx * (RACK_W / 2 - 0.06), yc, 0.004), galv, rng.random())
             for bx in (-0.045, 0.045):
-                part("anchor", (0.018, 0.018, 0.012), (xc + bx, yc + sy * 0.035, 0.012), galv)
+                part("anchor", (0.018, 0.018, 0.012), (sx * (RACK_W / 2 - 0.06) + bx * 0.8, yc + sy * 0.035, 0.012), galv)
             # A column guard round the foot of the upright, standing off its face.
-            pts = [(xc + a, sy * b) for a, b in u_guard]
+            pts = [(sx * guard_x + a, sy * b) for a, b in u_guard]
             profile("guard", pts, 0.4, (0, 0, 0.2), "z", yellow, rng.random())
         # Bracing between the two uprights of the frame, on the lips' side.
         span = 2 * (FRAME_Y - d)
@@ -854,3 +887,135 @@ def tote(at, mat, rng, size=(0.6, 0.4, 0.22), turn=0.0):
              rot=(0, 0, turn))
         for size_, (ox, oy, oz) in pieces
     ]
+
+
+# ---------------------------------------------------------------------------------------------
+# Harbour cargo
+
+
+def sacking(name="sack", size=1024):
+    """
+    Woven polypropylene sacks: off-white or tan by seed, a fine weave, a printed panel on top,
+    stitched ends, dirty and dusty with spilt powder.
+    """
+    mat, n = lib.procedural(name, size)
+    L = attr(n, "local").outputs["Vector"]
+    H = attr(n, "half").outputs["Vector"]
+    s = attr(n, "seed").outputs["Fac"]
+    lx, ly, lz = split(n, L)
+    hx, hy, hz = split(n, H)
+    p = seeded(n)
+    u = n.math("DIVIDE", lx, hx)
+    v = n.math("DIVIDE", ly, hy)
+    cloth = n.mix(n.math("FRACT", n.math("MULTIPLY", s, 7.7)), (0.4, 0.38, 0.33), (0.32, 0.24, 0.14))
+    weave = n.math("MULTIPLY", n.stripes(lx, 0.004, 0.5), n.stripes(ly, 0.004, 0.5))
+    on_top = n.math("GREATER_THAN", lz, 0.0)
+    panel = mul(n, on_top, n.math("LESS_THAN", n.math("ABSOLUTE", u), 0.6),
+                n.math("LESS_THAN", n.math("ABSOLUTE", v), 0.55))
+    letters = mul(n, panel, n.math("GREATER_THAN", n.math("ABSOLUTE", v), 0.12),
+                  n.math("GREATER_THAN", n.noise(1.0, 0, vector=n.vec(n.math("MULTIPLY", u, 9),
+                                                                       n.math("MULTIPLY", v, 3), s)), 0.45))
+    band = mul(n, panel, n.math("LESS_THAN", n.math("ABSOLUTE", v), 0.1))
+    ink = n.mix(n.math("FRACT", n.math("MULTIPLY", s, 3.3)), (0.12, 0.01, 0.008), (0.01, 0.04, 0.1))
+    stitch = mul(n, smooth(n, n.math("ABSOLUTE", u), 0.86, 0.88),
+                 inv(n, smooth(n, n.math("ABSOLUTE", u), 0.92, 0.94)))
+    c = n.mix(mul(n, n.noise(5, 3, vector=p), 0.35), cloth, (0.17, 0.14, 0.1))
+    c = n.mix(n.math("MAXIMUM", letters, band), c, ink)
+    c = n.mix(mul(n, stitch, 0.5), c, (0.1, 0.09, 0.07))
+    dirt = mul(n, add(n, cavity(n, 0.05), inv(n, smooth(n, lz, n.math("MULTIPLY", hz, -0.7), 0.0))),
+               smooth(n, n.noise(4, 3, vector=p), 0.25, 0.75))
+    c = n.mix(mul(n, clamp01(n, dirt), 0.7), c, DIRT)
+    powder = mul(n, smooth(n, normal_z(n), 0.5, 0.9), smooth(n, n.noise(3, 4, vector=p), 0.5, 0.7))
+    c = n.mix(mul(n, powder, 0.6), c, (0.5, 0.48, 0.44))
+    rough = add(n, 0.62, mul(n, weave, 0.12))
+    rough = n.lerp(powder, rough, 0.95)
+    n.out(**{"Base Color": c, "Roughness": rough,
+             "Normal": bump(n, add(n, mul(n, weave, 0.5), mul(n, stitch, 0.5)), 0.0006,
+                            bump(n, n.noise(6, 4, vector=p), 0.006, strength=0.6))})
+    return mat
+
+
+def sack(at, size, mat, seed, turn=0.0):
+    """A filled sack lying flat, `size` = (x, y, z) at its fullest, `at` the middle of its bottom."""
+    hx, hy, hz = (v / 2 for v in size)
+
+    def pillow(q):
+        x = math.copysign(abs(q.x) ** 0.32, q.x)
+        y = math.copysign(abs(q.y) ** 0.32, q.y)
+        # Thinner towards the stitched ends.
+        squash = 1 - 0.4 * abs(x) ** 5 - 0.15 * abs(y) ** 6
+        return Vector((x * hx, y * hy, q.z * hz * squash))
+
+    obj = lib.ellipsoid("sack", (hx, hy, hz), (0, 0, 0), mat, segments=10, rings=5, deform=pillow)
+    tag(obj, (hx, hy, hz), seed)
+    return place(obj, (at[0], at[1], at[2] + hz * 0.96), (0, 0, turn))
+
+
+def sacks(at, layers, mat, rng, size=(0.58, 0.38, 0.12)):
+    """Sacks on a pallet top at `at`, in layers of five laid alternately, as dock hands stack them."""
+    sx, sy, sz = size
+    for k in range(layers):
+        z = at[2] + k * sz * 0.86
+        spots = ([(-0.31, -0.3, 0), (0.31, -0.3, 0), (-0.4, 0.2, 1), (0.0, 0.2, 1), (0.4, 0.2, 1)]
+                 if k % 2 == 0 else
+                 [(-0.31, 0.3, 0), (0.31, 0.3, 0), (-0.4, -0.2, 1), (0.0, -0.2, 1), (0.4, -0.2, 1)])
+        for x, y, turned in spots:
+            if k == layers - 1 and rng.random() < 0.2:
+                continue
+            sack((at[0] + x + rng.uniform(-0.02, 0.02), at[1] + y + rng.uniform(-0.02, 0.02), z),
+                 size, mat, rng.random(), (math.pi / 2 if turned else 0) + rng.uniform(-0.08, 0.08))
+
+
+DRUM_R, DRUM_H = 0.293, 0.88
+
+
+def drum(at, mat, steel, seed, turn=0.0):
+    """A 200-litre steel drum standing at `at`, with two rolling hoops and bungs in its lid."""
+    r, h = DRUM_R, DRUM_H
+    i = r - 0.008
+    prof = [(0, 0.0), (0, r - 0.02), (0.006, r), (0.03, r), (0.036, i), (0.285, i), (0.293, r + 0.004),
+            (0.301, i), (0.579, i), (0.587, r + 0.004), (0.595, i), (0.845, i), (0.851, r),
+            (h, r), (h, r - 0.01), (h - 0.016, r - 0.016), (h - 0.016, 0)]
+    obj = lib.lathe("drum", prof, (0, 0, 0), mat=mat, sides=14)
+    tag(obj, (r, r, h / 2), seed, (0, 0, h / 2))
+    place(obj, at, (0, 0, turn))
+    c, s = math.cos(turn), math.sin(turn)
+    for bx, rad in ((0.17, 0.03), (-0.19, 0.02)):
+        cap = lib.cylinder("bung", rad, 0.012, (0, 0, 0), mat=steel, sides=8)
+        tag(cap, (rad, rad, 0.006), seed)
+        place(cap, (at[0] + bx * c, at[1] + bx * s, at[2] + h - 0.012))
+    return obj
+
+
+def crate(at, size, mat, rng, ink=None):
+    """
+    A wooden shipping crate on two skids at `at` (middle of its footprint, its bottom): boarded
+    panels framed by battens along every edge and a brace up the middle of the long sides.
+    """
+    w, d, h = size
+    x, y, z = at
+    sk = 0.08
+    for sy in (-1, 1):
+        part("skid", (w, 0.09, sk), (x, y + sy * (d / 2 - 0.12), z + sk / 2), mat, rng.random())
+    z0 = z + sk
+    b, t = 0.075, 0.022  # batten width and how far it stands proud
+    part("panels", (w - 2 * t, d - 2 * t, h - 2 * t), (x, y, z0 + h / 2), mat, rng.random())
+    zc = z0 + h / 2
+    for sy in (-1, 1):
+        for sz in (-1, 1):
+            part("batten", (w, b, b), (x, y + sy * (d / 2 - b / 2), zc + sz * (h / 2 - b / 2)), mat,
+                 rng.random())
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            part("batten", (b, d - 2 * b, b), (x + sx * (w / 2 - b / 2), y, zc + sz * (h / 2 - b / 2)),
+                 mat, rng.random())
+        for sy in (-1, 1):
+            part("batten", (b, b, h - 2 * b), (x + sx * (w / 2 - b / 2), y + sy * (d / 2 - b / 2), zc),
+                 mat, rng.random())
+    for sy in (-1, 1):
+        part("brace", (b, t, h - 2 * b), (x, y + sy * (d / 2 - t / 2), zc), mat, rng.random())
+    if ink is not None:
+        lib.text("stencil", "THIS WAY UP", 0.05, (x - w / 4, y - d / 2 + t - 0.0005, zc + 0.12),
+                 depth=0.0005, mat=ink)
+        lib.text("stencil", "NSS-0417", 0.045, (x - w / 4, y - d / 2 + t - 0.0005, zc - 0.1),
+                 depth=0.0005, mat=ink)
