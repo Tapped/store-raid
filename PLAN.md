@@ -108,7 +108,13 @@ screen.
   the truck and wants to leave or until dawn, then results against the quota. Items have values.
   Falling in a raid kills, dawn leaves those outside the truck behind, and latecomers wait: all of
   them spectate through the eyes of those still playing. The truck is the level's dock for now, and
-  the overlay is plain text. Next: a real truck in the harbour and the route to the building.
+  the overlay is plain text.
+- **Harbour:** `?level=harbour` puts the store in the harbour, with its ground and obstacles worked
+  out from the harbour model (`pnpm run harbour`): players start on the street between the
+  warehouses, drop down from the quay into the store's lot, and drown in the water. It runs as a
+  playground for now.
+- **Next:** a real truck parked in the harbour, the harbour as a game level with the raid starting
+  from the truck, and a proper results screen instead of plain text.
 
 ### 3. The dark building and proximity voice
 
@@ -119,6 +125,15 @@ screen.
   need a TURN relay we'd have to host, so test on the local network first.
 - **Done when:** a friend's voice fades as they walk off into the dark with the only flashlight.
   **Then run the first playtest.**
+- **Started:** flashlights, a modelled torch held in one hand and switched with F / Y: our own is
+  held up and aimed where we look, everyone else's points where its holder looks, and a dropped one
+  stays on. Games run at `GAME_LIGHT` (35%), and the playground has a dimmer for testing in the
+  dark. The darkness is graded blue-grey and the light warm.
+- **Sound** is in, on Web Audio and placed in the world: footsteps for everyone, in step with the
+  hand bob, TVs showing static and droning, a vent ambience, and walls between a sound and the
+  listener muffling it (`client/src/occlusion.ts`).
+- **Next:** lighting that falls off with depth into the building rather than one level for all of
+  it, then proximity voice.
 
 ### 4. Floors
 
@@ -128,12 +143,18 @@ screen.
 - **Done when:** the crew can carry a sofa down a flight of stairs.
 - **Started:** `stepMover` has height: floors, stairs as ramps, gravity and falling to your death.
   The playground is built from tiles (`shared/tiles.ts`) with sockets, ready for a wave function
-  collapse generator, and has a pit with a plank across and stairs up two storeys. Carrying a
-  sofa down the stairs is still to try.
+  collapse generator, and has a pit with a plank across, stairs and ladders up two storeys and
+  down to a basement. Carrying a sofa down the stairs is still to try.
+- **Moving around:** jumping (Space / A), running on stamina (Shift / left stick), with a tired
+  effect on screen and being winded when it runs out. Stairs slow walkers down through `paceAt()`,
+  which enemies should use too. Climbing a ladder takes a free hand. The numbers are the room's
+  `Mechanics`, tunable live without rubber-banding.
 - **Generator:** `shared/generate.ts` makes levels from a seed, `?level=generated-<seed>`: rooms
   with doorways, a way up from every storey, tiles by wave function collapse, and nothing left
-  that can't be reached. Next: room types that decide what's in a room (props, loot, light), and
-  multi-cell pieces.
+  that can't be reached. The tile viewer (`/tiles.html`) draws generated levels, every tile and
+  hand-written grids without a server, to inspect them.
+- **Next:** room types that decide what's in a room (props, loot, light), multi-cell pieces, and
+  loot placed so value rises with depth, height and darkness.
 
 ### 5. First enemies
 
@@ -142,6 +163,9 @@ screen.
 - More and faster enemies, and failing lights, as dawn approaches.
 - The shovel as the first weapon, found in the building.
 - **Done when:** players get scared, and someone dies for a TV that wasn't worth it.
+- **Groundwork:** the large tick is modelled, rigged and walked in code (`client/src/tick.ts`: leg
+  IK, a tetrapod gait, questing front legs), with claw taps and a questing hiss. It wanders in the
+  playground as a concept, on the client only: nothing about enemies is on the server yet.
 
 ### 6. Shop and money
 
@@ -152,7 +176,20 @@ screen.
 ### 7. Later buildings
 
 - New buildings, each with new loot and enemies, starting with ghosts and the camera.
-- Generated layouts from a seed, shared by server and clients, keeping all loot reachable.
+- Generated layouts from a seed, shared by server and clients, keeping all loot reachable. The
+  generator exists (step 4); each building needs its own tiles and room types.
+
+## Tools
+
+What we build the game with, besides the game itself:
+
+- **Tuning panel** (`__game.tune()`): every sound, look, feel and mechanics setting as a slider,
+  changed live, with the changes listed to bake into the code.
+- **Tile viewer** (`/tiles.html`) for levels and tiles, and `scripts/generate.ts` to check seeds.
+- **Bots** (`scripts/bot.ts`, `hands.ts`, `playground.ts`) to check movement, hands and the round
+  from the terminal, and a headless Chrome to check the picture.
+- **Models in code** (`pnpm run model`, Blender), **images** from Nano Banana Pro
+  (`pnpm run image`), Unity asset packs imported to `.glb`, and the Sonniss sound library.
 
 ## Decisions
 
@@ -164,7 +201,12 @@ screen.
 - **Custom movement stays:** players keep using `stepMover`, not Havok, because that protects
   prediction.
 - **No enemies until step 5:** carrying and the round need to be fun without them. Otherwise,
-  enemies could hide a weak core loop.
+  enemies could hide a weak core loop. Building and animating them on the client ahead of time is
+  fine.
+- **Playground and games:** the playground has no rounds or deaths and is where new things get
+  tried; games run the real round. Every level can run as either.
+- **Levels are tiles:** hand-written grids and generated ones use the same tiles and the same
+  `composeTiles`, so whatever the playground gets, generated buildings get too.
 - **Money is shared by the crew.** `persist.ts` keys state by player name, so the crew needs a
   name of its own to save money under.
 - **Gear survives death:** it stays by the ragdoll until someone picks it up. It's only lost if
