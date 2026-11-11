@@ -28,7 +28,7 @@ export const chainlink: Recipe = {
     galvanised(o, u, v, TILE / 1000, 2000, 0.4);
     const cover = 1 - smoothstep(RADIUS - 0.3, RADIUS + 0.2, Math.min(da, db));
     o.a = cover;
-    o.h = h > 0 ? h : 0;
+    o.h = Math.max(h, 0);
     rust(o, u, v, TILE / 1000, smoothstep(0.7, 0.85, fbm01(u, v, 3, 3, 4, 2001)) * 0.8, 2002);
     // The wire is round: its sides face away and catch less light.
     o.ao *= h > 0 ? 0.6 + 0.4 * (Math.min(h, RADIUS) / RADIUS) : 1;

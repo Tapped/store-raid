@@ -70,14 +70,15 @@ export const concreteWall: Recipe = {
     const saltEdge = smoothstep(0.5, 0.55, streak) * (1 - smoothstep(0.55, 0.6, streak));
     cover(o, SALT, saltEdge * wetRun * 0.15);
     // Damp rising from the floor, with a tide line of salt.
-    const top = 0.12 + fbm(u, v, 12, 2, 4, 710) * 0.05;
-    const damp = 1 - smoothstep(top - 0.03, top, v);
+    const top = 0.12 + fbm(u, v, 5, 1, 3, 710) * 0.035 + fbm(u, v, 30, 3, 2, 712) * 0.004;
+    const damp = 1 - smoothstep(top - 0.04, top, v);
     o.r *= 1 - damp * 0.25;
     o.g *= 1 - damp * 0.25;
     o.b *= 1 - damp * 0.22;
     o.rough = mix(o.rough, 0.6, damp);
     const tide =
-      (1 - smoothstep(0, 0.012, Math.abs(v - top))) * (0.5 + 0.5 * value(u, v, 300, 300, 711));
-    cover(o, SALT, clamp(tide) * 0.5);
+      (1 - smoothstep(0, 0.008, Math.abs(v - top + 0.004))) *
+      (0.4 + 0.6 * value(u, v, 300, 300, 711));
+    cover(o, SALT, clamp(tide) * 0.18);
   },
 };
