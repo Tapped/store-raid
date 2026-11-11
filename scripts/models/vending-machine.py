@@ -77,7 +77,7 @@ def build():
     deep = CAVITY - FRONT
     yc = (FRONT + CAVITY) / 2
     cabinet = br.part("cabinet", (W, D, H - 0.03), (0, 0, 0.03 + (H - 0.03) / 2), body, 0.1, bevel=0.01)
-    cutter = lib.box("cutter", (x1 - x0, deep + 0.02, z1 - z0), ((x0 + x1) / 2, yc - 0.01, (z0 + z1) / 2))
+    cutter = lib.box("cutter", (x1 - x0, deep + 0.02, z1 - z0), ((x0 + x1) / 2, yc - 0.01, (z0 + z1) / 2), body)
     br.cut(cabinet, cutter)
     for sx in (-1, 1):
         for sy in (-1, 1):

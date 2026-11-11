@@ -14,7 +14,7 @@ AO_DISTANCE = 0.2
 
 W, H, D = 0.47, 1.32, 0.62
 PLINTH = 0.05
-OUT = 0.03  # how far the second drawer sticks out
+PULLED = 0.03  # how far the second drawer sticks out
 
 
 def build():
@@ -23,7 +23,7 @@ def build():
     chrome = lib.material("chrome", (0.5, 0.5, 0.5), roughness=0.3, metallic=1.0)
     dark = lib.material("shadow", (0.01, 0.01, 0.01), roughness=0.8)
     paper = br.paper()
-    front = -D / 2 + OUT + 0.035
+    front = -D / 2 + PULLED + 0.035
     body_d = D / 2 - front
     yc = front + body_d / 2
     br.part("body", (W, body_d, H - PLINTH), (0, yc, PLINTH + (H - PLINTH) / 2), steel, 0.2, bevel=0.005)
@@ -33,7 +33,7 @@ def build():
     dh = (H - PLINTH - 0.04) / 4
     for i in range(4):
         zc = H - 0.06 - dh * (i + 0.5)
-        out = OUT if i == 1 else 0.0
+        out = PULLED if i == 1 else 0.0
         y = front - 0.009 - out
         br.part("drawer", (W - 0.02, 0.018, dh - 0.012), (0, y, zc), steel, rng.random(), bevel=0.004)
         if out:

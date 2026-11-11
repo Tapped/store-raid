@@ -149,7 +149,7 @@ def dent(obj, dents, face_y):
 
 
 def vest_mesh(at, mat):
-    """A hi-vis vest hanging by its neck: a draped grid with a V neck and armholes, both sides."""
+    """A hi-vis vest hanging by its neck: a draped grid with a V neck and armholes."""
     cols, rows = 8, 10
     w, top, bottom = 0.36, 0.1, -0.4
     verts, faces = [], []
@@ -174,10 +174,7 @@ def vest_mesh(at, mat):
             u = -w / 2 + w * (c + 0.5) / cols
             v = top + (bottom - top) * (r + 0.5) / rows
             if keep(u, v):
-                faces.append((a, a + 1, a + cols + 2, a + cols + 1))
-    n = len(verts)
-    verts += [(x, y + 0.003, z) for x, y, z in verts]
-    faces += [tuple(i + n for i in reversed(f)) for f in faces]
+                faces.append((a, a + cols + 1, a + cols + 2, a + 1))  # facing the room (-y)
     obj = br.mesh_object("vest", verts, faces, mat, 0.4)
     # Its own coordinates, for the reflective bands.
     local = obj.data.attributes["local"]
