@@ -18,6 +18,9 @@ const BLOCKS: Record<string, number> = {
   floor: 1,
   plank: 0.3,
   shelf: 0.35,
+  furniture: 0.3,
+  // Chain-link.
+  mesh: 0,
   rail: 0,
   pit: 0,
   stairs: 0,

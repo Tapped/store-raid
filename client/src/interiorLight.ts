@@ -782,7 +782,8 @@ function blockersOf(
 ) {
   const out: number[] = [];
   for (const box of level.boxes) {
-    if (box.kind === "rail") continue;
+    // Railings and chain-link let light through.
+    if (box.kind === "rail" || box.kind === "mesh") continue;
     // A staircase's railings are thin; what's solid under its ramp is not.
     if (box.kind === "stairs" && Math.min(box.maxX - box.minX, box.maxZ - box.minZ) < 0.3) continue;
     out.push(box.minX, box.y, box.minZ, box.maxX, box.y + box.height, box.maxZ);
