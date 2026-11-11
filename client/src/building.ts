@@ -45,7 +45,7 @@ import { tunables } from "./tuning";
  * The roof is drawn by addRoof, from addPlayground, so the tile viewer can hide it with the roof.
  */
 
-/** How dirty things get, by eye. */
+/** How dirty things get, by eye. Baked into the geometry when a level loads: reload to see a change. */
 const WEAR = tunables("Look/Building wear", {
   grime: { value: 0.55, min: 0, max: 1.5, hint: "Dirt rising up walls from the floor" },
   corners: { value: 0.5, min: 0, max: 1.5, hint: "Darker in corners and where walls meet floors" },
@@ -483,13 +483,34 @@ class Context {
       }
     }
     if (storey < this.top) {
-      for (const floor of this.level.floors) {
-        if (floor.kind !== "floor" && floor.kind !== "stairs") continue;
-        if (Math.round(floor.y / STOREY) !== storey + 1) continue;
-        this.fill(bands[3], floor, SLAB_EDGE, false);
-      }
+      for (const slab of this.slabsOver(storey)) this.fill(bands[3], slab, SLAB_EDGE, false);
     }
     return { storey, base, ys, bands, sums: [], ceiling };
+  }
+
+  /**
+   * What closes the top of a storey, cell by cell: the floors of the storey above, and under solid
+   * tiles above, a slab drawn where the collision leaves a gap under the rock.
+   */
+  slabsOver(storey: number): Floor[] {
+    const slabs: Floor[] = [];
+    for (const floor of this.level.floors) {
+      if (floor.kind !== "floor" && floor.kind !== "stairs") continue;
+      if (Math.round(floor.y / STOREY) === storey + 1) slabs.push(floor);
+    }
+    for (let row = 0; row < this.parsed.rows; row++) {
+      for (let col = 0; col < this.parsed.cols; col++) {
+        if (this.tile(storey + 1, col, row)?.kind !== "solid") continue;
+        const y = (storey + 1) * STOREY;
+        slabs.push({
+          ...this.cellBox(col, row),
+          y,
+          thickness: storey + 1 === 0 ? GROUND : SLAB,
+          kind: "floor",
+        });
+      }
+    }
+    return slabs;
   }
 
   private fill(
@@ -1345,10 +1366,11 @@ function suspended(ctx: Context, col: number, row: number): boolean {
 /** The undersides of floors over rooms, and shallow downstand beams in the bigger rooms. */
 function ceilings(ctx: Context, parts: PartBuilder) {
   const slabs = new Map<string, Floor>();
-  for (const floor of ctx.level.floors) {
-    if (floor.kind !== "floor" && floor.kind !== "stairs") continue;
-    const storey = storeyOf(floor.y) - 1;
-    if (storey < ctx.bottom) continue;
+  const over: [number, Floor][] = [];
+  for (let s = ctx.bottom; s < ctx.top; s++) {
+    for (const floor of ctx.slabsOver(s)) over.push([s, floor]);
+  }
+  for (const [storey, floor] of over) {
     const [col, row] = ctx.cellOf((floor.minX + floor.maxX) / 2, (floor.minZ + floor.maxZ) / 2);
     const tile = ctx.tile(storey, col, row);
     if (!tile || tile.kind === "solid") continue;
