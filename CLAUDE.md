@@ -25,7 +25,9 @@ client/src/players.ts      PlayerView: animated character (capsule if the model 
 client/src/items.ts        ItemView: a phone, flashlight, TV, box or sofa, drawn where the server says: models/props/<kind>.glb, else boxes
 client/src/props.ts        addProps(): scenery models, drawn only, with no collision
 client/src/playground.ts   addPlayground(): the playground hall: roof, beams, lights on the dimmer, and CONCEPTS on show
-client/src/terrain.ts      addTerrain(): a level's floors, planks, stairs, ladders, railings and pits; worldBox() for seamless tiling
+client/src/building.ts     addBuilding(), addRoof(): tile-built levels drawn as a building: walls from the collision, finished by room kind, livery from the seed, wear in vertex colour
+client/src/parts.ts        PartBuilder: geometry from primitives with metric UVs and vertex-colour wear, merged into a mesh per surface and chunk
+client/src/terrain.ts      addTerrain(): floors, planks, stairs, ladders, railings and pits of levels without a grid (the store); worldBox() for seamless tiling
 client/src/tileViewer.ts   the tile viewer at /tiles.html: generated levels, every tile and hand-written grids, drawn by the game's code, to inspect
 client/src/tileCatalogue.ts every tile in a small grid of its own, for the tile viewer
 client/src/tick.ts         TickView: the large tick, walked in code: leg IK, a tetrapod gait, questing front legs

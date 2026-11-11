@@ -8,6 +8,7 @@ import {
   TransformNode,
 } from "@babylonjs/core";
 import { loadContainer } from "./assets";
+import { addRoof } from "./building";
 import { surfaceMaterial } from "./graphics";
 import type { InteriorLighting } from "./interiorLight";
 import type { World } from "./scene";
@@ -84,44 +85,11 @@ export function addPlayground(world: World, lighting?: InteriorLighting): Playgr
   }
   const sun = scene.getLightByName("sun");
 
-  // The roof is not a shadow caster: the sun stands in for the roof lights.
-  const panels = surfaceMaterial("roof", scene, new Color3(0.55, 0.56, 0.57), {
-    roughness: 0.7,
-    metallic: 0.1,
-  });
-  const slab = MeshBuilder.CreateBox(
-    "roof",
-    { width: maxX - minX, depth: maxZ - minZ, height: 0.15 },
-    scene,
-  );
-  slab.position.set((minX + maxX) / 2, roof + 0.075, (minZ + maxZ) / 2);
-  slab.material = panels;
-
-  const steel = surfaceMaterial("steel", scene, new Color3(0.3, 0.33, 0.37), {
-    roughness: 0.5,
-    metallic: 0.4,
-  });
-  const beams: Mesh[] = [];
+  // The roof is not a shadow caster: the sun stands in for the roof lights. Tile-built halls get a
+  // steel roof drawn with the building.
+  if (level.grid) addRoof(scene, level);
+  else addFlatRoof(world, roof, { minX, maxX, minZ, maxZ });
   const width = maxX - minX;
-  for (let z = minZ + BEAM_SPACING / 2; z < maxZ; z += BEAM_SPACING) {
-    // Top flange, web, bottom flange.
-    for (const [w, h, d, y] of [
-      [width, 0.03, FLANGE, roof - 0.015],
-      [width, BEAM_DEPTH - 0.06, 0.02, roof - BEAM_DEPTH / 2],
-      [width, 0.03, FLANGE, roof - BEAM_DEPTH + 0.015],
-    ]) {
-      const part = MeshBuilder.CreateBox("beam", { width: w, height: h, depth: d }, scene);
-      part.position.set((minX + maxX) / 2, y, z);
-      beams.push(part);
-    }
-  }
-  // Merged into one draw: dozens of boxes that never move.
-  const steelwork = Mesh.MergeMeshes(beams, true);
-  if (steelwork) {
-    steelwork.material = steel;
-    steelwork.receiveShadows = true;
-  }
-
   // Strip lights between the beams: they only glow, the hemispheric light does the lighting.
   const glow = new StandardMaterial("roof-light", scene);
   glow.disableLighting = true;
@@ -170,6 +138,51 @@ export function addPlayground(world: World, lighting?: InteriorLighting): Playgr
       if (brightness !== shown) light(brightness);
     },
   };
+}
+
+/** A flat roof slab on steel I-beams, for halls not built from tiles. */
+function addFlatRoof(
+  world: World,
+  roof: number,
+  { minX, maxX, minZ, maxZ }: { minX: number; maxX: number; minZ: number; maxZ: number },
+) {
+  const { scene } = world;
+  const width = maxX - minX;
+  const panels = surfaceMaterial("roof", scene, new Color3(0.55, 0.56, 0.57), {
+    roughness: 0.7,
+    metallic: 0.1,
+  });
+  const slab = MeshBuilder.CreateBox(
+    "roof",
+    { width: maxX - minX, depth: maxZ - minZ, height: 0.15 },
+    scene,
+  );
+  slab.position.set((minX + maxX) / 2, roof + 0.075, (minZ + maxZ) / 2);
+  slab.material = panels;
+
+  const steel = surfaceMaterial("steel", scene, new Color3(0.3, 0.33, 0.37), {
+    roughness: 0.5,
+    metallic: 0.4,
+  });
+  const beams: Mesh[] = [];
+  for (let z = minZ + BEAM_SPACING / 2; z < maxZ; z += BEAM_SPACING) {
+    // Top flange, web, bottom flange.
+    for (const [w, h, d, y] of [
+      [width, 0.03, FLANGE, roof - 0.015],
+      [width, BEAM_DEPTH - 0.06, 0.02, roof - BEAM_DEPTH / 2],
+      [width, 0.03, FLANGE, roof - BEAM_DEPTH + 0.015],
+    ]) {
+      const part = MeshBuilder.CreateBox("beam", { width: w, height: h, depth: d }, scene);
+      part.position.set((minX + maxX) / 2, y, z);
+      beams.push(part);
+    }
+  }
+  // Merged into one draw: dozens of boxes that never move.
+  const steelwork = Mesh.MergeMeshes(beams, true);
+  if (steelwork) {
+    steelwork.material = steel;
+    steelwork.receiveShadows = true;
+  }
 }
 
 /**

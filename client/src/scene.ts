@@ -15,6 +15,7 @@ import {
 } from "@babylonjs/core";
 import type { Level } from "../../shared/level";
 import { assetUrl } from "./assets";
+import { addBuilding } from "./building";
 import {
   addCameraEffects,
   configureShadows,
@@ -149,9 +150,12 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
   floorMat.albedoColor = new Color3(0.32, 0.33, 0.36);
   floorMat.roughness = 0.6;
   addSurfaceVariation(floorMat, { sampling: { kind: "hex" }, brightness: 0.2 });
-  addTerrain(scene, level, shadows, floorMat);
+  // Tile-built levels are drawn as a building, finished room by room; the rest box by box.
+  const built = level.grid !== undefined;
+  if (built) addBuilding(scene, level, shadows);
+  else addTerrain(scene, level, shadows, floorMat);
 
-  if (level.dock) {
+  if (level.dock && !built) {
     const { minX, maxX, minZ, maxZ } = level.dock;
     const dock = MeshBuilder.CreateGround(
       "dock",
@@ -185,6 +189,7 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
   for (const [i, box] of level.boxes.entries()) {
     // Railings, pits and stairs are drawn by addTerrain.
     if (box.kind !== "wall" && box.kind !== "partition" && box.kind !== "shelf") continue;
+    if (built && box.kind !== "shelf") continue;
     // World-space texture coordinates: walls built of many boxes carry on one pattern.
     const mesh = worldBox(
       `box${i}`,
