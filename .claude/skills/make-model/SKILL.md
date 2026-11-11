@@ -1,5 +1,5 @@
 ---
-name: model
+name: make-model
 description: Make or change a 3D model in code - props, loot items, scenery, creatures and enemies - as a Python script in scripts/models/ built in Blender with `pnpm run model`. Use when the user asks to model, build or make a 3D model of something, or to change how an existing model looks.
 ---
 
