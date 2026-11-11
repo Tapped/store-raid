@@ -431,19 +431,33 @@ function generatedLevel(seed: number): Level {
     grid,
     rooms: [],
     props: [],
-    // A stand-in until the generator places them: a tube over every other floor.
+    // A stand-in until the generator places them: a tube over every other floor, some flickering
+    // and some dead, and red emergency lights in the basement.
     lights: generated.floors
       .filter((cell) => (cell.col + cell.row) % 2 === 0)
-      .map((cell) => ({
-        kind: "tube" as const,
-        ...centre(cell),
-        y: (cell.storey + 1) * STOREY - 0.35,
-        turn: 0,
-        color: [1, 0.93, 0.8] as [number, number, number],
-        power: 1,
-        state: "on" as const,
-        room: -1,
-      })),
+      .map((cell, i) => {
+        const roll = (i * 37 + seed * 11) % 10;
+        const basement = cell.storey < 0;
+        return {
+          kind: basement && roll < 4 ? ("emergency" as const) : ("tube" as const),
+          ...centre(cell),
+          y: (cell.storey + 1) * STOREY - 0.35,
+          turn: (cell.col % 3) * (Math.PI / 2),
+          color: (basement && roll < 4 ? [1, 0.08, 0.04] : [1, 0.93, 0.8]) as [
+            number,
+            number,
+            number,
+          ],
+          power: basement && roll < 4 ? 0.6 : 1,
+          state:
+            roll === 7 || roll === 2
+              ? ("flicker" as const)
+              : roll >= 8
+                ? ("dead" as const)
+                : ("on" as const),
+          room: -1,
+        };
+      }),
   };
 }
 
