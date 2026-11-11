@@ -526,6 +526,10 @@ export function addDressing(world: World, lighting: InteriorLighting | undefined
     const models = [...byModel.keys()];
     const found = await Promise.all(models.map(load));
     drawMissing(models.filter((_, i) => !found[i]));
+    // The plain boxes the scene stands in for racking and shelving with: every one of them is a
+    // prop's, drawn now by its model or its placeholder.
+    for (const mesh of world.plainShelves) mesh.dispose();
+    world.plainShelves.length = 0;
   })();
 
   return {
