@@ -31,7 +31,7 @@ import {
  * and dead the further in a room is, and some deep rooms are dark. Loot is worth more the further
  * in, the higher up and the darker it is.
  *
- * Some rules hold whatever the seed, and are checked here, not hoped for (`checkFurnished` checks
+ * Some rules hold whatever the seed, and are checked here, not hoped for (`checkLevel` in shared/levelCheck.ts checks
  * them again on a finished level):
  *
  * - Every way through keeps a clear width of 1.4 m, so two people carrying a sofa get through: a
@@ -47,7 +47,7 @@ import {
  */
 
 /** A point on a storey. */
-interface Point {
+export interface Point {
   storey: number;
   x: number;
   z: number;
@@ -58,8 +58,8 @@ interface Point {
  * thing, who can't climb; and two people with a sofa between them, who need 1.4 m and can't take a
  * plank either.
  */
-type Mode = "walk" | "carry" | "wide";
-const MODES: readonly Mode[] = ["walk", "carry", "wide"];
+export type Mode = "walk" | "carry" | "wide";
+export const MODES: readonly Mode[] = ["walk", "carry", "wide"];
 /** The clear width every way through keeps, halved. */
 const WIDE = 0.7;
 const RADIUS: Record<Mode, number> = { walk: PLAYER_RADIUS, carry: PLAYER_RADIUS, wide: WIDE };
@@ -70,16 +70,16 @@ const APPROACH = 1;
 /** How deep the space kept clear in front of a doorway, stairs or a ladder is. */
 const KEEP_CLEAR = 1.8;
 
-const TURN: Record<Side, number> = { n: 0, e: Math.PI / 2, s: Math.PI, w: -Math.PI / 2 };
+export const TURN: Record<Side, number> = { n: 0, e: Math.PI / 2, s: Math.PI, w: -Math.PI / 2 };
 
 /** Whether two boxes overlap by more than a hair. */
-function overlaps(a: Box, b: Box, margin = 0): boolean {
+export function overlaps(a: Box, b: Box, margin = 0): boolean {
   const e = 0.005 - margin;
   return a.minX < b.maxX - e && b.minX < a.maxX - e && a.minZ < b.maxZ - e && b.minZ < a.maxZ - e;
 }
 
 /** The ground a prop covers, standing at a point and turned so. */
-function footprint(model: PropName, x: number, z: number, turn: number): Box {
+export function footprint(model: PropName, x: number, z: number, turn: number): Box {
   const [width, , depth] = PROPS[model].size;
   const c = Math.abs(Math.cos(turn));
   const s = Math.abs(Math.sin(turn));
@@ -89,7 +89,7 @@ function footprint(model: PropName, x: number, z: number, turn: number): Box {
 }
 
 /** A grid of tiles, read, with what the layers above need to know about its cells. */
-class Building {
+export class Building {
   readonly parsed: ParsedGrid;
   readonly x0: number;
   readonly z0: number;
@@ -187,7 +187,7 @@ class Building {
 }
 
 /** One way between two points that isn't across a floor: stairs, a ladder, a plank. */
-interface Link {
+export interface Link {
   a: Point;
   b: Point;
   ladder: boolean;
@@ -195,7 +195,7 @@ interface Link {
 }
 
 /** Every flight of stairs, ladder and run of planks, from the floor at one end to the other. */
-function linksOf(building: Building): Link[] {
+export function linksOf(building: Building): Link[] {
   const links: Link[] = [];
   for (const storey of building.storeys()) {
     for (let row = 0; row < building.rows; row++) {
@@ -234,7 +234,7 @@ function linksOf(building: Building): Link[] {
 }
 
 /** What blocks a player standing on a storey: anything between a step up and their head. */
-function blocksOn(box: LevelBox, storey: number): boolean {
+export function blocksOn(box: LevelBox, storey: number): boolean {
   const base = storey * STOREY;
   return box.y < base + PLAYER_HEIGHT - 0.001 && box.y + box.height > base + STEP_UP + 0.001;
 }
@@ -244,7 +244,7 @@ function blocksOn(box: LevelBox, storey: number): boolean {
  * by a mover's radius and joined to the entrance across floors, up stairs and ladders and over
  * planks, for each way of getting about.
  */
-class Reach {
+export class Reach {
   readonly nx: number;
   readonly nz: number;
   /** Per storey, whether each point is over somewhere to walk. */
@@ -486,15 +486,13 @@ class Reach {
 }
 
 /** A point that has to stay reachable, in the modes that reached it before anything was placed. */
-interface Target extends Point {
+export interface Target extends Point {
   why: string;
   modes: Mode[];
-  /** Whether its modes have been cut down to those that reached it before anything was placed. */
-  checked?: boolean;
 }
 
 /** The points every level keeps reachable: doorways, both ends of every way up, where players start. */
-function targetsOf(building: Building, links: readonly Link[], start: Point): Target[] {
+export function targetsOf(building: Building, links: readonly Link[], start: Point): Target[] {
   const targets: Target[] = [{ ...start, why: "the entrance", modes: [...MODES] }];
   for (const link of links) {
     const what = link.ladder ? "a ladder" : link.plank ? "a plank" : "stairs";
@@ -659,7 +657,6 @@ class Furnisher {
     this.reach.update(() => []);
     for (const target of this.targets) {
       target.modes = target.modes.filter((mode) => this.reach.reaches(mode, target));
-      target.checked = true;
     }
     this.clearTheWay();
     this.lightRooms();
@@ -2303,7 +2300,7 @@ class Furnisher {
         kind: "flashlight",
         x: start.x + dx,
         y: start.storey * STOREY + 0.05,
-        z: start.z + 1.5 + (i % 2) * 0.3,
+        z: start.z + 1 + (i % 2) * 0.3,
       });
     }
     // Every spot an item could go, scored by how far in, high up and dark it is.

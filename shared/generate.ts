@@ -517,16 +517,22 @@ function tryGenerate(options: GenerateOptions, next: () => number) {
   if (problem) return problem;
   const floors = cells.filter((cell) => reached(cell) && tileAt(cell)?.kind === "floor");
 
-  // The rooms that are left: whatever has a cell that isn't rock, in order of storey.
+  // The rooms that are left: atriums, and whatever can be walked into, in order of storey. Their
+  // cells are those that aren't rock.
   const rooms: GeneratedRoom[] = [];
   const roomIds = new Map<string, number>();
   for (let storey = -basements; storey < storeys - basements; storey++) {
     const { room, kinds } = plan(storey);
     const found = new Map<number, number>();
+    const entered = new Set<number>();
+    for (let i = 0; i < room.length; i++) {
+      if (reached({ storey, col: i % cols, row: Math.floor(i / cols) })) entered.add(room[i]);
+    }
     for (let i = 0; i < room.length; i++) {
       const kind = kinds[room[i]];
       const cell = { storey, col: i % cols, row: Math.floor(i / cols) };
       if (kind === "rock" || tileAt(cell)?.kind === "solid") continue;
+      if (kind !== "atrium" && !entered.has(room[i])) continue;
       let id = found.get(room[i]);
       if (id === undefined) {
         id = rooms.length;
@@ -694,8 +700,6 @@ function layOut(options: GenerateOptions, entranceCol: number, next: () => numbe
       depth,
     });
   }
-  // Now and then the lobby is open to the storey above too.
-  if (next() < 0.35) atria.push(lobby);
   for (let storey = 1; storey <= top; storey++) {
     const upper = new Painter(cols, rows);
     const upperBack = 3 + (next() < 0.5 ? 1 : 0);
