@@ -20,12 +20,12 @@ export const rubber: Recipe = {
     o.h *= 1 - worn * 0.7;
     o.rough = mix(o.rough, 0.45, worn);
     // Dust settled in the stipple where it isn't worn.
-    const dust = (1 - stipple) * (1 - worn) * smoothstep(0.35, 0.75, fbm01(u, v, 8, 8, 4, 1204));
-    cover(o, DUST, dust * 0.55);
+    const dust = (1 - stipple) * (1 - worn) * smoothstep(0.4, 0.8, fbm01(u, v, 20, 20, 4, 1204));
+    cover(o, DUST, dust * 0.25);
     o.rough = mix(o.rough, 0.95, dust);
     cover(o, DIRT, smoothstep(0.5, 0.85, fbm01(u, v, 10, 10, 4, 1205)) * 0.2);
     // Cuts and scuffs, grey.
-    const s = scratches(u, v, 5, 3, 1206, 0.08, 0.0012, 0, Math.PI);
+    const s = scratches(u, v, 5, 1, 1206, 0.06, 0.001, 0, Math.PI);
     cover(o, DUST, s * 0.4);
     o.h -= s * 0.2;
   },

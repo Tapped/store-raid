@@ -22,19 +22,19 @@ export const concreteWall: Recipe = {
     const inBoard = v * BOARDS - row;
     const rh = hash(row, 0, 701);
     // Each board left its own tone and grain: long streaks along it.
-    const tone = 1 + (rh - 0.5) * 0.1;
+    const tone = 1 + (rh - 0.5) * 0.2;
     const grain =
       fbm(u + rh, v, 6, BOARDS * 12, 3, 702 + row) * 0.5 + fbm(u, v, 40, BOARDS * 30, 2, 703);
-    const k = tone * (1 + grain * 0.04);
+    const k = tone * (1 + grain * 0.09);
     o.r *= k;
     o.g *= k;
     o.b *= k;
-    o.h += grain * 0.25 + (rh - 0.5) * 1.0;
+    o.h += grain * 0.5 + (rh - 0.5) * 2.5;
     // Board joints: a thin fin of grout squeezed out.
     const jd = (Math.min(inBoard, 1 - inBoard) * (TILE * 1000)) / BOARDS; // mm to the joint
     const fin = 1 - smoothstep(0.5, 2.5, jd + fbm01(u, v, 60, 3, 2, 704) * 1.5);
     o.h += fin * 0.8;
-    cover(o, PATCH, fin * 0.25);
+    cover(o, PATCH, fin * 0.4);
     // Tie holes: cones 25 mm across, about half patched flush in paler mortar.
     const tu = wrapDelta(u * TIES_X, 0.5) / TIES_X;
     const tv = wrapDelta(v * TIES_Y, 0.5) / TIES_Y;
@@ -64,11 +64,11 @@ export const concreteWall: Recipe = {
     }
     // Water stains: dark streaks running down from above, with salt dried at their edges.
     const streak = fbm01(u, v, 30, 1, 4, 708) * 0.6 + fbm01(u, v, 8, 2, 3, 709) * 0.4;
-    const wetRun = smoothstep(0.55, 0.75, streak) * (0.4 + 0.6 * v);
-    cover(o, DIRT, wetRun * 0.35);
+    const wetRun = smoothstep(0.6, 0.8, streak) * (0.4 + 0.6 * v);
+    cover(o, DIRT, wetRun * 0.4);
     o.rough = mix(o.rough, 0.75, wetRun * 0.5);
     const saltEdge = smoothstep(0.5, 0.55, streak) * (1 - smoothstep(0.55, 0.6, streak));
-    cover(o, SALT, saltEdge * 0.25);
+    cover(o, SALT, saltEdge * wetRun * 0.15);
     // Damp rising from the floor, with a tide line of salt.
     const top = 0.12 + fbm(u, v, 12, 2, 4, 710) * 0.05;
     const damp = 1 - smoothstep(top - 0.03, top, v);

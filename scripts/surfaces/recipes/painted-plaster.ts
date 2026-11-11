@@ -35,8 +35,8 @@ export const paintedPlaster: Recipe = {
       });
     }
     for (let i = 0; i < 3; i++) {
-      const w = (60 + next() * 250) / TILE;
-      leaks.add({ u: next(), v: 0, reach: 0.5, a: w, b: 0.3 + next() * 0.5, c: next(), d: 0 });
+      const w = (40 + next() * 120) / TILE;
+      leaks.add({ u: next(), v: 0, reach: 0.3, a: w, b: 0.08 + next() * 0.25, c: next(), d: 0 });
     }
   },
   sample(u, v, o) {
@@ -45,7 +45,7 @@ export const paintedPlaster: Recipe = {
     const lap = fbm01(u, v, 13, 2, 3, 1503);
     o.a = 0.96 + stipple * 0.04 - (lap - 0.5) * 0.03;
     o.r = o.g = o.b = 0;
-    o.h = stipple * 0.06 + fbm(u, v, 4, 4, 4, 1504) * 0.6;
+    o.h = stipple * 0.14 + fbm(u, v, 4, 4, 4, 1504) * 0.6;
     o.rough = 0.82 + (lap - 0.5) * 0.08 + stipple * 0.04;
     o.metal = 0;
     const height = v * TILE;
@@ -59,7 +59,7 @@ export const paintedPlaster: Recipe = {
       if (inside <= 0) continue;
       o.h = mix(o.h, 0.15 + stipple * 0.02, inside);
       o.a = mix(o.a, 0.9 + 0.08 * s.c, inside);
-      o.rough = mix(o.rough, 0.7, inside);
+      o.rough = mix(o.rough, 0.78, inside);
     }
 
     // Scuffs: a black band at trolley height, another at chair-back height, and the odd one.
@@ -73,8 +73,9 @@ export const paintedPlaster: Recipe = {
 
     // Chips to plaster, mostly low, where things knocked into it.
     const low = 1 - smoothstep(200, 1300, height);
-    const knock = fbm01(u, v, 60, 60, 4, 1509) + fbm(u, v, 250, 250, 2, 1510) * 0.1;
-    const chip = smoothstep(0.78 - low * 0.08, 0.8 - low * 0.08, knock) * (0.15 + low);
+    const cluster = smoothstep(0.6, 0.8, fbm01(u, v, 6, 3, 3, 1513));
+    const knock = fbm01(u, v, 30, 30, 4, 1509) + fbm(u, v, 250, 250, 2, 1510) * 0.08;
+    const chip = smoothstep(0.72, 0.74, knock) * cluster * low;
     if (chip > 0) {
       cover(o, PLASTER, clamp(chip));
       o.h -= clamp(chip) * 0.4;

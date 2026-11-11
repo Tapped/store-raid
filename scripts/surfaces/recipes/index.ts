@@ -3,6 +3,7 @@ import type { Recipe } from "../recipe";
 import { cardboard } from "./cardboard";
 import { carpetTile } from "./carpet-tile";
 import { ceilingTile } from "./ceiling-tile";
+import { chainlink } from "./chainlink";
 import { concreteBlock } from "./concrete-block";
 import { concreteFloor } from "./concrete-floor";
 import { concreteWall } from "./concrete-wall";
@@ -38,6 +39,7 @@ export const RECIPES: Record<SurfaceName, Recipe> = {
   rubber,
   hazard,
   tarpaulin,
+  chainlink,
   "painted-plaster": paintedPlaster,
   "ceiling-tile": ceilingTile,
   "carpet-tile": carpetTile,

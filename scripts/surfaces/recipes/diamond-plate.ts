@@ -29,8 +29,8 @@ export const diamondPlate: Recipe = {
         const along = (dx + dir * dy) * Math.SQRT1_2;
         const across = (dx * -dir + dy) * Math.SQRT1_2;
         // A capsule 0.9 cells long, 0.2 wide.
-        const t = Math.max(0, Math.abs(along) - 0.35);
-        const d = Math.hypot(t, across) / 0.11;
+        const t = Math.max(0, Math.abs(along) - 0.3);
+        const d = Math.hypot(t, across) / 0.16;
         if (d < 1) lug = Math.max(lug, Math.sqrt(1 - d * d));
       }
     }
@@ -49,7 +49,9 @@ export const diamondPlate: Recipe = {
     o.rough = mix(o.rough, 0.3, worn);
     // Dirt packed between the lugs, rust where water stood.
     const low = 1 - smoothstep(0, 0.3, lug);
-    const dirt = low * smoothstep(0.3, 0.75, fbm01(u, v, 8, 8, 5, 603));
+    const dirt =
+      low *
+      smoothstep(0.35, 0.75, fbm01(u, v, 16, 16, 4, 603) * 0.7 + fbm01(u, v, 3, 3, 3, 607) * 0.3);
     cover(o, DIRT, dirt * 0.75);
     o.rough = mix(o.rough, 0.9, dirt);
     o.metal = mix(o.metal, 0, dirt * 0.8);

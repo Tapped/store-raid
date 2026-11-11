@@ -149,14 +149,14 @@ export function paintedMetal(o: Texel, u: number, v: number, p: PaintOptions): v
     const primer = smoothstep(0.05, 0.2, chip);
     cover(o, p.primer ?? PRIMER_RED, primer);
     o.rough = mix(o.rough, 0.72, primer);
-    o.h -= primer * 0.08;
+    o.h -= primer * 0.18;
     const core = smoothstep(0.35, 0.6, chip);
     if (core > 0) {
       const fresh = 1 - p.age;
       cover(o, STEEL, core * fresh);
       o.metal = mix(o.metal, 1, core * fresh);
       o.rough = mix(o.rough, 0.38, core * fresh);
-      o.h -= core * 0.06;
+      o.h -= core * 0.12;
       rust(o, u, v, tile, core * p.age, seed + 40);
     }
   }

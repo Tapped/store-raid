@@ -36,6 +36,6 @@ export const hazard: Recipe = {
     const marks = scratches(u, v, 4, 2, 1006, 0.4, 0.02, 0, 0.3);
     cover(o, RUBBER, marks * 0.3);
     const grime = smoothstep(0.4, 0.85, fbm01(u, v, 5, 5, 5, 1007));
-    cover(o, DIRT, clamp(grime * 0.35));
+    cover(o, DIRT, clamp(grime * 0.18));
   },
 };

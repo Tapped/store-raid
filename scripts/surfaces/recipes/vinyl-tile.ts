@@ -24,7 +24,7 @@ export const vinylTile: Recipe = {
     const toEdge = Math.min(fx, 1 - fx, fy, 1 - fy) * (TILE / N);
     const id = hash(ix, iy, 1900);
     // VCT mottle: streaky chips of lighter and darker vinyl, running one way across each tile.
-    const streak = fbm(u + id, v, 60, 15, 4, 1901);
+    const streak = fbm(u + id, v, 160, 40, 3, 1901);
     const chipsDark = smoothstep(0.25, 0.45, streak);
     const chipsLight = smoothstep(-0.3, -0.45, streak);
     o.a = 0.9 - chipsDark * 0.25 + (id - 0.5) * 0.06;
@@ -39,7 +39,7 @@ export const vinylTile: Recipe = {
     o.rough = mix(o.rough, 0.7, lane);
     cover(o, DIRT, lane * 0.18);
     // Heel and trolley marks.
-    const marks = scratches(u, v, 10, 3, 1904, 0.04, 0.0015, 0, Math.PI);
+    const marks = scratches(u, v, 10, 1, 1904, 0.03, 0.0012, 0, Math.PI);
     cover(o, HEEL, marks * 0.6);
     // A cracked tile.
     if (id < 0.04) {

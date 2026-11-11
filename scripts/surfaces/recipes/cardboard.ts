@@ -24,10 +24,9 @@ export const cardboard: Recipe = {
     o.b *= 1 - fibre * 0.3;
     o.h = Math.cos(u * FLUTES * Math.PI * 2) * 0.08 + fleck * 0.03 + broad * 0.2;
     o.rough = 0.88 + fleck * 0.06;
-    // Creases: crushed lines, a sharp fold in the height.
-    const crease = fbm01(u, v, 3, 3, 3, 1304);
-    const fold = 1 - smoothstep(0, 0.012, Math.abs(crease - 0.5));
-    o.h -= fold * 0.6 * smoothstep(0.3, 0.7, fbm01(u, v, 5, 5, 2, 1305));
+    // Creases: straight folds where it was crushed, a few per repeat.
+    const fold = scratches(u, v, 2, 2, 1304, 0.7, 0.004, 0, Math.PI) * 0.8;
+    o.h -= fold * 0.6;
     o.r *= 1 - fold * 0.15;
     o.g *= 1 - fold * 0.15;
     o.b *= 1 - fold * 0.15;
@@ -40,8 +39,8 @@ export const cardboard: Recipe = {
     o.b *= 1 - damp * 0.3 - tide * 0.25;
     o.h += damp * fbm(u, v, 20, 20, 3, 1307) * 0.3;
     // Scuffs: the liner rubbed through to paler fibre.
-    const s = scratches(u, v, 6, 3, 1308, 0.1, 0.004, 0, Math.PI);
-    cover(o, hex(0xc4a77f), s * 0.5);
+    const s = scratches(u, v, 4, 1, 1308, 0.08, 0.006, 0, Math.PI);
+    cover(o, hex(0xc4a77f), s * 0.35);
     o.rough = mix(o.rough, 0.95, s);
     cover(o, DIRT, clamp(smoothstep(0.5, 0.85, fbm01(u, v, 6, 6, 4, 1309)) * 0.3));
   },

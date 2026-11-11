@@ -171,7 +171,8 @@ async function bake(name: SurfaceName) {
     }
   }
 
-  const tintable = !!spec.tint;
+  // Tintable surfaces keep the tint amount in alpha; cut-out ones their coverage.
+  const tintable = !!spec.tint || !!spec.cutout;
   const base = new Uint8Array(count * (tintable ? 4 : 3));
   const orm = new Uint8Array(count * 3);
   const channels = tintable ? 4 : 3;
@@ -183,7 +184,8 @@ async function bake(name: SurfaceName) {
     const t = texels.subarray(i * 8, i * 8 + 8);
     for (let c = 0; c < 3; c++) {
       base[i * channels + c] = Math.round(srgb(t[c]) * 255);
-      albedo[i * 3 + c] = clamp(t[c] + tint[c] * t[3]);
+      // Cut-out surfaces show their holes dark.
+      albedo[i * 3 + c] = spec.cutout ? (t[3] > 0.5 ? t[c] : 0.01) : clamp(t[c] + tint[c] * t[3]);
     }
     if (tintable) base[i * 4 + 3] = Math.round(clamp(t[3]) * 255);
     orm[i * 3] = Math.round(clamp(t[5]) * 255);

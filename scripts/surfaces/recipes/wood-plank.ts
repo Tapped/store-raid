@@ -22,7 +22,7 @@ export const woodPlank: Recipe = {
     const id2 = hash(row, 1, 1100);
     // Rings: the board cut through a warped trunk, so lines run along it and drift across.
     const warp =
-      fbm(u, v, 3, BOARDS, 4, 1101 + row) * 0.6 + fbm(u, v, 12, BOARDS * 2, 2, 1102) * 0.1;
+      fbm(u, v, 2, BOARDS, 4, 1101 + row) * 0.22 + fbm(u, v, 9, BOARDS * 2, 2, 1102) * 0.04;
     const ringPos = (inBoard + warp + id * 3) * (5 + id2 * 4);
     let ring = ringPos - Math.floor(ringPos);
     ring = smoothstep(0.0, 0.25, ring) * (1 - smoothstep(0.55, 1, ring));
@@ -36,7 +36,7 @@ export const woodPlank: Recipe = {
       const d = Math.hypot(du * 0.5, dv);
       knot = Math.max(knot, 1 - smoothstep(4, 14, d));
     }
-    const fibre = value(u, v, 1500, 60, 1104);
+    const fibre = value(u, v, 400, 300, 1104) * 0.5 + value(u, v, 60, 900, 1108) * 0.5;
     const tone = blend(PALE, DARK, clamp(ring * 0.55 + id * 0.35 + knot * 0.8));
     const k = 0.9 + fibre * 0.2;
     o.r = tone[0] * k;

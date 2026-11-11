@@ -103,6 +103,10 @@ export function surface(
   material.albedoColor = Color3.White();
   material.transparencyMode = PBRMaterial.PBRMATERIAL_OPAQUE;
   if (tint) new SurfaceTint(material, tint.toLinearSpace());
+  if (spec.cutout) {
+    material.backFaceCulling = false;
+    new SurfaceCutout(material, spec.size);
+  }
 
   if (options.variation !== false) {
     const variation = { ...spec.variation, ...options.variation };
@@ -161,6 +165,69 @@ class SurfaceTint extends MaterialPluginBase {
       CUSTOM_FRAGMENT_UPDATE_ALPHA: `
         #ifdef ALBEDO
         surfaceAlbedo += ${tint} * albedoTexture.a;
+        #endif
+      `,
+    };
+  }
+}
+
+/**
+ * Cuts holes where the colour texture's alpha is under a half, for wire mesh. As mipmaps blur the
+ * wires away, the cut-off drops to keep them, and further off it turns into a steady dither at
+ * their coverage, which TAA smooths into a veil (after Saltline). Far wires dim, as they do.
+ */
+class SurfaceCutout extends MaterialPluginBase {
+  constructor(
+    material: PBRMaterial,
+    private readonly size: number,
+  ) {
+    super(material, "SurfaceCutout", 195);
+    this._enable(true);
+  }
+
+  override getClassName(): string {
+    return "SurfaceCutout";
+  }
+
+  override isCompatible(): boolean {
+    return true;
+  }
+
+  override getCustomCode(
+    shaderType: string,
+    shaderLanguage: ShaderLanguage = ShaderLanguage.GLSL,
+  ): Record<string, string> | null {
+    if (shaderType !== "fragment") return null;
+    const size = this.size.toFixed(1);
+    if (shaderLanguage === ShaderLanguage.WGSL) {
+      return {
+        CUSTOM_FRAGMENT_UPDATE_ALPHA: `
+          #ifdef ALBEDO
+          {
+            let cutFw = fwidth(fragmentInputs.vAlbedoUV) * ${size};
+            let cutLod = log2(max(max(cutFw.x, cutFw.y), 1e-4));
+            let cutNear = 0.5 * exp2(-clamp(cutLod - 1.0, 0.0, 4.0));
+            let cutIgn = fract(52.9829189 * fract(dot(fragmentInputs.position.xy, vec2f(0.06711056, 0.00583715))));
+            let cutTh = mix(cutNear, 0.05 + cutIgn * 0.8, smoothstep(3.5, 5.5, cutLod));
+            if (albedoTexture.a < cutTh) { discard; }
+            surfaceAlbedo *= mix(1.0, 0.45, smoothstep(1.5, 4.5, cutLod));
+          }
+          #endif
+        `,
+      };
+    }
+    return {
+      CUSTOM_FRAGMENT_UPDATE_ALPHA: `
+        #ifdef ALBEDO
+        {
+          vec2 cutFw = fwidth(vAlbedoUV) * ${size};
+          float cutLod = log2(max(max(cutFw.x, cutFw.y), 1e-4));
+          float cutNear = 0.5 * exp2(-clamp(cutLod - 1.0, 0.0, 4.0));
+          float cutIgn = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+          float cutTh = mix(cutNear, 0.05 + cutIgn * 0.8, smoothstep(3.5, 5.5, cutLod));
+          if (albedoTexture.a < cutTh) discard;
+          surfaceAlbedo *= mix(1.0, 0.45, smoothstep(1.5, 4.5, cutLod));
+        }
         #endif
       `,
     };

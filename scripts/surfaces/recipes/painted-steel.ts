@@ -16,8 +16,8 @@ export const paintedSteel: Recipe = {
       o.h -= s * 0.05;
     }
     // Salt dried white at the bottom of runs.
-    const salt = smoothstep(0.7, 0.9, fbm01(u, v, 30, 6, 4, 120)) * 0.35;
-    cover(o, SALT, salt * 0.4);
+    const salt = smoothstep(0.75, 0.92, fbm01(u, v, 50, 50, 3, 120)) * 0.25;
+    cover(o, SALT, salt * 0.3);
     o.rough = mix(o.rough, 0.85, salt);
     // Hand grime.
     cover(o, DIRT, smoothstep(0.55, 0.85, fbm01(u, v, 6, 6, 4, 130)) * 0.15);

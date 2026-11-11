@@ -22,23 +22,29 @@ export const carpetTile: Recipe = {
     const fx = gx - ix;
     const fy = gy - iy;
     const toEdge = Math.min(fx, 1 - fx, fy, 1 - fy) * (TILE / N);
-    // Loop pile: rows of loops along u, each loop a bump.
+    // Loop pile: a grid of tufts about 2.5 mm apart, each its own height and yarn.
     const rows = Math.round((LOOPS * TILE) / 1000);
-    const rowY = v * rows;
-    const loopX = u * rows * 1.3 + (Math.floor(rowY) % 2) * 0.5;
-    const loop = Math.sin((rowY % 1) * Math.PI) * (0.6 + 0.4 * Math.sin((loopX % 1) * Math.PI));
-    const yarn = value(u, v, rows / 2, rows / 4, 1700);
-    // Heathered: the tint with flecks of darker and paler yarn.
-    const fleck = value(u, v, rows, rows, 1701);
-    o.a = 0.8 + yarn * 0.15 + loop * 0.05 - smoothstep(0.85, 0.95, fleck) * 0.4;
-    o.r = o.g = o.b = smoothstep(0.85, 0.95, fleck) * 0.02;
-    o.h = loop * 0.7 + yarn * 0.2;
+    const lx = u * rows;
+    const ly = v * rows;
+    const cx = Math.floor(lx);
+    const cy = Math.floor(ly);
+    const tuft = hash(cx % rows, cy % rows, 1700);
+    const shape = Math.sin((lx - cx) * Math.PI) * Math.sin((ly - cy) * Math.PI);
+    const loop = shape * (0.6 + 0.4 * tuft);
+    // Heathered: each tuft's yarn a shade of the tint, some darker, a few paler flecks.
+    const yarn = hash(cx % rows, cy % rows, 1701);
+    const dark = yarn < 0.18 ? 0.35 : 0;
+    const pale = yarn > 0.94 ? 0.05 : 0;
+    const fade = value(u, v, 40, 40, 1708);
+    o.a = (0.78 + 0.18 * tuft - dark) * (0.85 + 0.15 * shape) * (0.95 + 0.1 * fade);
+    o.r = o.g = o.b = pale;
+    o.h = loop * 0.8 + fbm(u, v, 20, 20, 3, 1709) * 0.2;
     o.rough = 0.95;
     o.metal = 0;
     // Matted, grubby lanes where people walk.
-    const lane = smoothstep(0.45, 0.8, fbm01(u, v, 2, 2, 4, 1702));
-    o.h *= 1 - lane * 0.5;
-    cover(o, DIRT, lane * 0.35);
+    const lane = smoothstep(0.4, 0.75, fbm01(u, v, 2, 2, 4, 1702));
+    o.h *= 1 - lane * 0.6;
+    cover(o, DIRT, lane * 0.45);
     o.rough = mix(o.rough, 0.85, lane);
     // Stains: coffee rings and dark spots.
     const tile = hash(ix, iy, 1703);

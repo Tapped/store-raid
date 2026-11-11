@@ -24,7 +24,7 @@ export const tarpaulin: Recipe = {
     const along = warpOnTop ? Math.sin(fy * Math.PI) : Math.sin(fx * Math.PI);
     const gap = Math.min(fx, 1 - fx, fy, 1 - fy);
     const weave = along * 0.04 - (1 - smoothstep(0, 0.12, gap)) * 0.03;
-    o.a = 0.9 + along * 0.08;
+    o.a = 0.82 + along * 0.16;
     o.r = o.g = o.b = 0;
     o.rough = 0.55 + (warpOnTop ? 0.04 : 0);
     // Creases from folding: sharp ridges in a grid-ish pattern, and soft wrinkles.
@@ -33,10 +33,10 @@ export const tarpaulin: Recipe = {
     const wrinkle = fbm(u, v, 6, 6, 4, 1402);
     o.h = weave + wrinkle * 1.5 + fold * 1.2;
     // Faded where the sun got it, whitened along the folds.
-    const fade = smoothstep(0.3, 0.8, fbm01(u, v, 2, 2, 4, 1403)) * 0.3 + fold * 0.3;
-    cover(o, FADED, clamp(fade) * 0.5);
+    const fade = smoothstep(0.4, 0.85, fbm01(u, v, 2, 2, 4, 1403)) * 0.2 + fold * 0.25;
+    cover(o, FADED, clamp(fade) * 0.35);
     o.rough = mix(o.rough, 0.8, fade);
     const dirt = smoothstep(0.45, 0.85, fbm01(u, v, 5, 5, 5, 1404));
-    cover(o, DIRT, dirt * 0.4);
+    cover(o, DIRT, dirt * 0.25);
   },
 };

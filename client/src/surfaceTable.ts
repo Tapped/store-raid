@@ -18,6 +18,11 @@ export interface SurfaceSpec {
   tint?: readonly [number, number, number];
   /** Roughly the surface's colour from afar, in sRGB, drawn while its textures are missing. */
   color: readonly [number, number, number];
+  /**
+   * Wire mesh and the like: the colour texture's alpha is coverage, and the material cuts holes
+   * where there's none (see SurfaceCutout in surfaces.ts). Draw it on both faces of a thin plane.
+   */
+  cutout?: boolean;
   /** v runs up a wall from the floor: texture v 0 is a storey's floor. */
   upright?: boolean;
   /** How the client breaks up the repeats; see SurfaceVariation. */
@@ -226,6 +231,14 @@ const TABLE = {
     color: [0.45, 0.36, 0.1],
     variation: { patch: 3, brightness: 0.1, roughness: 0.1 },
     about: "Worn diagonal hazard stripes, tint and black, 25 cm apart along u",
+  },
+  chainlink: {
+    tile: 0.3,
+    size: 1024,
+    color: [0.5, 0.51, 0.52],
+    cutout: true,
+    variation: { patch: 3, brightness: 0.1 },
+    about: "Galvanised chain-link fence, 50 mm mesh, cut out: draw on a two-sided plane",
   },
   tarpaulin: {
     tile: 1,

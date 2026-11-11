@@ -16,7 +16,7 @@ const BLOCK = hex(0x8e8c86);
 const MORTAR = hex(0x7d7b75);
 
 export const concreteBlock: Recipe = {
-  cavity: { radius: 5, strength: 0.6 },
+  cavity: { radius: 5, strength: 0.25 },
   sample(u, v, o) {
     const course = Math.floor(v * COURSES);
     const shift = wrap(course, 2) * 0.5;
@@ -34,12 +34,12 @@ export const concreteBlock: Recipe = {
     const joint = 1 - smoothstep(JOINT - 1, JOINT + 0.5, toJoint);
     // Tooled joint: a shallow concave groove; a rounded arris on each block.
     const tooled = Math.max(0, 1 - toJoint / JOINT);
-    o.h -= joint * (2.5 + tooled * 1.5);
+    o.h -= joint * (1.5 + tooled * 1.0);
     o.h -= (1 - smoothstep(JOINT, JOINT + 4, toJoint)) * 1.0;
     const substrate: Colour = blend([o.r, o.g, o.b], MORTAR, joint);
 
     // Paint over all of it: the tint, pooled a touch darker in the joints.
-    o.a = (0.93 + pores * 0.07) * (1 - joint * 0.12) * (1 - (id - 0.5) * 0.04);
+    o.a = (0.93 + pores * 0.07) * (1 - joint * 0.05) * (1 - (id - 0.5) * 0.04);
     o.r = o.g = o.b = 0;
     o.rough = 0.7 + pores * 0.1;
 
@@ -65,6 +65,6 @@ export const concreteBlock: Recipe = {
     cover(o, SALT, foot * smoothstep(0.6, 0.85, fbm01(u, v, 40, 20, 4, 808)) * 0.3);
     // Dirt streaked down from the joints' ledges.
     const streak = smoothstep(0.62, 0.85, fbm01(u, v, 40, 1, 4, 809)) * 0.25;
-    cover(o, DIRT, clamp(streak + joint * 0.08));
+    cover(o, DIRT, clamp(streak * 0.7 + joint * 0.04));
   },
 };
