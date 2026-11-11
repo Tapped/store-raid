@@ -787,9 +787,11 @@ def weathered(
     halo = smoothstep(n, over, -0.03, -0.012)
     core = n.math("MINIMUM", n.math("MULTIPLY", smoothstep(n, over, 0.05, 0.07), rust * 2), 1.0)
 
+    # Streaks stay a real size on small models, or they read as wood grain.
+    ws = max(s, 0.8)
     # Rust runs: chips a little higher up weep down in streaks.
     streak = smoothstep(
-        n, n.noise(1.0, detail=3, vector=_stretched(n, 90 / s, 90 / s, 1.5 / s)), 0.5, 0.72
+        n, n.noise(1.0, detail=3, vector=_stretched(n, 90 / ws, 90 / ws, 1.5 / ws)), 0.5, 0.72
     )
     run = 0.0
     for i in range(1, 5):
@@ -799,7 +801,7 @@ def weathered(
 
     # Dirt: creases, vertical wash streaks, and low down.
     wash = smoothstep(
-        n, n.noise(1.0, detail=4, vector=_stretched(n, 40 / s, 40 / s, 2 / s)), 0.45, 0.75
+        n, n.noise(1.0, detail=4, vector=_stretched(n, 40 / ws, 40 / ws, 2 / ws)), 0.45, 0.75
     )
     grime = n.math("ADD", n.math("MULTIPLY", crevices(n), 1.4), n.math("MULTIPLY", wash, 0.35))
     if floor is not None:
