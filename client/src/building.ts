@@ -1153,8 +1153,8 @@ function corrugated(parts: PartBuilder, face: WallFace, normal: Vec3, y0: number
 function pilaster(ctx: Context, parts: PartBuilder, plan: Plan, face: WallFace, at: number) {
   // Not where a wall meets this one.
   const [px, pz] =
-    face.axis === "x" ? [face.coord + face.sign * 0.15, at] : [at, face.coord + face.sign * 0.15];
-  if (ctx.enclosed(plan.storey, 0, px, pz, 0.3) > 0.02) return;
+    face.axis === "x" ? [face.coord + face.sign * 0.5, at] : [at, face.coord + face.sign * 0.5];
+  if (ctx.enclosed(plan.storey, 0, px, pz, 0.28) > 0.01) return;
   parts.paint = linear(ctx.livery.steel);
   parts.wear = steelWear(ctx, plan.base, 0.6);
   const out = 0.07;
@@ -1307,7 +1307,12 @@ function floors(ctx: Context, parts: PartBuilder) {
 }
 
 /** Bare concrete soffits, rougher than the walls' bake, so tubes close by don't glint on them. */
-const SOFFIT = { roughness: 1.35, bump: 0.7 };
+const SOFFIT = {
+  roughness: 1.35,
+  bump: 0.7,
+  // Hex tiling, turned any way: the bake's stains and board marks would line up in rows otherwise.
+  variation: { sampling: { kind: "hex" as const, cells: 1.6, rotate: 1, contrast: 0.4 } },
+};
 /** How far below the roof a suspended ceiling hangs: just clear of the deck's ribs. */
 const SUSPENDED_DROP = 0.045;
 
@@ -1962,9 +1967,26 @@ function lanes(ctx: Context, parts: PartBuilder) {
           w: cell.minX + INSET,
         }[side];
         const [l0, l1] = side === "n" || side === "e" ? [line - WIDTH, line] : [line, line + WIDTH];
-        if (alongX)
-          parts.box("floor-paint", [start, base, l0], [end, base + 0.003, l1], 0.001, ["-y"]);
-        else parts.box("floor-paint", [l0, base, start], [l1, base + 0.003, end], 0.001, ["-y"]);
+        // Not across the dock, which is hatched.
+        const dock = room.storey === 0 ? ctx.level.dock : undefined;
+        const [d0, d1, e0, e1] = dock
+          ? alongX
+            ? [dock.minZ, dock.maxZ, dock.minX, dock.maxX]
+            : [dock.minX, dock.maxX, dock.minZ, dock.maxZ]
+          : [0, 0, 0, 0];
+        const spans: [number, number][] =
+          dock && l1 > d0 && l0 < d1
+            ? [
+                [start, Math.min(end, e0 - 0.05)],
+                [Math.max(start, e1 + 0.05), end],
+              ]
+            : [[start, end]];
+        for (const [s0, s1] of spans) {
+          if (s1 - s0 < 0.1) continue;
+          if (alongX)
+            parts.box("floor-paint", [s0, base, l0], [s1, base + 0.003, l1], 0.001, ["-y"]);
+          else parts.box("floor-paint", [l0, base, s0], [l1, base + 0.003, s1], 0.001, ["-y"]);
+        }
       }
     }
   }
@@ -1974,9 +1996,7 @@ function lanes(ctx: Context, parts: PartBuilder) {
     parts.chunk = "s0";
     parts.paint = undefined;
     parts.wear = (x, y, z) => mottle(x, y, z, ctx.seed + 6) * 0.9;
-    parts.uvs = (x, _y, z) => [x + z, z - x];
     parts.box("hazard", [dock.minX, 0, dock.minZ], [dock.maxX, 0.003, dock.maxZ], 0.001, ["-y"]);
-    parts.uvs = undefined;
   }
 }
 
@@ -2018,11 +2038,11 @@ function loadingDoor(ctx: Context, parts: PartBuilder) {
   parts.chunk = "s0";
   parts.wear = steelWear(ctx, 0, 0.6);
   // The curtain of slats.
-  parts.paint = undefined;
+  parts.paint = linear(vary(ctx.livery.steel, ctx.seed + 41, 0.05).scale(1.5));
   const slat = 0.1;
   const vs: number[] = [];
   for (let y = 0.06; y <= height; y += slat / 4) vs.push(round(y));
-  parts.sheet("galvanised", cuts(x - width / 2, x + width / 2, 0.5), vs, (a, y) => {
+  parts.sheet("painted-steel", cuts(x - width / 2, x + width / 2, 0.5), vs, (a, y) => {
     const phase = ((y - 0.06) / slat) * Math.PI * 2;
     const d = 0.035 + 0.012 * Math.sin(phase);
     const slope = 0.012 * Math.cos(phase) * ((Math.PI * 2) / slat);
