@@ -757,10 +757,14 @@ function wallWear(ctx: Context, place: WearPlace) {
   };
 }
 
+const FLOOR_TONE = 0.8;
+
 function floorWear(ctx: Context, place: WearPlace) {
   const dirt = dirtOf(place);
+  // Bare concrete is a sealed, darker grey than the bake's fresh slab.
+  const tone = place.finish.floor.surface === "concrete-floor" ? FLOOR_TONE : 1;
   return (x: number, y: number, z: number) => {
-    let k = mottle(x, y, z, ctx.seed);
+    let k = mottle(x, y, z, ctx.seed) * tone;
     const occ = ctx.enclosed(place.storey, 0, x, z, 0.4);
     k *= 1 - WEAR.corners * 0.6 * smoothstep(0.05, 0.6, occ) * (0.5 + dirt * 0.5);
     if (place.finish.oil > 0) {
