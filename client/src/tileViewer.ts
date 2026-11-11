@@ -14,10 +14,11 @@ import {
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
-import { type Cell, generate } from "../../shared/generate";
+import type { Cell } from "../../shared/generate";
 import {
   type Floor,
   GENERATED_SIZE,
+  generatedLevel,
   type Ladder,
   type Level,
   type LevelBox,
@@ -30,6 +31,7 @@ import {
   type Edge,
   fits,
   fitsAbove,
+  isOpening,
   OFFSET,
   OPPOSITE,
   type ParsedGrid,
@@ -62,6 +64,8 @@ interface Piece {
   grid: TileGrid;
   parsed: ParsedGrid;
   entrance?: Cell;
+  /** The whole level, for a generated one: its props' boxes, lights and items as the game has them. */
+  level?: Level;
 }
 
 interface Source {
@@ -89,6 +93,7 @@ const BOX_COLORS: Record<LevelBox["kind"] | "floor" | "ladder", string> = {
   pit: "#c77dff",
   stairs: "#ff9f40",
   furniture: "#4dd8ff",
+  mesh: "#c0c0c0",
   scenery: "#ffffff",
   floor: "#5bd16b",
   ladder: "#b6ff4d",
@@ -185,7 +190,7 @@ panel.innerHTML = `
   <div class="muted">
     One string per row, north first, a list of rows per storey, deepest first. F floor, T tv,
     # solid, P pit, | = bridge, ^ &gt; v &lt; stairs, n e s w ladder, . open. Drawn storeys put
-    + corners between cells, - | walls and d doorways.
+    + corners between cells, - | walls, d doorways and a arches.
   </div>
 `;
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -298,14 +303,18 @@ function sizeOf(grid: TileGrid) {
 function makeSource(): Source {
   switch (view.kind) {
     case "generated": {
-      const generated = generate({ ...GENERATED_SIZE, seed: view.seed });
+      const started = performance.now();
+      const generated = generatedLevel(view.seed);
+      const ms = Math.round(performance.now() - started);
       const { cols, rows } = GENERATED_SIZE;
-      const grid = { ...generated.grid, x: (-cols * CELL) / 2, z: (-rows * CELL) / 2 };
+      const grid = generated.grid as TileGrid;
+      const entrance = { storey: 0, col: Math.floor(cols / 2), row: 0 };
+      const piece = { ...pieceOf(`generated-${view.seed}`, grid, entrance), level: generated };
       return {
         kind: "generated",
         title: `generated-${view.seed}`,
-        pieces: [pieceOf(`generated-${view.seed}`, grid, generated.entrance)],
-        note: `${cols} × ${rows} cells, ${GENERATED_SIZE.storeys} storeys · took ${generated.attempts} ${generated.attempts === 1 ? "try" : "tries"} · in the game: ?level=generated-${view.seed}`,
+        pieces: [piece],
+        note: `${cols} × ${rows} cells, ${GENERATED_SIZE.storeys} storeys · ${generated.rooms.length} rooms, ${generated.props.length} props, ${generated.lights.length} lights, ${generated.items.length} items · built in ${ms} ms · in the game: ?level=generated-${view.seed}`,
       };
     }
     case "playground":
@@ -353,10 +362,11 @@ function levelOf(shown: Source): Level {
   let top = 1;
   let deepest = 0;
   let extent = 0;
+  const generated = shown.pieces.find((piece) => piece.level)?.level;
   for (const piece of shown.pieces) {
     const problem = checkTiles(piece.parsed);
     if (problem) throw new Error(`${piece.name}: ${problem}`);
-    const built = composeTiles(piece.grid);
+    const built = piece.level ?? composeTiles(piece.grid);
     floors.push(...built.floors);
     boxes.push(...built.boxes);
     ladders.push(...built.ladders);
@@ -382,10 +392,10 @@ function levelOf(shown: Source): Level {
     items: [],
     spawnPoint: () => ({ x: 0, z: 0 }),
     roof: top * STOREY,
-    grid: undefined,
-    rooms: [],
-    props: [],
-    lights: [],
+    grid: generated?.grid,
+    rooms: generated?.rooms ?? [],
+    props: generated?.props ?? [],
+    lights: generated?.lights ?? [],
   };
 }
 
@@ -534,23 +544,34 @@ function applyView() {
 
 // ---- Drawn on top of the level ----
 
-/** TV cabinets and anything else in the way that the game draws with a model, as plain boxes. */
+/**
+ * TV cabinets, props and anything else in the way that the game draws with a model, as plain
+ * boxes in one mesh. Shelving is drawn by createWorld.
+ */
 function addFurniture({ scene, shadows }: World, shown: Level) {
   const material = surfaceMaterial("furniture", scene, new Color3(0.16, 0.14, 0.13), {
     roughness: 0.6,
   });
-  for (const [i, box] of shown.boxes.entries()) {
-    if (box.kind !== "furniture") continue;
-    const mesh = MeshBuilder.CreateBox(
-      `furniture${i}`,
-      { width: box.maxX - box.minX, height: box.height, depth: box.maxZ - box.minZ },
-      scene,
-    );
-    mesh.position.set((box.minX + box.maxX) / 2, box.y + box.height / 2, (box.minZ + box.maxZ) / 2);
-    mesh.material = material;
-    mesh.receiveShadows = true;
-    shadows.addShadowCaster(mesh);
-  }
+  const meshes = shown.boxes
+    .filter((box) => box.kind === "furniture")
+    .map((box, i) => {
+      const mesh = MeshBuilder.CreateBox(
+        `furniture${i}`,
+        { width: box.maxX - box.minX, height: box.height, depth: box.maxZ - box.minZ },
+        scene,
+      );
+      mesh.position.set(
+        (box.minX + box.maxX) / 2,
+        box.y + box.height / 2,
+        (box.minZ + box.maxZ) / 2,
+      );
+      return mesh;
+    });
+  const mesh = meshes.length > 0 ? Mesh.MergeMeshes(meshes, true, true) : null;
+  if (!mesh) return;
+  mesh.material = material;
+  mesh.receiveShadows = true;
+  shadows.addShadowCaster(mesh);
 }
 
 /** Every box players collide with, floors and where ladders climb, in wireframe by kind. */
@@ -889,7 +910,7 @@ function edgeOk(mine: Tile, theirs: Tile | undefined, side: (typeof SIDES)[numbe
   const mustLeadOn = ["plank", "stairs-foot", "arrival"];
   const passable = ["floor", "plank", "stairs-foot", "arrival"];
   if (edge === "wall" && mustLeadOn.includes(a)) return false;
-  if (edge === "door" && !passable.includes(a)) return false;
+  if (isOpening(edge) && !passable.includes(a)) return false;
   if (!theirs || edge === "wall") return true;
   return fits(a, socket(theirs, OPPOSITE[side]));
 }
@@ -942,7 +963,13 @@ function showMaps() {
   if (!piece) return;
   const grid = piece.parsed;
   const border = (edge: Edge) =>
-    edge === "wall" ? "3px solid #f2f2f2" : edge === "door" ? "3px dashed #ff6b5b" : "";
+    edge === "wall"
+      ? "3px solid #f2f2f2"
+      : edge === "door"
+        ? "3px dashed #ff6b5b"
+        : edge === "arch"
+          ? "3px dotted #ffb35b"
+          : "";
   for (let storey = grid.tiles.length - grid.basements - 1; storey >= -grid.basements; storey--) {
     const title = document.createElement("div");
     title.className = "muted";

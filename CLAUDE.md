@@ -34,7 +34,10 @@ client/src/occlusion.ts    how many walls' worth lie between two points, and how
 client/src/store.ts        addShelves(): stocked shelving over the shelf collision boxes; storeSurface(): textured walls and floor
 client/src/harbour.ts      addHarbour(): the harbour around the store, as instanced scenery with no collision
 client/src/paving.ts       addPavingVariation(): world-space brightness and damp patches on harbour paving
-client/src/variation.ts    addSurfaceVariation(): breaks up tiled textures: hex tiling, shuffled brick courses, world-space drift and grime
+client/src/variation.ts    addSurfaceVariation(): breaks up tiled textures: hex tiling, shuffled brick courses or tiles, world-space drift and grime
+client/src/surfaces.ts     surface(scene, name, { tint }): the surface library as cached PBR materials: tint, cut-outs, variation
+client/src/surfaceTable.ts SURFACES: every library surface's tile size in meters, texture size, tint and variation
+client/src/surfaceViewer.ts the surface viewer at /surfaces.html: each surface on a floor and walls, by flashlight or grazing light
 client/src/lamps.ts        addStreetLamps(): glowing lamp faces, and lamp light summed in every PBR shader (not scene lights)
 client/src/scene.ts        world, lights and fog, first-person camera, lobby camera
 client/src/screens.ts     addScreens(): the TVs of `tv` tiles, showing static and droning a loop
@@ -49,10 +52,11 @@ server/src/persist.ts      load()/save(): state that survives server restarts
 scripts/bot.ts             headless player
 scripts/hands.ts           bots check the hands in the store: phones, a TV and a two-person sofa, and report what worked
 scripts/playground.ts      a bot checks the playground: dimmer, stairs up and down, ladders, railing, plank and the pit
-scripts/generate.ts        draws a generated level from a seed, or checks how many seeds go
+scripts/generate.ts        draws a generated level from a seed, or checks the rules on many seeds
 scripts/harbour.ts         the harbour's ground and what's in the way, from its model, into shared/harbour.json (`pnpm run harbour`)
 scripts/unity-import/      prefabs from a Unity .unitypackage → textured .glb in assets/, through Blender
 scripts/models/            models made in code: one Python script per model, built in Blender (`pnpm run model`)
+scripts/surfaces/          the surface library's baker: periodic noise, one recipe per surface (`pnpm run surface`)
 scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`pnpm run image`, see the `image` skill)
 ```
 
@@ -146,16 +150,20 @@ This is a solo, local project. Start everything with **`pnpm run dev`** (require
   `nesw` ladders, both up towards that side, `.` open air). Storeys below ground are basements,
   dug out of `#`; stairs going down are stairs on the storey below. Open air above stairs or a
   ladder is its well, and under a pit a shaft: the parser works out which. Rooms are walls on the
-  edges between cells, drawn in a storey written with `+` corners, `-`/`|` walls and `d`
-  doorways. `checkTiles` checks sockets side by side (`fits`) and stacked (`fitsAbove`), and
+  edges between cells, drawn in a storey written with `+` corners, `-`/`|` walls, `d`
+  doorways and `a` arches (3 m wide, between halls). `checkTiles` checks sockets side by side (`fits`) and stacked (`fitsAbove`), and
   `composeTiles` turns a grid into floors, boxes and ladders.
-- **Generated levels** (`shared/generate.ts`, `?level=generated-<seed>`): a layout layer splits
-  each storey into rooms (some open air above the ground), joins them with doorways and puts a way
-  up from every storey; then wave function collapse picks every tile; then whatever can't be
-  reached from the entrance is filled in or taken away. Pure and seeded, so server and clients
-  build the same level. `pnpm exec tsx scripts/generate.ts [seed]` draws one, `--many 200` checks
-  many. New kinds of room should be tiles, or room types in the layout layer; props will be a
-  third layer.
+- **Generated levels** (`shared/generate.ts`, `?level=generated-<seed>`): a harbour warehouse,
+  14 × 12 cells on a basement, the ground and two storeys (`GENERATED_SIZE`). A layout layer
+  splits each storey into rooms of a `RoomKind` (loading bay, halls with bonded cages, storerooms,
+  workshops, offices, staff and plant rooms, corridors, atriums), joins them with doorways and
+  arches and puts ways up from every storey; then wave function collapse picks every tile,
+  weighted by room kind; then whatever can't be reached from the entrance is filled in or taken
+  away. Then `shared/furnish.ts` places props from `shared/props.ts`, light fittings and loot,
+  and takes away props that block a 1.4 m way through; `shared/levelCheck.ts` checks the rules
+  on a finished level. Pure and seeded, so server and clients build the same level.
+  `pnpm exec tsx scripts/generate.ts [seed]` draws one with its rooms, props and lights,
+  `--many 200` checks every rule on many and times them.
 - **Height:** players stand on `floors` (flat, or ramps for stairs), step up `STEP_UP`, follow
   the floor down `STEP_DOWN`, and fall under `GRAVITY`; boxes only block where they overlap in
   height. On a ladder, walking into it climbs and backing away climbs down. Falling below the
@@ -185,6 +193,9 @@ You can't see the browser, so check your work from the terminal, with `pnpm run 
   square and prints every player's position each second (`LEVEL=` and `MODE=` choose the room).
 - **Rounds:** start a second server with a short raid, `SERVER_PORT=2601 RAID_TIME=12 pnpm exec tsx
   server/src/index.ts`, and point bots at it, rather than waiting ten minutes for dawn.
+- **Surface viewer:** `http://127.0.0.1:5173/surfaces.html` shows the surface library on a floor and
+  a corner of walls, through the game's pipeline, lit by the flashlight or a light low across them
+  (L), with tint pickers; `?engine=webgl` for WebGL and `window.__surfaces.show({ floor, wall })`.
 - **Tile viewer:** `http://127.0.0.1:5173/tiles.html` draws tiles without a server, built and
   drawn by the game's own code: a generated level by seed (`?source=generated&seed=7`, `[`/`]` step
   through seeds), every tile on its own (`?source=catalogue`), the playground's grid, or one written
@@ -257,6 +268,14 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
   model in the game, whose lighting differs. Screen-space AO only adds contact shadows between
   things, so a model's own creases come from its bake. The scripts are in git and the models aren't, so run
   `pnpm run assets:backup` after building.
+- **Surfaces made in code:** `scripts/surfaces/recipes/<name>.ts` is a function of uv giving colour,
+  tint amount, height in mm, AO, roughness and metalness, from the periodic noise in
+  `scripts/surfaces/noise.ts`, so bakes tile. Its tile size and texture size are in
+  `client/src/surfaceTable.ts`. `pnpm run surface <name…|all>` bakes
+  `assets/textures/surfaces/<name>-{base,normal,orm}.webp` on worker threads (`--draft 512` for a quick
+  look) and a contact sheet in `node_modules/.cache/surfaces/<name>/preview.png`: look at it, then at the
+  surface in the surface viewer. Meshes using `surface()` need UVs in meters ÷ `SURFACES[name].tile`,
+  as `worldBox(…, SURFACES[name].tile)` makes; `upright` ones are a storey tall, v 0 on the floor.
 - `loadModel(scene, "models/props/crate.glb", placeholder)` shows the placeholder until the file
   exists, so use the final path from day one. Vite answers a missing asset with `200` and its HTML
   page, so check the content type, not only the status, when testing a URL with curl.

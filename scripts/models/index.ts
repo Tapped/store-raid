@@ -26,6 +26,7 @@ import { EXTTextureWebP, KHRONOS_EXTENSIONS } from "@gltf-transform/extensions";
 import { dedup, prune, textureCompress } from "@gltf-transform/functions";
 import sharp from "sharp";
 import { ITEM_KINDS } from "../../shared/constants";
+import { PROPS } from "../../shared/props";
 import { sharedAssets } from "../sharedAssets";
 import { findBlender } from "../unity-import/blender";
 import { fixTangents } from "../unity-import/gltf";
@@ -155,6 +156,24 @@ for (const name of wanted) {
     const off = [w, h, d].some((v, i) => Math.abs(v - want[i]) > 0.01);
     sizeNote = off ? "" : `, matches ITEM_KINDS.${b.item}`;
     if (off) warnings.push(`ITEM_KINDS.${b.item} is ${want.join(" × ")}: the model doesn't fit it`);
+  }
+  if (name in PROPS) {
+    // Scenery is placed by its catalogue size and mount without loading it, so both must hold.
+    const prop = PROPS[name as keyof typeof PROPS];
+    const off = [w, h, d].some(
+      (v, i) => Math.abs(v - prop.size[i]) > Math.max(0.01, prop.size[i] * 0.03),
+    );
+    if (off) warnings.push(`PROPS.${name} is ${prop.size.join(" × ")}: the model doesn't fit it`);
+    else sizeNote = `, matches PROPS.${name}`;
+    const near = (v: number, want: number) => Math.abs(v - want) < 0.005;
+    const centred = (i: number) => near(min[i] + max[i], 0);
+    const origin = {
+      floor: near(min[1], 0) && centred(0) && centred(2),
+      wall: near(min[1], 0) && centred(0) && near(min[2], 0),
+      ceiling: near(max[1], 0) && centred(0) && centred(2),
+    }[prop.mount];
+    if (!origin)
+      warnings.push(`the origin isn't where a ${prop.mount} prop's goes (see shared/props.ts)`);
   }
   if (b.budget && b.tris > b.budget) {
     warnings.push(`${b.tris} triangles is over the budget of ${b.budget}`);

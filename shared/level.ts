@@ -1,5 +1,6 @@
 import type { Box } from "./collision";
 import { ARENA_SIZE, type ItemKind } from "./constants";
+import { furnish } from "./furnish";
 import { type GenerateOptions, generate } from "./generate";
 import HARBOUR_TERRAIN from "./harbour.json";
 import { CELL, composeTiles, type Screen, type Side, STOREY, type TileGrid } from "./tiles";
@@ -29,9 +30,19 @@ export type LevelBox = Box & {
   height: number;
   /**
    * A partition is a wall between rooms, inside a building. Scenery is something a model draws,
-   * like the harbour's houses and clutter: the box only stops players.
+   * like the harbour's houses and clutter: the box only stops players. A mesh is see-through, like
+   * chain-link: it stops players and things, not light or sound, and nothing draws it as a box.
    */
-  kind: "wall" | "partition" | "shelf" | "rail" | "pit" | "stairs" | "furniture" | "scenery";
+  kind:
+    | "wall"
+    | "partition"
+    | "shelf"
+    | "rail"
+    | "pit"
+    | "stairs"
+    | "furniture"
+    | "scenery"
+    | "mesh";
 };
 
 /**
@@ -379,71 +390,59 @@ const HARBOUR: Level = {
   spawnPoint: (index) => ({ x: 90.5 + (index % 2) * 2, y: 0.7, z: -44 - (index % 8) }),
 };
 
-/** How big generated levels are, in cells and storeys. */
+/**
+ * How big generated levels are, in cells and storeys: a warehouse 56 m by 48 m, on a basement, the
+ * ground and two storeys above.
+ */
 export const GENERATED_SIZE: Omit<GenerateOptions, "seed"> = {
-  cols: 8,
-  rows: 6,
-  storeys: 3,
+  cols: 14,
+  rows: 12,
+  storeys: 4,
   basements: 1,
 };
 
 /**
- * A level generated from a seed (shared/generate.ts): rooms on a basement, the ground and a storey
- * above, under a roof. Players come in on the south side, where the dock and the dimmer are, and
- * the items are spread over floors they can walk to.
+ * A level generated from a seed: the layout and tiles (shared/generate.ts), then what stands in
+ * its rooms, the lights and the loot (shared/furnish.ts), under a roof. Players come in on the
+ * south side, in the loading bay, where the dock and the dimmer are.
  */
-function generatedLevel(seed: number): Level {
+export function generatedLevel(seed: number): Level & { dropped: number } {
   const generated = generate({ ...GENERATED_SIZE, seed });
   const { cols, rows, storeys, basements } = GENERATED_SIZE;
   const x = (-cols * CELL) / 2;
   const z = (-rows * CELL) / 2;
   const grid = { ...generated.grid, x, z };
   const tiles = composeTiles(grid);
-  const centre = (cell: { col: number; row: number }) => ({
-    x: x + (cell.col + 0.5) * CELL,
-    z: z + (cell.row + 0.5) * CELL,
-  });
-  const entrance = centre(generated.entrance);
-  // The same items on the same floors every time for a seed.
-  const kinds: ItemKind[] = ["flashlight", "phone", "phone", "phone", "box", "box", "tv", "sofa"];
-  const others = generated.floors.filter((cell) => cell !== generated.floors[0]);
-  const spots = others.filter(
-    (_, i) => i % Math.max(1, Math.floor(others.length / kinds.length)) === 0,
-  );
+  const entrance = {
+    x: x + (generated.entrance.col + 0.5) * CELL,
+    z: z + (generated.entrance.row + 0.5) * CELL,
+  };
+  const dock = { minX: entrance.x - 1.5, maxX: entrance.x + 1.5, minZ: z + 0.2, maxZ: z + 1.6 };
+  // Where players start and the dock, and the space round them, are kept clear.
+  const start = { minX: entrance.x - 2, maxX: entrance.x + 2, minZ: z, maxZ: entrance.z + 2 };
+  const furnished = furnish(seed, generated, grid, tiles.boxes, { storey: 0, ...entrance }, [
+    start,
+    dock,
+  ]);
   return {
     name: `generated-${seed}`,
     size: Math.max(cols, rows) * CELL + 2,
-    boxes: tiles.boxes,
+    boxes: [...tiles.boxes, ...furnished.boxes],
     floors: tiles.floors,
     ladders: tiles.ladders,
     killY: -basements * STOREY - 4,
     dimmer: { x: entrance.x - 1.2, y: 1.3, z: z + 0.1, turn: 0 },
-    dock: { minX: entrance.x - 1.5, maxX: entrance.x + 1.5, minZ: z + 0.2, maxZ: z + 1.6 },
+    dock,
     entrance: { x: entrance.x, y: 2.6, z },
     screens: tiles.screens,
-    items: spots.slice(0, kinds.length).map((cell, i) => ({
-      kind: kinds[i],
-      ...centre(cell),
-      y: cell.storey * STOREY + 0.6,
-    })),
+    items: furnished.items,
     spawnPoint: (index) => ({ x: entrance.x - 1 + (index % 3), z: entrance.z + 0.5 }),
     roof: (storeys - basements) * STOREY,
     grid,
-    rooms: [],
-    props: [],
-    // A stand-in until the generator places them: a tube over every other floor.
-    lights: generated.floors
-      .filter((cell) => (cell.col + cell.row) % 2 === 0)
-      .map((cell) => ({
-        kind: "tube" as const,
-        ...centre(cell),
-        y: (cell.storey + 1) * STOREY - 0.35,
-        turn: 0,
-        color: [1, 0.93, 0.8] as [number, number, number],
-        power: 1,
-        state: "on" as const,
-        room: -1,
-      })),
+    rooms: furnished.rooms,
+    props: furnished.props,
+    lights: furnished.lights,
+    dropped: furnished.dropped,
   };
 }
 
