@@ -89,6 +89,12 @@ const LOOK = tunables("Rendering/Interior light", {
     max: 3,
     hint: "How much brighter faces turned to the light are than those turned away",
   },
+  wrap: {
+    value: 0.15,
+    min: 0,
+    max: 1,
+    hint: "Light faces turned away from it still take, as a ceiling round a tube does",
+  },
   normalOffset: {
     value: 0.3,
     min: 0,
@@ -212,7 +218,7 @@ const GLSL_LIGHT = `
     vec3 ilDir;
     ilSample(vPositionW + ilNormal * ilParams.z, ilLight, ilDir);
     ilLight *= ilParams.x;
-    vec3 ilIrradiance = ilLight * max(0.0, 1.0 + ilParams.w * dot(normalW, ilDir)) + ilMinimum.rgb;
+    vec3 ilIrradiance = ilLight * max(ilParams.y, 1.0 + ilParams.w * dot(normalW, ilDir)) + ilMinimum.rgb;
     finalDiffuse += ilIrradiance * surfaceAlbedo * aoOut.ambientOcclusionColor;
     float ilOneWay = length(ilDir);
     if (ilOneWay > 0.01 && ilShade.x > 0.0) {
@@ -306,7 +312,7 @@ const WGSL_LIGHT = `
     let ilFound = ilSample(fragmentInputs.vPositionW + ilNormal * uniforms.ilParams.z);
     let ilLight = ilFound.light * uniforms.ilParams.x;
     let ilDir = ilFound.dir;
-    let ilIrradiance = ilLight * max(0.0, 1.0 + uniforms.ilParams.w * dot(normalW, ilDir)) + uniforms.ilMinimum.rgb;
+    let ilIrradiance = ilLight * max(uniforms.ilParams.y, 1.0 + uniforms.ilParams.w * dot(normalW, ilDir)) + uniforms.ilMinimum.rgb;
     finalDiffuse += ilIrradiance * surfaceAlbedo * aoOut.ambientOcclusionColor;
     let ilOneWay = length(ilDir);
     if (ilOneWay > 0.01 && uniforms.ilShade.x > 0.0) {
@@ -369,7 +375,7 @@ class InteriorLightPlugin extends MaterialPluginBase {
     ubo.updateFloat4(
       "ilParams",
       LOOK.strength * shared.level ** LOOK.levelCurve,
-      0,
+      LOOK.wrap,
       LOOK.normalOffset,
       LOOK.directional,
     );

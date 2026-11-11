@@ -450,9 +450,9 @@ function generatedLevel(seed: number): Level {
           ],
           power: basement && roll < 4 ? 0.6 : 1,
           state:
-            roll === 7 || roll === 2
+            roll === 5 || roll === 2
               ? ("flicker" as const)
-              : roll >= 8
+              : roll >= 6
                 ? ("dead" as const)
                 : ("on" as const),
           room: -1,
