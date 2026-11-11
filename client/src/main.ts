@@ -2,6 +2,7 @@ import type { ItemKind } from "../../shared/constants";
 import { levelNamed } from "../../shared/level";
 import { modeFor } from "../../shared/modes";
 import { addAmbience } from "./ambience";
+import { addDressing } from "./dressing";
 import { FOOTSTEPS } from "./footsteps";
 import { createEngine } from "./graphics";
 import { POSES } from "./hands";
@@ -36,6 +37,8 @@ const world = createWorld(engine, levelNamed(params.get("level")));
 const mode = modeFor(world.level.name, params.get("mode"));
 // Levels with light fittings are lit by them (client/src/interiorLight.ts), not evenly.
 const lighting = addInteriorLighting(world);
+// Scenery the generator stood about, drawn from its models (client/src/dressing.ts).
+const dressing = world.level.props.length > 0 ? addDressing(world, lighting) : undefined;
 const playground = world.level.roof !== undefined ? addPlayground(world, lighting) : undefined;
 if (!playground) {
   void addProps(world);
@@ -214,6 +217,7 @@ if (import.meta.env.DEV)
       world,
       engine,
       lighting,
+      dressing,
       handPoses: POSES,
       footsteps: FOOTSTEPS,
       /**

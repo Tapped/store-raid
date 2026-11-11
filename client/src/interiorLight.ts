@@ -10,6 +10,7 @@ import {
   PBRMaterial,
   RawTexture,
   RawTexture3D,
+  RegisterMaterialPlugin,
   type Scene,
   ShaderLanguage,
   type UniformBuffer,
@@ -53,6 +54,13 @@ export interface InteriorLighting {
   glow(mesh: Mesh, lights: number | readonly number[], options?: { tint?: boolean }): void;
   /** The room's light level, 0 to 1, as the dimmer (and a game) leave it. */
   setLevel(level: number): void;
+  /** How much the room's light level scales the light now, 0 to 1: the level, on its curve. */
+  level(): number;
+  /**
+   * Says these fittings (indices into `Level.lights`) are drawn by a model now, glowing through
+   * `glow()`: their stand-ins go.
+   */
+  covered(lights: Iterable<number>): void;
   /** Settles when the first bake is in. */
   readonly ready: Promise<void>;
   /** What the bake holds at the voxel round a point, for debugging. */
@@ -339,7 +347,12 @@ const WGSL_LIGHT = `
  * say) needs them laid out again: Babylon does that before it counts the new plugin in.
  */
 function rebuildUniforms(material: PBRMaterial) {
-  const inner = material as unknown as { _createUniformBuffer(): void };
+  const inner = material as unknown as {
+    _createUniformBuffer(): void;
+    _uniformBufferLayoutBuilt: boolean;
+  };
+  // A material still being constructed has nothing laid out yet.
+  if (!inner._uniformBufferLayoutBuilt) return;
   material.resetDrawCache();
   inner._createUniformBuffer();
 }
@@ -982,15 +995,22 @@ export function addInteriorLighting(world: World): InteriorLighting | undefined 
   let baked: BakeOutput | undefined;
   const ready = bake();
 
-  // Every PBR material takes the light, now and as they're made.
+  // Every PBR material takes the light, now and as they're made. New ones get it as they're
+  // constructed, before anything lays out their uniforms or builds a shader: added any later, a
+  // material a loader has already started compiling (a glTF one with an occlusion map, say) can
+  // build its shader against the old layout, and WebGPU can't find the plugin's uniforms.
   const light = (material: unknown) => {
-    if (material instanceof PBRMaterial && !material.pluginManager?.getPlugin("InteriorLight")) {
-      new InteriorLightPlugin(material);
+    if (
+      material instanceof PBRMaterial &&
+      material.getScene() === scene &&
+      !material.pluginManager?.getPlugin("InteriorLight")
+    ) {
+      return new InteriorLightPlugin(material);
     }
+    return null;
   };
   for (const material of scene.materials) light(material);
-  // A material's constructor announces it before setting its own fields, hence the wait.
-  scene.onNewMaterialAddedObservable.add((material) => queueMicrotask(() => light(material)));
+  RegisterMaterialPlugin("InteriorLight", light);
 
   // Each frame: every fitting's light and glow as it is now.
   const brightness = new Float32Array(fittings.length);
@@ -1026,7 +1046,7 @@ export function addInteriorLighting(world: World): InteriorLighting | undefined 
     }
   };
 
-  addStandIns(scene, level, glow);
+  const standIns = addStandIns(scene, level, glow);
 
   return {
     brightness: (i) =>
@@ -1043,11 +1063,16 @@ export function addInteriorLighting(world: World): InteriorLighting | undefined 
     setLevel(value) {
       shared.level = value;
     },
+    level: () => shared.level ** LOOK.levelCurve,
+    covered: standIns.cover,
     ready,
   };
 }
 
-/** Stand-ins for the fittings' models, until they exist: a glowing shape at each, by kind. */
+/**
+ * Stand-ins for the fittings' models, until they exist: a glowing shape at each, by kind. `cover`
+ * takes away those a model draws now.
+ */
 function addStandIns(scene: Scene, level: Level, glow: InteriorLighting["glow"]) {
   const shapes: Record<LightSpawn["kind"], () => Mesh> = {
     tube: () =>
@@ -1062,12 +1087,24 @@ function addStandIns(scene: Scene, level: Level, glow: InteriorLighting["glow"])
   material.albedoColor = new Color3(0.22, 0.22, 0.22);
   material.roughness = 0.5;
   material.emissiveColor = Color3.White();
-  for (const kind of Object.keys(shapes) as LightSpawn["kind"][]) {
-    const which = level.lights.flatMap((light, i) => (light.kind === kind ? [i] : []));
-    if (which.length === 0) continue;
-    const mesh = shapes[kind]();
-    mesh.material = material;
-    mesh.isPickable = false;
+  const covered = new Set<number>();
+  const meshes = new Map<LightSpawn["kind"], Mesh>();
+  const place = (kind: LightSpawn["kind"]) => {
+    const which = level.lights.flatMap((light, i) =>
+      light.kind === kind && !covered.has(i) ? [i] : [],
+    );
+    let mesh = meshes.get(kind);
+    if (which.length === 0) {
+      mesh?.dispose();
+      meshes.delete(kind);
+      return;
+    }
+    if (!mesh) {
+      mesh = shapes[kind]();
+      mesh.material = material;
+      mesh.isPickable = false;
+      meshes.set(kind, mesh);
+    }
     const matrices = new Float32Array(which.length * 16);
     for (const [n, i] of which.entries()) {
       const light = level.lights[i];
@@ -1077,5 +1114,19 @@ function addStandIns(scene: Scene, level: Level, glow: InteriorLighting["glow"])
     }
     drawInstances(mesh, matrices);
     glow(mesh, which, { tint: true });
-  }
+  };
+  const kinds = Object.keys(shapes) as LightSpawn["kind"][];
+  for (const kind of kinds) place(kind);
+  return {
+    cover(lights: Iterable<number>) {
+      const changed = new Set<LightSpawn["kind"]>();
+      for (const i of lights) {
+        const light = level.lights[i];
+        if (!light || covered.has(i)) continue;
+        covered.add(i);
+        changed.add(light.kind);
+      }
+      for (const kind of changed) place(kind);
+    },
+  };
 }
