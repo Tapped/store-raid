@@ -77,7 +77,7 @@ const LOOK = tunables("Rendering/Interior light", {
     hint: "The room's light level to this power scales it: below 1 dims gently",
   },
   minimum: {
-    value: 0.006,
+    value: 0.025,
     min: 0,
     max: 0.1,
     step: 0.001,
