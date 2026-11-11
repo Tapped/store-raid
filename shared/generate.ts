@@ -19,9 +19,10 @@ import {
 
 /**
  * Levels generated from a seed, in two layers. First the layout: each storey of the building is
- * split into rooms that each have a kind (a lobby at the entrance, big sales halls behind it, stock
- * rooms at the back, offices and staff rooms upstairs, plant rooms in the basement, corridors, and
- * atriums open to the storey below), walled off from each other, with doorways and arches joining
+ * split into rooms that each have a kind (a loading bay at the entrance, big storage halls behind
+ * it with bonded cages in their corners, storerooms and workshops at the back, offices and staff
+ * rooms upstairs, plant rooms in the basement, corridors, and atriums open to the storey below),
+ * walled off from each other, with doorways and arches joining
  * them all up and stairs or ladders between the storeys. Then the tiles, by wave function collapse:
  * every cell gets the tile that fits its neighbours, the walls and doorways between them, what's
  * above and below it, and what its room is for. Anything that can't be reached from the entrance is
@@ -106,7 +107,9 @@ type LayoutKind = RoomKind | "rock";
  */
 const WEIGHTS: Record<LayoutKind, Partial<Record<Tile["kind"], number>>> = {
   entrance: { floor: 1 },
-  sales: { floor: 16, tv: 0.4, solid: 0.1, pit: 0.08, bridge: 0.03, stairs: 0.03, ladder: 0.01 },
+  hall: { floor: 16, tv: 0.3, solid: 0.1, pit: 0.08, bridge: 0.03, stairs: 0.03, ladder: 0.01 },
+  cage: { floor: 1 },
+  workshop: { floor: 10, tv: 0.3, solid: 0.1, ladder: 0.03 },
   stock: { floor: 10, solid: 0.6, pit: 0.5, bridge: 0.25, stairs: 0.06, ladder: 0.06 },
   office: { floor: 10, tv: 0.4, solid: 0.1, stairs: 0.01, ladder: 0.03 },
   staff: { floor: 10, tv: 0.7, solid: 0.1, ladder: 0.03 },
@@ -226,8 +229,9 @@ function tryGenerate(options: GenerateOptions, next: () => number) {
       const tile = VARIANTS[v];
       const weight = WEIGHTS[kind][tile.kind] ?? 0;
       weighed[v] = weight;
-      // Wells and shafts follow from what's below or above, in any room but rock.
-      let ok = weight > 0 || (kind !== "rock" && (tile.kind === "well" || tile.kind === "shaft"));
+      // Wells and shafts follow from what's below or above, in any room but rock or a cage.
+      const follows = tile.kind === "well" || tile.kind === "shaft";
+      let ok = weight > 0 || (kind !== "rock" && kind !== "cage" && follows);
       // Pits only on the ground, over a basement: anywhere else they'd hang over a room.
       if ((tile.kind === "pit" || tile.kind === "bridge") && storey !== 0) ok = false;
       if (storey === -basements && !fitsAbove(undefined, tile)) ok = false;
@@ -252,7 +256,7 @@ function tryGenerate(options: GenerateOptions, next: () => number) {
   place(entrance, { kind: "floor" });
 
   // Ways up from every storey, part of the layout, so no storey is cut off: stairs at the back, or
-  // now and then a ladder, and above the ground broad stairs in the sales halls too. Each leads from
+  // now and then a ladder, and from the ground up broad stairs in the halls too. Each leads from
   // inside the grid to inside it, with doorways only at its foot and where it arrives, and walls
   // there get doorways.
   const placeWayUp = (storey: number, from: readonly LayoutKind[], ladders: boolean) => {
@@ -269,8 +273,9 @@ function tryGenerate(options: GenerateOptions, next: () => number) {
       const [dx, dz] = OFFSET[up];
       const foot = OPPOSITE[up];
       const arrives = kindAt(storey + 1, cell.col + dx, cell.row + dz);
-      if (!arrives || arrives === "rock" || arrives === "atrium") continue;
-      if (kindAt(storey + 1, cell.col, cell.row) === "rock") continue;
+      if (!arrives || arrives === "rock" || arrives === "atrium" || arrives === "cage") continue;
+      const above = kindAt(storey + 1, cell.col, cell.row);
+      if (above === "rock" || above === "cage") continue;
       if (kind === "stairs") {
         const before = kindAt(storey, cell.col - dx, cell.row - dz);
         if (!before || before === "rock" || before === "atrium") continue;
@@ -288,9 +293,13 @@ function tryGenerate(options: GenerateOptions, next: () => number) {
     return false;
   };
   for (let storey = -basements; storey < storeys - basements - 1; storey++) {
-    const back = placeWayUp(storey, ["stock", "corridor", "plant", "staff", "office"], true);
-    // The public's way up, from one sales hall to the next.
-    const front = storey >= 0 && placeWayUp(storey, ["sales"], false);
+    const back = placeWayUp(
+      storey,
+      ["stock", "corridor", "plant", "staff", "office", "workshop"],
+      true,
+    );
+    // The main way up, from one hall to the next.
+    const front = storey >= 0 && placeWayUp(storey, ["hall"], false);
     if (!back && !front) return `no room for a way up from storey ${storey}`;
   }
 
@@ -598,12 +607,13 @@ interface Rect {
 }
 
 /**
- * The building's layout, storey by storey from the deepest, as a megastore is laid out. On the
- * ground: a lobby at the entrance, in the middle of the south side; big sales halls behind and
- * around it; maybe an office or stock room in a front corner; and a strip of stock rooms along the
- * back, often with a corridor in front of them. Above: more sales floor at the front round an
- * atrium open to the hall below, and offices, staff rooms and stock along a corridor at the back;
- * the top storey is more often all back of house. In the basement: plant and stock rooms off a
+ * The building's layout, storey by storey from the deepest, as a harbour warehouse is laid out. On
+ * the ground: the loading bay at the entrance, in the middle of the south side; big storage halls
+ * behind and around it, some with a bonded cage in a back corner; maybe a shipping office or
+ * storeroom in a front corner; and a strip of storerooms along the back, often with a corridor in
+ * front of them. Above: more halls at the front round an atrium open to the hall below, and
+ * offices, staff rooms, workshops and storerooms along a corridor at the back; the top storey is
+ * more often all back of house. In the basement: plant and stock rooms off a
  * corridor, under the back of the building, and rock elsewhere.
  */
 function layOut(options: GenerateOptions, entranceCol: number, next: () => number): StoreyPlan[] {
@@ -619,7 +629,7 @@ function layOut(options: GenerateOptions, entranceCol: number, next: () => numbe
   const halls: Rect[] = [];
   let col = 0;
   for (const width of divide(cols, hallCount, 4, next)) {
-    ground.paint("sales", col, 0, width, front);
+    ground.paint("hall", col, 0, width, front);
     halls.push({ col, row: 0, width, depth: front });
     col += width;
   }
@@ -637,6 +647,9 @@ function layOut(options: GenerateOptions, entranceCol: number, next: () => numbe
     depth: 2,
   };
   ground.paint("entrance", lobby.col, lobby.row, lobby.width, lobby.depth);
+  for (const hall of halls) {
+    if (next() < 0.45) paintCage(ground, hall, [lobby], next);
+  }
   layOutBack(ground, front, back, next() < 0.55, "ground", next);
   plans[basements] = ground.plan();
 
@@ -659,13 +672,14 @@ function layOut(options: GenerateOptions, entranceCol: number, next: () => numbe
     const upper = new Painter(cols, rows);
     const upperBack = 3 + (next() < 0.5 ? 1 : 0);
     const upperFront = rows - upperBack;
-    const shop = storey === 1 || next() < 0.45;
-    if (shop) {
-      // Sales floor, in one hall or two.
+    if (storey === 1 || next() < 0.45) {
+      // Storage, in one hall or two, with a cage more often than on the ground.
       const split = next() < 0.5 ? pieces(cols, 5, cols - 5, next) : [cols];
       let at = 0;
       for (const width of split) {
-        upper.paint("sales", at, 0, width, upperFront);
+        const hall = { col: at, row: 0, width, depth: upperFront };
+        upper.paint("hall", hall.col, hall.row, hall.width, hall.depth);
+        if (next() < 0.6) paintCage(upper, hall, atria, next);
         at += width;
       }
     } else {
@@ -676,7 +690,7 @@ function layOut(options: GenerateOptions, entranceCol: number, next: () => numbe
       upper.paint("atrium", atrium.col, atrium.row, atrium.width, atrium.depth);
     }
     plans[basements + storey] = upper.plan();
-    // An atrium only goes on up over the shop floor, and not always.
+    // An atrium only goes on up now and then.
     atria = atria.filter(() => next() < 0.45);
   }
 
@@ -709,7 +723,7 @@ function layOut(options: GenerateOptions, entranceCol: number, next: () => numbe
  * Back of house in a strip of rows: maybe a corridor along its southern side, then rooms side by
  * side behind it. On the ground they're mostly stock rooms, with a staff room or office at one end
  * now and then; upstairs, offices and staff rooms with the odd stock room. At the front of a storey
- * that isn't shop floor, a mix, either side of a corridor down the middle.
+ * that isn't storage, a mix, either side of a corridor down the middle.
  */
 function layOutBack(
   painter: Painter,
@@ -754,11 +768,14 @@ function layOutRooms(
       if (where === "ground") {
         const end = i === 0 || i === widths.length - 1;
         const small = end && width <= 4 && next() < 0.35;
-        kind = small || j > 0 ? (next() < 0.5 ? "staff" : "office") : "stock";
+        const pick = next();
+        kind =
+          small || j > 0 ? (pick < 0.35 ? "staff" : pick < 0.7 ? "office" : "workshop") : "stock";
       } else if (area >= 8 && next() < (where === "front" ? 0.5 : 0.3)) {
-        kind = next() < 0.6 ? "stock" : "office";
+        kind = next() < 0.5 ? "stock" : next() < 0.5 ? "workshop" : "office";
       } else {
-        kind = next() < 0.6 ? "office" : "staff";
+        const pick = next();
+        kind = pick < 0.5 ? "office" : pick < 0.8 ? "staff" : "workshop";
       }
       painter.paint(kind, at, row, width, roomDepth);
       row += roomDepth;
@@ -767,13 +784,31 @@ function layOutRooms(
   }
 }
 
-/** The public walks between these, through arches rather than doorways. */
-const PUBLIC: readonly LayoutKind[] = ["entrance", "sales"];
+/**
+ * A bonded cage in a back corner of a hall, two or three cells each way, clear of the rectangles
+ * given (the loading bay, atriums). It has no walls on the hall's side: the furnishing layer fences
+ * it in with chain-link (shared/furnish.ts).
+ */
+function paintCage(painter: Painter, hall: Rect, avoid: Rect[], next: () => number) {
+  const width = Math.min(hall.width - 2, 2 + Math.floor(next() * 2));
+  const depth = Math.min(hall.depth - 2, 2 + Math.floor(next() * 2));
+  if (width < 2 || depth < 2) return;
+  const col = next() < 0.5 ? hall.col : hall.col + hall.width - width;
+  const row = hall.row + hall.depth - depth;
+  const overlaps = (r: Rect) =>
+    col < r.col + r.width && r.col < col + width && row < r.row + r.depth && r.row < row + depth;
+  if (avoid.some(overlaps)) return;
+  painter.paint("cage", col, row, width, depth);
+}
+
+/** People and forklifts move between these, through arches rather than doorways. */
+const PUBLIC: readonly LayoutKind[] = ["entrance", "hall"];
 
 /**
  * Walls go between the rooms of a storey that aren't open air or rock, and doorways join them all
- * up, along a spanning tree, with a few more for loops. Rooms the public walks between are joined
- * by arches, every other cell of the wall between them. Open-air rooms have no walls round them:
+ * up, along a spanning tree, with a few more for loops. Halls and the loading bay are joined by
+ * arches, every other cell of the wall between them. A cage has no wall on its hall's side, and is
+ * walled off from anything else with no way through. Open-air rooms have no walls round them:
  * the floors beside them get railings instead.
  */
 function joinRooms(
@@ -794,7 +829,11 @@ function joinRooms(
         const a = room[row * cols + col];
         const b = room[(row + dz) * cols + col + dx];
         if (a === b || !walled(a) || !walled(b)) continue;
+        // Chain-link, not a wall, between a cage and its hall.
+        const other = kinds[a] === "cage" ? b : kinds[b] === "cage" ? a : -1;
+        if (other >= 0 && kinds[other] === "hall") continue;
         setEdge(col, row, side, "wall");
+        if (other >= 0) continue;
         const pair = `${Math.min(a, b)},${Math.max(a, b)}`;
         between.set(pair, [...(between.get(pair) ?? []), [col, row, side]]);
       }
@@ -812,7 +851,7 @@ function joinRooms(
     const [a, b] = pair.split(",").map(Number);
     const options = between.get(pair) ?? [];
     if (PUBLIC.includes(kinds[a]) && PUBLIC.includes(kinds[b])) {
-      // A colonnade of arches: the lobby opens right up, halls every other cell.
+      // A colonnade of arches: the loading bay opens right up, halls every other cell.
       const lobby = kinds[a] === "entrance" || kinds[b] === "entrance";
       const offset = Math.floor(next() * 2);
       options.forEach(([col, row, side], i) => {
