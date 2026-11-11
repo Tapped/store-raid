@@ -7,6 +7,7 @@ import { createEngine } from "./graphics";
 import { POSES } from "./hands";
 import { addHarbour } from "./harbour";
 import { attachMouse, input } from "./input";
+import { addInteriorLighting } from "./interiorLight";
 import { ItemView } from "./items";
 import { LocalPlayer } from "./localPlayer";
 import { occludeIn } from "./occlusion";
@@ -33,7 +34,9 @@ const params = new URLSearchParams(location.search);
 const world = createWorld(engine, levelNamed(params.get("level")));
 // What the room is for: `?mode=game` or `?mode=playground`, else the level's own (shared/modes.ts).
 const mode = modeFor(world.level.name, params.get("mode"));
-const playground = world.level.roof !== undefined ? addPlayground(world) : undefined;
+// Levels with light fittings are lit by them (client/src/interiorLight.ts), not evenly.
+const lighting = addInteriorLighting(world);
+const playground = world.level.roof !== undefined ? addPlayground(world, lighting) : undefined;
 if (!playground) {
   void addProps(world);
   void addShelves(world);
@@ -210,6 +213,7 @@ if (import.meta.env.DEV)
       items,
       world,
       engine,
+      lighting,
       handPoses: POSES,
       footsteps: FOOTSTEPS,
       /**

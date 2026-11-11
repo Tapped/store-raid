@@ -9,6 +9,7 @@ import {
 } from "@babylonjs/core";
 import { loadContainer } from "./assets";
 import { surfaceMaterial } from "./graphics";
+import type { InteriorLighting } from "./interiorLight";
 import type { World } from "./scene";
 import { TickView } from "./tick";
 import { tunables } from "./tuning";
@@ -52,8 +53,9 @@ const FLANGE = 0.2;
 /**
  * The playground's hall: a roof on steel beams over the brick walls from shared/level.ts, even
  * light on a dimmer, and the concepts on show. Its items and dock come from the level like any other.
+ * A level lit by its own fittings (`lighting`) has no strip lights, and the dimmer dims the fittings.
  */
-export function addPlayground(world: World): Playground {
+export function addPlayground(world: World, lighting?: InteriorLighting): Playground {
   const { scene, level } = world;
   const roof = level.roof ?? 6;
   const walls = level.boxes;
@@ -138,6 +140,7 @@ export function addPlayground(world: World): Playground {
   }
   const lights = Mesh.MergeMeshes(strips, true);
   if (lights) lights.material = glow;
+  if (lights && lighting) lights.setEnabled(false);
 
   // Concepts are on show in the playground, not in generated halls.
   if (level.name === "playground") for (const concept of CONCEPTS) void addConcept(world, concept);
@@ -148,12 +151,18 @@ export function addPlayground(world: World): Playground {
     shown = brightness;
     // Squared, so the dim end, where the testing happens, gets most of the dimmer's travel.
     const scale = brightness * brightness;
+    scene.fogDensity = hall.fog;
+    showDimmer(brightness);
+    if (lighting) {
+      // The fittings light it, and where it's dark the sky's reflections go too.
+      lighting.setLevel(brightness);
+      scene.environmentIntensity = hall.environment;
+      return;
+    }
     if (hemi) hemi.intensity = hall.hemi * scale;
     if (sun) sun.intensity = hall.sun * scale;
     scene.environmentIntensity = hall.environment * scale;
-    scene.fogDensity = hall.fog;
     glow.emissiveColor = STRIP_GLOW.scale(scale);
-    showDimmer(brightness);
   };
   light(1);
   return {
