@@ -133,6 +133,32 @@ export const PROPS = {
   workbench: floor(1.8, 1.5, 0.75),
   /** A red tool cabinet on castors, a drawer open. */
   "tool-cabinet": floor(0.7, 1, 0.46),
+
+  // Imported from a Unity pack (scripts/unity-import), not built by a script: these sizes are
+  // measured from the models, whose origins are near enough on the floor in the middle.
+  /** A steel oil drum. */
+  barrel: floor(0.73, 1.19, 0.73),
+  /** A blue plastic drum. */
+  "plastic-barrel": floor(0.83, 1.33, 0.78),
+  /** A jerrycan. */
+  "plastic-canister": floor(0.4, 0.6, 0.26, false),
+  /** A big wooden crate with slats. */
+  "wood-crate": floor(1.82, 1.69, 1.72),
+  /** A wooden box, longer than it's wide. */
+  "wood-box": floor(0.95, 1.06, 1.46),
+  /** A cardboard box, taped shut. */
+  cardboard: floor(1.22, 0.64, 0.81),
+  /** A tall gas cylinder, standing. */
+  "gas-cylinder": floor(0.28, 1.85, 0.28),
+  /** An intermediate bulk container: a plastic tank in a steel cage on a pallet. */
+  "ibc-tank": floor(2.45, 2.32, 2.37),
+  "traffic-cone": floor(0.51, 0.85, 0.51, false),
+  /** An empty wooden pallet, low enough to step onto. */
+  pallet: floor(2.21, 0.21, 1.71, false),
+  /** A sack of cement, low enough to step over. */
+  "cement-bag": floor(0.83, 0.23, 0.57, false),
+  /** A wheeled step ladder with a platform. */
+  "step-lift": floor(0.69, 1.79, 0.91),
 } as const satisfies Record<string, PropKind>;
 
 export type PropName = keyof typeof PROPS;

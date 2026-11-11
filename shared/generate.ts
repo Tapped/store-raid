@@ -139,6 +139,29 @@ function besides(a: Tile, b: Tile, side: Side, edge: Edge): boolean {
   return fits(mine, theirs);
 }
 
+/**
+ * Which tiles each tile allows next to it, as bits: towards each side across no wall, a wall or an
+ * opening (index side × 3 + edge), then above it (12) and below it (13).
+ */
+const ALLOWS: number[][] = [
+  ...SIDES.flatMap((side) =>
+    (["none", "wall", "door"] as const).map((edge) =>
+      VARIANTS.map((mine) =>
+        VARIANTS.reduce(
+          (bits, theirs, t) => (besides(mine, theirs, side, edge) ? bits | (1 << t) : bits),
+          0,
+        ),
+      ),
+    ),
+  ),
+  VARIANTS.map((mine) =>
+    VARIANTS.reduce((bits, theirs, t) => (fitsAbove(mine, theirs) ? bits | (1 << t) : bits), 0),
+  ),
+  VARIANTS.map((mine) =>
+    VARIANTS.reduce((bits, theirs, t) => (fitsAbove(theirs, mine) ? bits | (1 << t) : bits), 0),
+  ),
+];
+
 /** Same seed, same numbers, on every machine. */
 export function random(seed: number): () => number {
   let state = seed >>> 0 || 1;
@@ -305,21 +328,21 @@ function tryGenerate(options: GenerateOptions, next: () => number) {
 
   /** The cells next to one, and whether a tile there fits a tile here. */
   const neighbours = ({ storey, col, row }: Cell) => {
-    const found: { cell: Cell; allows: (mine: Tile, theirs: Tile) => boolean }[] = [];
-    for (const side of SIDES) {
+    const found: { cell: Cell; allows: readonly number[] }[] = [];
+    for (const [s, side] of SIDES.entries()) {
       const [dx, dz] = OFFSET[side];
       if (!inside(storey, col + dx, row + dz)) continue;
       const edge = edgeAt(storey, col, row, side);
       found.push({
         cell: { storey, col: col + dx, row: row + dz },
-        allows: (mine, theirs) => besides(mine, theirs, side, edge),
+        allows: ALLOWS[s * 3 + (edge === "none" ? 0 : edge === "wall" ? 1 : 2)],
       });
     }
     if (inside(storey + 1, col, row)) {
-      found.push({ cell: { storey: storey + 1, col, row }, allows: (m, t) => fitsAbove(m, t) });
+      found.push({ cell: { storey: storey + 1, col, row }, allows: ALLOWS[12] });
     }
     if (inside(storey - 1, col, row)) {
-      found.push({ cell: { storey: storey - 1, col, row }, allows: (m, t) => fitsAbove(t, m) });
+      found.push({ cell: { storey: storey - 1, col, row }, allows: ALLOWS[13] });
     }
     return found;
   };
@@ -331,14 +354,12 @@ function tryGenerate(options: GenerateOptions, next: () => number) {
       const mine = possible[index(cell.storey, cell.col, cell.row)];
       for (const { cell: other, allows } of neighbours(cell)) {
         const theirs = possible[index(other.storey, other.col, other.row)];
+        // What any tile still possible here allows there.
+        let allowed = 0;
+        for (let m = 0; m < COUNT; m++) if (mine[m]) allowed |= allows[m];
         let changed = false;
         for (let t = 0; t < COUNT; t++) {
-          if (!theirs[t]) continue;
-          let supported = false;
-          for (let m = 0; m < COUNT && !supported; m++) {
-            supported = mine[m] && allows(VARIANTS[m], VARIANTS[t]);
-          }
-          if (!supported) {
+          if (theirs[t] && !(allowed & (1 << t))) {
             theirs[t] = false;
             changed = true;
           }
@@ -353,19 +374,26 @@ function tryGenerate(options: GenerateOptions, next: () => number) {
   };
 
   if (!propagate([...cells])) return "the tiles contradict each other from the start";
+  // Ties between cells with as few tiles left are broken at random, the same way all through.
+  const tieBreak = cells.map(() => next() * 0.5);
+  let undecided = [...cells.keys()];
   for (;;) {
-    // The undecided cell with the fewest tiles left, ties broken at random.
+    // The undecided cell with the fewest tiles left.
     let best: Cell | undefined;
     let bestScore = Number.POSITIVE_INFINITY;
-    for (const cell of cells) {
-      const count = possible[index(cell.storey, cell.col, cell.row)].filter(Boolean).length;
-      if (count <= 1) continue;
-      const score = count + next() * 0.5;
+    undecided = undecided.filter((i) => {
+      const cell = cells[i];
+      const here = possible[index(cell.storey, cell.col, cell.row)];
+      let count = 0;
+      for (let v = 0; v < COUNT; v++) if (here[v]) count++;
+      if (count <= 1) return false;
+      const score = count + tieBreak[i];
       if (score < bestScore) {
         best = cell;
         bestScore = score;
       }
-    }
+      return true;
+    });
     if (!best) break;
     const here = possible[index(best.storey, best.col, best.row)];
     const weighed = weights[index(best.storey, best.col, best.row)];
@@ -758,7 +786,9 @@ function layOutRooms(
   if (depth <= 0) return;
   const { cols } = painter;
   const widths =
-    where === "ground" ? pieces(cols, 3, 6, next) : pieces(cols, 2, where === "front" ? 5 : 4, next);
+    where === "ground"
+      ? pieces(cols, 3, 6, next)
+      : pieces(cols, 2, where === "front" ? 5 : 4, next);
   let at = 0;
   for (const [i, width] of widths.entries()) {
     let row = from;
