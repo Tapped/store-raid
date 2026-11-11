@@ -29,7 +29,11 @@ export type Colour = readonly [number, number, number];
 
 /** A colour written as sRGB hex, as linear. */
 export function hex(code: number): Colour {
-  return [linear(((code >> 16) & 255) / 255), linear(((code >> 8) & 255) / 255), linear((code & 255) / 255)];
+  return [
+    linear(((code >> 16) & 255) / 255),
+    linear(((code >> 8) & 255) / 255),
+    linear((code & 255) / 255),
+  ];
 }
 
 /** Sets the texel's own colour, leaving the tint amount. */

@@ -7,7 +7,7 @@
  * 2048² bake calls them hundreds of millions of times.
  */
 
-export const clamp = (x: number, lo = 0, hi = 1) => (x < lo ? lo : x > hi ? hi : x);
+export const clamp = (x: number, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, x));
 export const mix = (a: number, b: number, t: number) => a + (b - a) * t;
 export function smoothstep(e0: number, e1: number, x: number): number {
   const t = clamp((x - e0) / (e1 - e0));

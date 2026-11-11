@@ -10,6 +10,7 @@ export interface Spot {
   b: number;
   c: number;
   d: number;
+  e?: number;
 }
 
 /**

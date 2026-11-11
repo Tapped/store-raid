@@ -45,7 +45,11 @@ const cache = new Map<string, PBRMaterial>();
  * The material for a surface, shared by every request with the same name and options in a scene.
  * While its textures are missing, or if they fail to load, it shows the table's flat colour.
  */
-export function surface(scene: Scene, name: SurfaceName, options: SurfaceOptions = {}): PBRMaterial {
+export function surface(
+  scene: Scene,
+  name: SurfaceName,
+  options: SurfaceOptions = {},
+): PBRMaterial {
   const spec = SURFACES[name];
   const tint = spec.tint ? (options.tint ?? new Color3(...spec.tint)) : undefined;
   const key = JSON.stringify([

@@ -52,7 +52,14 @@ scene.environmentTexture = CubeTexture.CreateFromPrefilteredData(
 );
 gradePicture(scene.imageProcessingConfiguration);
 
-const camera = new ArcRotateCamera("camera", -Math.PI / 2 - 0.35, 1.15, 5.5, new Vector3(0, 0.9, 2), scene);
+const camera = new ArcRotateCamera(
+  "camera",
+  -Math.PI / 2 - 0.35,
+  1.15,
+  5.5,
+  new Vector3(0, 0.9, 2),
+  scene,
+);
 camera.attachControl(canvas, true);
 camera.lowerRadiusLimit = 0.3;
 camera.upperRadiusLimit = 30;
@@ -89,7 +96,9 @@ function retile(mesh: Mesh, tile: number) {
 }
 
 function colour(hex: string): Color3 | undefined {
-  return /^#?[0-9a-f]{6}$/i.test(hex) ? Color3.FromHexString(hex.startsWith("#") ? hex : `#${hex}`) : undefined;
+  return /^#?[0-9a-f]{6}$/i.test(hex)
+    ? Color3.FromHexString(hex.startsWith("#") ? hex : `#${hex}`)
+    : undefined;
 }
 
 function apply() {
@@ -140,7 +149,8 @@ function renderPanel() {
     const row = document.createElement("div");
     row.className = "row";
     const select = document.createElement("select");
-    for (const n of SURFACE_NAMES) select.add(new Option(`${n} (${SURFACES[n].tile} m)`, n, false, n === name));
+    for (const n of SURFACE_NAMES)
+      select.add(new Option(`${n} (${SURFACES[n].tile} m)`, n, false, n === name));
     select.onchange = () => {
       view[which] = select.value as SurfaceName;
       view[`${which}Tint`] = "";
@@ -155,7 +165,8 @@ function renderPanel() {
       tintRow.innerHTML = "<span>Tint</span>";
       const input = document.createElement("input");
       input.type = "color";
-      input.value = colour(view[`${which}Tint`])?.toHexString() ?? new Color3(...spec.tint).toHexString();
+      input.value =
+        colour(view[`${which}Tint`])?.toHexString() ?? new Color3(...spec.tint).toHexString();
       input.oninput = () => {
         view[`${which}Tint`] = input.value.slice(1);
         apply();
@@ -172,7 +183,12 @@ function renderPanel() {
   toggle.onclick = () => switchLight();
   lightRow.append(toggle);
   panel.append(lightRow);
-  const slider = (label: string, key: "turn" | "height" | "ambient" | "power", min: number, max: number) => {
+  const slider = (
+    label: string,
+    key: "turn" | "height" | "ambient" | "power",
+    min: number,
+    max: number,
+  ) => {
     const row = document.createElement("div");
     row.className = "row";
     row.innerHTML = `<span>${label}</span>`;

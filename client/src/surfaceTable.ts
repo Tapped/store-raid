@@ -39,7 +39,20 @@ const TABLE = {
       brightness: 0.12,
       roughness: 0.18,
     },
-    about: "Power-trowelled slab, saw cuts every 4 m, cracks, tyre marks, damp patches",
+    about: "Industrial slab, saw cuts every 4 m: forklift tyre marks, oil, cracks, patches, damp",
+  },
+  "floor-paint": {
+    tile: 2,
+    size: 2048,
+    tint: [0.85, 0.66, 0.08],
+    color: [0.62, 0.52, 0.2],
+    variation: {
+      sampling: { kind: "hex", cells: 2, rotate: 0, contrast: 0.3 },
+      patch: 6,
+      brightness: 0.08,
+      roughness: 0.15,
+    },
+    about: "Worn line paint over concrete, for lane lines and bays: cut it to strips",
   },
   "vinyl-tile": {
     tile: 2.4,
@@ -81,7 +94,8 @@ const TABLE = {
       roughness: 0.12,
       grime: 0.25,
     },
-    about: "Wall paint over plaster: roller stipple, scuffs at trolley height, chips, patches, runs",
+    about:
+      "Wall paint over plaster: roller stipple, scuffs at trolley height, chips, patches, runs",
   },
   "concrete-block": {
     tile: 3,
@@ -91,6 +105,24 @@ const TABLE = {
     upright: true,
     variation: { patch: 7, brightness: 0.07, roughness: 0.1, grime: 0.3 },
     about: "Painted blockwork, 16 courses a storey: mortar joints, chipped paint, scuffs",
+  },
+  corrugated: {
+    tile: 3.048,
+    size: 2048,
+    tint: [0.55, 0.6, 0.6],
+    color: [0.48, 0.5, 0.49],
+    upright: true,
+    variation: { patch: 6, brightness: 0.08, roughness: 0.12, grime: 0.2 },
+    about:
+      "Corrugated steel cladding from inside, 76 mm pitch up v, painted: rust at laps and screws",
+  },
+  "concrete-wall": {
+    tile: 3,
+    size: 2048,
+    color: [0.5, 0.49, 0.47],
+    upright: true,
+    variation: { patch: 7, brightness: 0.1, roughness: 0.1, grime: 0.35 },
+    about: "Board-formed concrete, cast in place: board marks, tie holes, water stains, salt bloom",
   },
   "ceiling-tile": {
     tile: 2.4,
@@ -105,11 +137,11 @@ const TABLE = {
     about: "60 cm suspended-ceiling tiles in a white T-bar grid: fissures, water stains",
   },
   "metal-deck": {
-    tile: 1.2192,
+    tile: 1.8288,
     size: 2048,
     color: [0.52, 0.53, 0.53],
     variation: { patch: 6, brightness: 0.1, roughness: 0.15 },
-    about: "Galvanised trapezoidal roof deck from below, ribs 152 mm apart along v",
+    about: "Galvanised roof deck from below: ribs 152 mm apart along v, a sheet lap every 6",
   },
   "painted-steel": {
     tile: 1,
@@ -194,6 +226,18 @@ const TABLE = {
     color: [0.45, 0.36, 0.1],
     variation: { patch: 3, brightness: 0.1, roughness: 0.1 },
     about: "Worn diagonal hazard stripes, tint and black, 25 cm apart along u",
+  },
+  tarpaulin: {
+    tile: 1,
+    size: 1024,
+    tint: [0.16, 0.3, 0.5],
+    color: [0.17, 0.27, 0.4],
+    variation: {
+      sampling: { kind: "hex", cells: 1.5, rotate: 0, contrast: 0.2 },
+      patch: 3,
+      brightness: 0.1,
+    },
+    about: "Woven PE tarpaulin, tintable: creases, grime, faded",
   },
 } satisfies Record<string, SurfaceSpec>;
 

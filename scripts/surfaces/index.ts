@@ -115,7 +115,7 @@ function blur(src: Float32Array, size: number, radius: number): Float32Array {
 
 async function bake(name: SurfaceName) {
   const spec = SURFACES[name];
-  const recipe = RECIPES[name] as NonNullable<(typeof RECIPES)[typeof name]>;
+  const recipe = RECIPES[name];
   const size = draft ?? spec.size;
   const started = performance.now();
   const texels = await run(name, size);
@@ -144,10 +144,20 @@ async function bake(name: SurfaceName) {
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const dx =
-        h(x + 1, y - 1) + 2 * h(x + 1, y) + h(x + 1, y + 1) - h(x - 1, y - 1) - 2 * h(x - 1, y) - h(x - 1, y + 1);
+        h(x + 1, y - 1) +
+        2 * h(x + 1, y) +
+        h(x + 1, y + 1) -
+        h(x - 1, y - 1) -
+        2 * h(x - 1, y) -
+        h(x - 1, y + 1);
       // Rows run down the image, v up it.
       const dy =
-        h(x - 1, y - 1) + 2 * h(x, y - 1) + h(x + 1, y - 1) - h(x - 1, y + 1) - 2 * h(x, y + 1) - h(x + 1, y + 1);
+        h(x - 1, y - 1) +
+        2 * h(x, y - 1) +
+        h(x + 1, y - 1) -
+        h(x - 1, y + 1) -
+        2 * h(x, y + 1) -
+        h(x + 1, y + 1);
       const sx = -dx / (8 * mm);
       const sy = -dy / (8 * mm);
       const len = Math.hypot(sx, sy, 1);
@@ -199,7 +209,9 @@ async function bake(name: SurfaceName) {
   await preview(name, size, texels, albedo, nx, ny, nz);
   const mean = sum.map((s) => srgb(s / count).toFixed(2)).join(", ");
   const seconds = ((performance.now() - started) / 1000).toFixed(1);
-  console.log(`${name}: ${size}px in ${seconds}s, average colour [${mean}]${draft ? " (draft)" : ""}`);
+  console.log(
+    `${name}: ${size}px in ${seconds}s, average colour [${mean}]${draft ? " (draft)" : ""}`,
+  );
 }
 
 /**
@@ -273,8 +285,12 @@ async function preview(
     for (let i = 0; i < count; i++) img.set(f(i), i * 3);
     return img;
   };
-  const albedoImg = bytes((i) => [0, 1, 2].map((c) => srgb(albedo[i * 3 + c]) * 255) as [number, number, number]);
-  const normalImg = bytes((i) => [nx[i], ny[i], nz[i]].map((c) => (c * 0.5 + 0.5) * 255) as [number, number, number]);
+  const albedoImg = bytes(
+    (i) => [0, 1, 2].map((c) => srgb(albedo[i * 3 + c]) * 255) as [number, number, number],
+  );
+  const normalImg = bytes(
+    (i) => [nx[i], ny[i], nz[i]].map((c) => (c * 0.5 + 0.5) * 255) as [number, number, number],
+  );
   const roughImg = bytes((i) => {
     const r = texels[i * 8 + 6] * 255;
     const m = texels[i * 8 + 7];
@@ -301,12 +317,17 @@ async function preview(
   const cropped = new Uint8Array(crop * crop * 3);
   const off = Math.floor((size - crop) / 2);
   for (let y = 0; y < crop; y++)
-    cropped.set(lit.subarray(((off + y) * size + off) * 3, ((off + y) * size + off + crop) * 3), y * crop * 3);
+    cropped.set(
+      lit.subarray(((off + y) * size + off) * 3, ((off + y) * size + off + crop) * 3),
+      y * crop * 3,
+    );
   put(cropped, crop, 1024, 512, crop, 1);
 
   const dir = resolve(cacheDir, name);
   mkdirSync(dir, { recursive: true });
-  await sharp(sheet, { raw: { width: W, height: H, channels: 3 } }).png().toFile(resolve(dir, "preview.png"));
+  await sharp(sheet, { raw: { width: W, height: H, channels: 3 } })
+    .png()
+    .toFile(resolve(dir, "preview.png"));
 }
 
 function dot(a: number[], b: number[]) {

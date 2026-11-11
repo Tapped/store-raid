@@ -1,6 +1,6 @@
 import { workerData } from "node:worker_threads";
-import { RECIPES } from "./recipes";
 import type { Texel } from "./recipe";
+import { RECIPES } from "./recipes";
 
 /** Bakes rows `start` to `end` of one surface into the shared buffer, 8 floats a texel. */
 const { name, size, start, end, buffer } = workerData as {
@@ -11,7 +11,7 @@ const { name, size, start, end, buffer } = workerData as {
   buffer: SharedArrayBuffer;
 };
 
-const recipe = RECIPES[name] as NonNullable<(typeof RECIPES)[typeof name]>;
+const recipe = RECIPES[name];
 recipe.setup?.();
 const out = new Float32Array(buffer);
 const o: Texel = { r: 0, g: 0, b: 0, a: 0, h: 0, ao: 1, rough: 0.5, metal: 0 };
