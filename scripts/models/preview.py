@@ -89,6 +89,9 @@ VIEWS = [
     ("three-quarter", (0.8, -1, 0.6), False),
     ("back", (-0.8, 1, 0.5), False),
 ]
+# A ceiling fitting hangs from its origin and is seen from below, so look up at its back.
+if abs(hi.z) < 0.005 and lo.z < -0.01:
+    VIEWS[3] = ("back", (-0.8, 1, -0.6), False)
 for name, direction, ortho in VIEWS:
     d = Vector(direction).normalized()
     cam = camera.data
