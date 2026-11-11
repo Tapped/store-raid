@@ -28,14 +28,18 @@ import { roomVisibility } from "./visibility";
  * drawn. Each chunk's mesh shares its model's vertex buffers. Besides the camera's frustum, rooms
  * out of sight behind walls and floors aren't drawn (visibility.ts): with a few dozen models of a
  * few materials each, every room in view costs a draw call per material of every model in it.
- * Props in no room are chunked by storey and a square of `CHUNK` meters.
+ * Small models (fittings, vents, extinguishers) are chunked by storey instead, where another draw
+ * call costs more than drawing a few more of them. Props in no room are chunked by storey and a
+ * square of `CHUNK` meters.
  *
  * A model that doesn't exist yet is drawn as a plain box of its catalogue size, standing on its
  * mount, until the next page load finds it.
  */
 
-/** Meters on a side of a chunk. */
+/** Meters on a side of a chunk, for props in no room. */
 const CHUNK = 16;
+/** Models of fewer triangles than this are chunked by storey rather than room. */
+const SMALL_TRIANGLES = 1500;
 
 /** Copies of a model differ in brightness and hue by this much, at a strength of 1. */
 const LOOK = tunables(
@@ -266,24 +270,28 @@ export function addDressing(world: World, lighting: InteriorLighting | undefined
     }
   }
 
-  const chunkOf = (copy: Copy, kind: PropKind) => {
+  /**
+   * Which chunk a copy goes in: its room's, or for a small model its storey's, where a draw call
+   * costs more than drawing a few more of it would; for a copy in no room, a square of a storey.
+   */
+  const chunkOf = (copy: Copy, kind: PropKind, small = false) => {
     const { x, z, room } = copy.spawn;
-    if (room >= 0 && level.rooms[room]) return `room${room}`;
+    if (room >= 0 && level.rooms[room]) {
+      return small ? `storey${level.rooms[room].storey}` : `room${room}`;
+    }
     return `${storeyOf(level, copy.spawn, kind)}:${Math.floor(x / CHUNK)}:${Math.floor(z / CHUNK)}`;
   };
 
-  /** Every chunk's meshes, by the room they're in; -1 for those in none. */
-  const rooms = new Map<number, Mesh[]>();
-  const shown = new Map<number, boolean>();
-  const inRoom = (room: number, mesh: Mesh) => {
-    const key = level.rooms[room] ? room : -1;
-    let meshes = rooms.get(key);
-    if (!meshes) {
-      meshes = [];
-      rooms.set(key, meshes);
+  /** Every chunk's meshes, by chunk, with whether it was shown last. */
+  const chunks = new Map<string, { meshes: Mesh[]; shown: boolean }>();
+  const inChunk = (key: string, mesh: Mesh) => {
+    let chunk = chunks.get(key);
+    if (!chunk) {
+      chunk = { meshes: [], shown: true };
+      chunks.set(key, chunk);
     }
-    meshes.push(mesh);
-    mesh.isVisible = shown.get(key) ?? true;
+    chunk.meshes.push(mesh);
+    mesh.isVisible = chunk.shown;
   };
 
   /** Every mesh with a colour buffer, to colour again when the variation changes. */
@@ -309,10 +317,15 @@ export function addDressing(world: World, lighting: InteriorLighting | undefined
     root?.computeWorldMatrix(true);
     const strength = VARIATION[model] ?? DEFAULT_VARIATION;
     const fitting = FITTINGS[model];
+    const sources = container.meshes.filter(
+      (mesh): mesh is Mesh => mesh instanceof Mesh && mesh.getTotalVertices() > 0,
+    );
+    const triangles = sources.reduce((sum, mesh) => sum + mesh.getTotalIndices() / 3, 0);
+    const small = triangles < SMALL_TRIANGLES;
     // A lamp's copies with no light of their own are drawn apart, glowing steadily.
     const groups = new Map<string, Copy[]>();
     for (const copy of copies) {
-      const key = `${chunkOf(copy, kind)}${fitting && copy.light < 0 ? ":unlit" : ""}`;
+      const key = `${chunkOf(copy, kind, small)}${fitting && copy.light < 0 ? ":unlit" : ""}`;
       let group = groups.get(key);
       if (!group) {
         group = [];
@@ -320,9 +333,6 @@ export function addDressing(world: World, lighting: InteriorLighting | undefined
       }
       group.push(copy);
     }
-    const sources = container.meshes.filter(
-      (mesh): mesh is Mesh => mesh instanceof Mesh && mesh.getTotalVertices() > 0,
-    );
     let meshes = 0;
     for (const source of sources) {
       // Meshes are drawn under the root, so a node transform of their own would come after the
@@ -372,7 +382,7 @@ export function addDressing(world: World, lighting: InteriorLighting | undefined
         mesh.thinInstanceRefreshBoundingInfo(false);
         mesh.doNotSyncBoundingInfo = true;
         mesh.freezeWorldMatrix();
-        inRoom(group[0].spawn.room, mesh);
+        inChunk(key.replace(":unlit", ""), mesh);
       }
     }
     const covered = copies.filter((copy) => copy.light >= 0).map((copy) => copy.light);
@@ -391,7 +401,7 @@ export function addDressing(world: World, lighting: InteriorLighting | undefined
     const box = MeshBuilder.CreateBox("dressing-placeholder", { size: 1 }, scene);
     box.material = material;
     box.isPickable = false;
-    const chunks = new Map<string, { matrices: number[]; copies: Copy[] }>();
+    const boxes = new Map<string, { matrices: number[]; copies: Copy[] }>();
     for (const model of missing) {
       const kind = PROPS[model];
       const [w, h, d] = kind.size;
@@ -400,10 +410,10 @@ export function addDressing(world: World, lighting: InteriorLighting | undefined
       const out = kind.mount === "wall" ? d / 2 : 0;
       for (const copy of byModel.get(model) ?? []) {
         const key = chunkOf(copy, kind);
-        let chunk = chunks.get(key);
+        let chunk = boxes.get(key);
         if (!chunk) {
           chunk = { matrices: [], copies: [] };
-          chunks.set(key, chunk);
+          boxes.set(key, chunk);
         }
         const { x, y, z } = copy.spawn;
         const matrix = Matrix.Scaling(w, h, d)
@@ -422,7 +432,7 @@ export function addDressing(world: World, lighting: InteriorLighting | undefined
       });
     }
     let first = true;
-    for (const [key, chunk] of chunks) {
+    for (const [key, chunk] of boxes) {
       const mesh = first ? box : sharing(box, `dressing-placeholder-${key}`, scene);
       first = false;
       const matrices = Float32Array.from(chunk.matrices);
@@ -433,7 +443,7 @@ export function addDressing(world: World, lighting: InteriorLighting | undefined
       mesh.thinInstanceRefreshBoundingInfo(false);
       mesh.doNotSyncBoundingInfo = true;
       mesh.freezeWorldMatrix();
-      inRoom(chunk.copies[0].spawn.room, mesh);
+      inChunk(key, mesh);
     }
   };
 
@@ -445,11 +455,18 @@ export function addDressing(world: World, lighting: InteriorLighting | undefined
     if (!camera) return;
     const visible = LOOK.cullRooms ? visibility?.visible(camera) : undefined;
     lastVisible = visible;
-    for (const [room, meshes] of rooms) {
-      const show = room < 0 || !visible || visible.has(room);
-      if (shown.get(room) === show) continue;
-      shown.set(room, show);
-      for (const mesh of meshes) mesh.isVisible = show;
+    const storeys = new Set(visible ? [...visible].map((room) => level.rooms[room]?.storey) : []);
+    for (const [key, chunk] of chunks) {
+      const show =
+        !visible ||
+        (key.startsWith("room")
+          ? visible.has(Number(key.slice(4)))
+          : key.startsWith("storey")
+            ? storeys.has(Number(key.slice(6)))
+            : true);
+      if (chunk.shown === show) continue;
+      chunk.shown = show;
+      for (const mesh of chunk.meshes) mesh.isVisible = show;
     }
   });
 
