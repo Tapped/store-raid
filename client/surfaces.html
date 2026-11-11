@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Surface viewer</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #111;
+        color: #e8e8e8;
+        font: 13px system-ui, sans-serif;
+      }
+      #view {
+        position: fixed;
+        top: 0;
+        left: 280px;
+        width: calc(100% - 280px);
+        height: 100%;
+        display: block;
+        outline: none;
+        touch-action: none;
+      }
+      #panel {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 280px;
+        overflow-y: auto;
+        box-sizing: border-box;
+        padding: 10px 12px 16px;
+        background: rgb(16 17 20 / 0.92);
+        border-right: 1px solid #333;
+      }
+      h1 {
+        font-size: 15px;
+        margin: 0 0 8px;
+      }
+      h2 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #9aa;
+        margin: 14px 0 6px;
+      }
+      .row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin: 5px 0;
+      }
+      .row > span {
+        width: 78px;
+        flex: none;
+        color: #aab;
+      }
+      select,
+      button {
+        background: #24262b;
+        color: inherit;
+        border: 1px solid #444;
+        border-radius: 4px;
+        padding: 3px 6px;
+        font: inherit;
+      }
+      select {
+        flex: 1;
+      }
+      input[type="range"] {
+        flex: 1;
+      }
+      .about {
+        color: #8a8f98;
+        font-size: 12px;
+        margin: 2px 0 6px;
+      }
+      #help {
+        position: fixed;
+        right: 10px;
+        bottom: 10px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: rgb(0 0 0 / 0.55);
+        color: #ddd;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="view" tabindex="0"></canvas>
+    <div id="panel"></div>
+    <div id="help">Drag: orbit · Right-drag: pan · Wheel: zoom · L: flashlight / grazing light</div>
+    <script type="module" src="./src/surfaceViewer.ts"></script>
+  </body>
+</html>
