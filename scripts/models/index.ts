@@ -26,6 +26,7 @@ import { EXTTextureWebP, KHRONOS_EXTENSIONS } from "@gltf-transform/extensions";
 import { dedup, prune, textureCompress } from "@gltf-transform/functions";
 import sharp from "sharp";
 import { ITEM_KINDS } from "../../shared/constants";
+import { PROPS } from "../../shared/props";
 import { sharedAssets } from "../sharedAssets";
 import { findBlender } from "../unity-import/blender";
 import { fixTangents } from "../unity-import/gltf";
@@ -54,8 +55,10 @@ const { values, positionals } = parseArgs({
 
 const here = import.meta.dirname;
 const HELPERS = new Set(["lib", "build", "preview"]);
+// A script without build() is a module that model scripts share, not a model.
 const models = readdirSync(here)
   .filter((f) => f.endsWith(".py") && !HELPERS.has(basename(f, ".py")))
+  .filter((f) => /^def build\(/m.test(readFileSync(`${here}/${f}`, "utf8")))
   .map((f) => basename(f, ".py"))
   .sort();
 
@@ -155,6 +158,15 @@ for (const name of wanted) {
     const off = [w, h, d].some((v, i) => Math.abs(v - want[i]) > 0.01);
     sizeNote = off ? "" : `, matches ITEM_KINDS.${b.item}`;
     if (off) warnings.push(`ITEM_KINDS.${b.item} is ${want.join(" × ")}: the model doesn't fit it`);
+  }
+  const prop = PROPS[name as keyof typeof PROPS];
+  if (prop && !b.item) {
+    // Scenery is placed by its catalogue size without loading the model: within 3%, or 2 cm.
+    const off = [w, h, d].some(
+      (v, i) => Math.abs(v - prop.size[i]) > Math.max(0.02, prop.size[i] * 0.03),
+    );
+    if (off) warnings.push(`PROPS.${name} is ${prop.size.join(" × ")}: the model doesn't fit it`);
+    else sizeNote = `, matches PROPS.${name}`;
   }
   if (b.budget && b.tris > b.budget) {
     warnings.push(`${b.tris} triangles is over the budget of ${b.budget}`);
