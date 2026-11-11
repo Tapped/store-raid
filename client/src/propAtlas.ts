@@ -237,6 +237,11 @@ export async function loadModel(scene: Scene, path: string): Promise<AssetContai
   } catch (err) {
     console.warn(`Could not merge ${path}; drawing it as it is`, err);
   }
+  // A glTF root mirrors x, which turns front faces into back faces, so two-sided lighting would turn
+  // every normal inwards: the interior light then reads the dark inside of the prop's own box.
+  for (const material of container.materials) {
+    if (material instanceof PBRMaterial) material.twoSidedLighting = false;
+  }
   return container;
 }
 

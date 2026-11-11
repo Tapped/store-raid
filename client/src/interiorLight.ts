@@ -227,7 +227,9 @@ const GLSL_LIGHT = `
     ilSample(vPositionW + ilNormal * ilParams.z, ilLight, ilDir);
     ilLight *= ilParams.x;
     vec3 ilIrradiance = ilLight * max(ilParams.y, 1.0 + ilParams.w * dot(normalW, ilDir)) + ilMinimum.rgb;
-    finalDiffuse += ilIrradiance * surfaceAlbedo * aoOut.ambientOcclusionColor;
+    // Metals have no albedo: what they show is the lit room around them, mirrored, which is about
+    // as bright as the light arriving. Without this, ducts and bare steel are black in a lit room.
+    finalDiffuse += ilIrradiance * (surfaceAlbedo + 0.7 * specularEnvironmentR0) * aoOut.ambientOcclusionColor;
     float ilOneWay = length(ilDir);
     if (ilOneWay > 0.01 && ilShade.x > 0.0) {
       vec3 ilL = ilDir / ilOneWay;
@@ -321,7 +323,7 @@ const WGSL_LIGHT = `
     let ilLight = ilFound.light * uniforms.ilParams.x;
     let ilDir = ilFound.dir;
     let ilIrradiance = ilLight * max(uniforms.ilParams.y, 1.0 + uniforms.ilParams.w * dot(normalW, ilDir)) + uniforms.ilMinimum.rgb;
-    finalDiffuse += ilIrradiance * surfaceAlbedo * aoOut.ambientOcclusionColor;
+    finalDiffuse += ilIrradiance * (surfaceAlbedo + 0.7 * specularEnvironmentR0) * aoOut.ambientOcclusionColor;
     let ilOneWay = length(ilDir);
     if (ilOneWay > 0.01 && uniforms.ilShade.x > 0.0) {
       let ilL = ilDir / ilOneWay;
