@@ -1019,3 +1019,241 @@ def crate(at, size, mat, rng, ink=None):
                  depth=0.0005, mat=ink)
         lib.text("stencil", "NSS-0417", 0.045, (x - w / 4, y - d / 2 + t - 0.0005, zc - 0.1),
                  depth=0.0005, mat=ink)
+
+
+# ---------------------------------------------------------------------------------------------
+# Steel shelving along a wall, and what's kept on it
+
+
+def _angle_holes(n, p):
+    """Slotted angle: a column of slots up the middle of each flange of the uprights."""
+    L = attr(n, "local").outputs["Vector"]
+    H = attr(n, "half").outputs["Vector"]
+    lx, ly, _ = split(n, L)
+    tall = n.math("GREATER_THAN", split(n, H)[2], 0.8)
+    _, _, z = n.xyz()
+    geo = n.add("ShaderNodeNewGeometry")
+    gx, gy, _ = split(n, geo.outputs["Normal"])
+    phase = n.math("FRACT", n.math("DIVIDE", z, 0.038))
+    window = mul(n, n.math("GREATER_THAN", phase, 0.15), n.math("LESS_THAN", phase, 0.72))
+    on_y = mul(n, smooth(n, n.math("ABSOLUTE", gy), 0.8, 0.9), n.math("LESS_THAN", n.math("ABSOLUTE", lx), 0.0045))
+    on_x = mul(n, smooth(n, n.math("ABSOLUTE", gx), 0.8, 0.9), n.math("LESS_THAN", n.math("ABSOLUTE", ly), 0.0045))
+    hole = mul(n, tall, window, n.math("MAXIMUM", on_x, on_y))
+    return hole, inv(n, hole)
+
+
+SHELF_W, SHELF_H, SHELF_D = 1.33, 2.2, 0.5
+
+
+def shelving(mat, rng, levels):
+    """
+    A bay of slotted-angle shelving: four angle uprights, steel shelves with turned-down lips at
+    the heights in `levels` (the top of each), and crossed straps across the back.
+    """
+    a, t = 0.04, 0.004
+    hx, hy = SHELF_W / 2 - a / 2, SHELF_D / 2 - a / 2
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            # The angle's corner at the outside corner of the bay.
+            cx, cy = sx * SHELF_W / 2, sy * SHELF_D / 2
+            pts = [(0, 0), (-sx * a, 0), (-sx * a, -sy * t), (-sx * t, -sy * t), (-sx * t, -sy * a),
+                   (0, -sy * a)]
+            profile("upright", [(cx + u, cy + v) for u, v in pts], SHELF_H, (0, 0, SHELF_H / 2), "z",
+                    mat, rng.random())
+            part("foot", (0.05, 0.05, 0.006), (cx - sx * 0.025, cy - sy * 0.025, 0.003), mat)
+    w, d, lip = SHELF_W - 2 * t - 0.002, SHELF_D - 2 * t - 0.002, 0.032
+    for z in levels:
+        seed = rng.random()
+        part("shelf", (w, d, 0.003), (0, 0, z - 0.0015), mat, seed)
+        for sy in (-1, 1):
+            part("lip", (w, 0.003, lip), (0, sy * (d / 2 - 0.0015), z - lip / 2), mat, seed)
+        for sx in (-1, 1):
+            part("lip", (0.003, d - 0.006, lip), (sx * (w / 2 - 0.0015), 0, z - lip / 2), mat, seed)
+    # Crossed straps across the back, between the lowest and highest shelf.
+
+    z0, z1 = levels[0], levels[-1]
+    span = 2 * hx
+    length = math.hypot(span, z1 - z0)
+    angle = math.atan2(z1 - z0, span)
+    for k, sign in enumerate((1, -1)):
+        part("strap", (length, 0.002, 0.03), (0, SHELF_D / 2 - 0.004 - 0.003 * k, (z0 + z1) / 2), mat,
+             rng.random(), rot=(0, -sign * angle, 0))
+
+
+def louvre_bin(at, mat, contents, seed, size=(0.15, 0.24, 0.125)):
+    """
+    A plastic parts bin, open at the front over a lowered lip, with a label slot, standing at
+    `at` (middle of its footprint, its bottom), its front to -y, part filled.
+    """
+    w, d, h = size
+    x, y, z = at
+    t = 0.004
+    front = 0.07
+    side = [(-d / 2, 0), (d / 2, 0), (d / 2, h), (-d / 2 + 0.06, h), (-d / 2, front)]
+    for sx in (-1, 1):
+        profile("bin", [(y + u, z + v) for u, v in side], t, (x + sx * (w / 2 - t / 2), 0, 0), "x", mat,
+                seed)
+    part("bin", (w - 2 * t, d, t), (x, y, z + t / 2), mat, seed)
+    part("bin", (w - 2 * t, t, h), (x, y + d / 2 - t / 2, z + h / 2), mat, seed)
+    part("bin", (w - 2 * t, t * 1.5, front), (x, y - d / 2 + t, z + front / 2), mat, seed)
+    part("label", (w * 0.6, 0.002, 0.025), (x, y - d / 2 - 0.001 + t * 0.2, z + front - 0.02),
+         bpy.data.materials.get("paper") or paper(), seed)
+    if contents is not None:
+        fill = 0.03 + seed * 0.05
+        part("parts", (w - 2 * t - 0.002, d - 0.03, fill), (x, y + 0.012, z + t + fill / 2),
+             contents, seed)
+
+
+def bits(name="bits", size=512):
+    """A heap of small metal parts, bolts and washers, seen as a lumpy, glinting surface."""
+    mat, n = lib.procedural(name, size)
+    p = seeded(n)
+    cells = n.add("ShaderNodeTexVoronoi", {"Vector": p, "Scale": 90.0})
+    d = cells.outputs["Distance"]
+    tone = split(n, cells.outputs["Color"])[0]
+    c = n.mix(tone, (0.05, 0.05, 0.05), (0.25, 0.24, 0.22))
+    c = n.mix(smooth(n, n.noise(10, 3, vector=p), 0.6, 0.75), c, RUST)
+    n.out(**{"Base Color": c, "Roughness": add(n, 0.3, mul(n, tone, 0.4)),
+             "Normal": bump(n, inv(n, d), 0.006, strength=0.8)})
+    return mat
+
+
+def tin_label(name="tins", size=512):
+    """
+    Tinplate cans with a printed label round the middle in a colour picked by seed, paint run
+    down from the rim, rust spots, dust on the lid.
+    """
+    mat, n = lib.procedural(name, size)
+    L = attr(n, "local").outputs["Vector"]
+    H = attr(n, "half").outputs["Vector"]
+    s = attr(n, "seed").outputs["Fac"]
+    lx, ly, lz = split(n, L)
+    v = n.math("DIVIDE", lz, split(n, H)[2])
+    p = seeded(n)
+    hue = n.math("FRACT", n.math("MULTIPLY", s, 4.7))
+    ink = n.mix(smooth(n, hue, 0.3, 0.32), (0.25, 0.02, 0.01), (0.02, 0.1, 0.03))
+    ink = n.mix(smooth(n, hue, 0.6, 0.62), ink, (0.4, 0.25, 0.01))
+    ink = n.mix(smooth(n, hue, 0.85, 0.87), ink, (0.01, 0.03, 0.12))
+    label = n.math("LESS_THAN", n.math("ABSOLUTE", n.math("SUBTRACT", v, -0.1)), 0.6)
+    angle = n.math("ARCTAN2", ly, lx)
+    words = mul(n, label, n.math("LESS_THAN", n.math("ABSOLUTE", n.math("SUBTRACT", v, 0.05)), 0.18),
+                n.math("GREATER_THAN", n.noise(1.0, 0, vector=n.vec(n.math("MULTIPLY", angle, 6),
+                                                                     n.math("MULTIPLY", v, 8))), 0.5))
+    panel = mul(n, label, n.math("LESS_THAN", n.math("ABSOLUTE", n.math("SUBTRACT", v, -0.45)), 0.1))
+    metal = n.mix(n.noise(6, 3, vector=p), (0.2, 0.2, 0.2), (0.3, 0.3, 0.29))
+    c = n.mix(label, metal, ink)
+    c = n.mix(n.math("MAXIMUM", words, panel), c, (0.6, 0.58, 0.52))
+    # Runs of the tin's own colour down from the rim.
+    reach = mul(n, n.noise(1.0, 1, vector=n.vec(n.math("MULTIPLY", angle, 9), s)), 0.9)
+    run = mul(n, smooth(n, n.noise(1.0, 2, vector=n.vec(n.math("MULTIPLY", angle, 5), s)), 0.62, 0.66),
+              n.math("GREATER_THAN", v, reach))
+    c = n.mix(run, c, ink)
+    rusty = smooth(n, n.noise(18, 6, vector=p), 0.66, 0.74)
+    c = n.mix(rusty, c, RUST)
+    up = mul(n, smooth(n, normal_z(n), 0.6, 0.9), smooth(n, n.noise(8, 3, vector=p), 0.2, 0.7))
+    c = n.mix(mul(n, up, 0.8), c, DUST)
+    rough = n.lerp(label, 0.32, 0.55)
+    rough = n.lerp(n.math("MAXIMUM", rusty, up), rough, 0.9)
+    n.out(**{"Base Color": c, "Roughness": rough,
+             "Normal": bump(n, add(n, mul(n, rusty, -0.5), mul(n, run, 0.4)), 0.001,
+                            bump(n, n.noise(4, 2, vector=p), 0.003, strength=0.5))})
+    return mat
+
+
+def tin(at, mat, seed, r=0.085, h=0.19, lid=None):
+    """A round paint or grease tin with a rolled rim and a lid, standing at `at`."""
+    prof = [(0, 0.0), (0, r - 0.004), (0.004, r), (h - 0.006, r), (h - 0.002, r + 0.002), (h, r - 0.002),
+            (h - 0.004, r - 0.012), (h - 0.004, 0)]
+    obj = lib.lathe("tin", prof, (0, 0, 0), mat=mat, sides=12)
+    tag(obj, (r, r, h / 2), seed, (0, 0, h / 2))
+    place(obj, at, (0, 0, seed * 6.28))
+    return obj
+
+
+def coil(at, mat, seed, radius=0.17, thick=0.014, turns=3.5, rise=None, sides=6, per_turn=14):
+    """A hose or rope lying coiled flat at `at` (centre of the coil, on the surface)."""
+    rise = rise if rise is not None else thick * 1.7
+    pts, radii = [], []
+    count = int(turns * per_turn)
+    for i in range(count + 1):
+        a = 2 * math.pi * i / per_turn + seed * 6
+        r = radius - 0.006 * (i / per_turn) + 0.004 * math.sin(i * 1.7)
+        z = thick + rise * (i / count) * (turns / 2 if turns > 2 else 1) * 0.5
+        pts.append((at[0] + r * math.cos(a), at[1] + r * math.sin(a), at[2] + z))
+        radii.append(thick)
+    obj = lib.tube("coil", pts, radii, mat=mat, sides=sides)
+    lo = Vector(min(p[i] for p in pts) for i in range(3))
+    hi = Vector(max(p[i] for p in pts) for i in range(3))
+    tag(obj, (hi - lo) / 2 + Vector((thick, thick, thick)), seed, (lo + hi) / 2)
+    return obj
+
+
+def rubber(name, color, size=512):
+    """Rubber or PVC hose: matte, faintly ribbed along its length, scuffed pale, dusty on top."""
+    mat, n = lib.procedural(name, size)
+    p = seeded(n)
+    c = n.mix(n.noise(5, 3, vector=p), tint(color, 0.8), tint(color, 1.15))
+    scuff = smooth(n, n.noise(14, 5, vector=p), 0.62, 0.75)
+    c = n.mix(mul(n, scuff, 0.6), c, tint(color, 2.0))
+    up = mul(n, smooth(n, normal_z(n), 0.6, 0.9), smooth(n, n.noise(6, 3, vector=p), 0.3, 0.7))
+    c = n.mix(mul(n, up, 0.6), c, DUST)
+    c = n.mix(mul(n, cavity(n, 0.02), 0.7), c, DIRT)
+    n.out(**{"Base Color": c, "Roughness": add(n, 0.62, mul(n, scuff, 0.2)),
+             "Normal": bump(n, n.noise(40, 3, vector=p), 0.0008)})
+    return mat
+
+
+# ---------------------------------------------------------------------------------------------
+# Workshop
+
+
+def pegboard(name="pegboard", size=1024):
+    """Hardboard drilled on a 25 mm grid, darkened by hands and oil where tools hang."""
+    mat, n = lib.procedural(name, size)
+    x, y, z = n.xyz()
+    p = seeded(n)
+    pitch = 0.025
+    gx = n.math("SUBTRACT", n.math("FRACT", n.math("DIVIDE", x, pitch)), 0.5)
+    gz = n.math("SUBTRACT", n.math("FRACT", n.math("DIVIDE", z, pitch)), 0.5)
+    r = n.math("SQRT", add(n, mul(n, gx, gx), mul(n, gz, gz)))
+    geo = n.add("ShaderNodeNewGeometry")
+    face = smooth(n, n.math("ABSOLUTE", split(n, geo.outputs["Normal"])[1]), 0.8, 0.9)
+    hole = mul(n, face, inv(n, smooth(n, r, 0.2, 0.26)))
+    c = n.mix(n.noise(3, 3, vector=p), (0.15, 0.09, 0.045), (0.21, 0.13, 0.065))
+    grime = smooth(n, n.noise(2.5, 4, vector=p), 0.5, 0.75)
+    c = n.mix(mul(n, grime, 0.6), c, DIRT)
+    c = n.mix(hole, c, (0.006, 0.005, 0.004))
+    rough = n.lerp(grime, 0.7, 0.5)
+    n.out(**{"Base Color": c, "Roughness": rough, "Normal": bump(n, inv(n, hole), 0.002)})
+    return mat
+
+
+def butcher_block(name="benchtop", size=1024):
+    """
+    A laminated hardwood bench top after years of work: strips of beech, gouges and saw cuts,
+    black oil stains and rings, paint spots, worn pale along the front edge.
+    """
+    mat, n = lib.procedural(name, size)
+    x, y, z = n.xyz()
+    p = seeded(n)
+    strip = n.math("FLOOR", n.math("DIVIDE", y, 0.045))
+    tone = n.math("FRACT", n.math("MULTIPLY", n.math("SIN", n.math("MULTIPLY", strip, 12.9898)), 43758.5))
+    q = n.vec(n.math("MULTIPLY", x, 2.0), n.math("MULTIPLY", y, 60.0), n.math("ADD", n.math("MULTIPLY", z, 60.0), strip))
+    grain = n.noise(1.0, 5, roughness=0.6, vector=q)
+    c = n.mix(tone, (0.3, 0.17, 0.08), (0.42, 0.25, 0.12))
+    c = n.mix(mul(n, grain, 0.4), c, (0.16, 0.08, 0.035))
+    oil = smooth(n, n.noise(1.6, 4, vector=p), 0.55, 0.7)
+    ring = inv(n, smooth(n, n.math("ABSOLUTE", n.math("SUBTRACT", n.noise(3.0, 2, vector=p), 0.6)), 0.0, 0.008))
+    c = n.mix(mul(n, oil, 0.85), c, (0.025, 0.02, 0.015))
+    c = n.mix(mul(n, ring, 0.6), c, (0.03, 0.02, 0.012))
+    cuts = inv(n, smooth(n, n.math("ABSOLUTE", n.math("SUBTRACT", n.noise(1.0, 2, vector=vm(n, "MULTIPLY", p, (6.0, 25.0, 6.0))), 0.5)), 0.0, 0.006))
+    c = n.mix(mul(n, cuts, 0.5), c, (0.5, 0.36, 0.2))
+    spots = smooth(n, n.noise(25, 2, vector=p), 0.78, 0.8)
+    c = n.mix(spots, c, (0.02, 0.12, 0.2))
+    edge = edges(n, 0.008)
+    c = n.mix(mul(n, edge, 0.6), c, (0.5, 0.35, 0.2))
+    rough = add(n, 0.55, mul(n, grain, 0.15))
+    rough = n.lerp(oil, rough, 0.3)
+    n.out(**{"Base Color": c, "Roughness": rough,
+             "Normal": bump(n, add(n, mul(n, grain, 0.4), mul(n, cuts, -1.0)), 0.0015)})
+    return mat
