@@ -23,6 +23,27 @@ export interface HexTiling {
   contrast?: number;
   /** How sharp the blend between hexagons is. */
   sharpness?: number;
+  /**
+   * Shift hexagons only along u, so v keeps its place: for walls whose wear depends on height
+   * above the floor. Use with `rotate: 0`.
+   */
+  keepHeight?: boolean;
+}
+
+/**
+ * For textures of square cells with a joint on their edges, like floor tiles, ceiling tiles or a
+ * slab between saw cuts: every cell in the world shows a random cell of the texture, turned a
+ * random way, and since every cell's edges are joints they still meet. Nothing blends.
+ */
+export interface CellShuffle {
+  kind: "cells";
+  /** Cells across and up one repeat of the texture; joints lie on their edges. */
+  cells: readonly [number, number];
+  /**
+   * "any" turns cells by quarter turns and mirrors them (for square cells, seen from above);
+   * "mirror" only mirrors them left to right, keeping up up for walls; "none" only moves them.
+   */
+  turn?: "any" | "mirror" | "none";
 }
 
 /**
@@ -36,13 +57,13 @@ export interface CourseShuffle {
   /** Courses in one repeat of the texture, up its v; joints lie on their boundaries. */
   rows: number;
   /** Shortest and longest run before a cut, in repeats of the texture. */
-  run?: [number, number];
+  run?: readonly [number, number];
   /** Width of a joint in repeats of the texture. */
   joint?: number;
 }
 
 export interface SurfaceVariation {
-  sampling?: HexTiling | CourseShuffle;
+  sampling?: HexTiling | CourseShuffle | CellShuffle;
   /** Meters across one patch of the slow brightness and roughness drift in world space. */
   patch?: number;
   /** How far brightness drifts, as a fraction. */
@@ -118,7 +139,11 @@ const GLSL_DEFINITIONS = `
     vec2 centre = mat2(1.0, 0.0, 0.5, 0.8660254) * corner / cells;
     vec4 h = vrHash(corner + 0.5);
     m = vrTurn((h.x * 2.0 - 1.0) * 3.14159265 * vrParams.y);
+    #ifdef VARIATION_KEEP_HEIGHT
+    st = m * (vrUV - centre) + centre + vec2(h.y, 0.0);
+    #else
     st = m * (vrUV - centre) + centre + h.yz;
+    #endif
   }
   void vrSetUp() {
     vec2 skewed = mat2(1.0, 0.0, -0.57735027, 1.15470054) * (vrUV * vrParams.x);
@@ -160,6 +185,22 @@ const GLSL_DEFINITIONS = `
     }
   }
   #endif
+
+  #ifdef VARIATION_CELLS
+  // Quarter turns and mirrors keep a square cell's edges on its edges, so its joints still meet.
+  void vrSetUp() {
+    vec2 n = vrParams.xy;
+    vec2 g = vrUV * n;
+    vec2 here = floor(g);
+    vec4 h = vrHash(here + 0.5);
+    float turns = vrParams.z > 1.5 ? floor(h.x * 4.0) : 0.0;
+    float a = turns * 1.57079633;
+    mat2 m = mat2(cos(a), sin(a), -sin(a), cos(a));
+    if (vrParams.z > 0.5 && h.w > 0.5) m = m * mat2(-1.0, 0.0, 0.0, 1.0);
+    vrM0 = m;
+    vrST0 = (floor(h.yz * n) + 0.5 + m * (g - here - 0.5)) / n;
+  }
+  #endif
 `;
 
 const GLSL_MAIN_BEGIN = `
@@ -169,7 +210,7 @@ const GLSL_MAIN_BEGIN = `
   vrDx = dFdx(vrUV);
   vrDy = dFdy(vrUV);
   vrST0 = vrUV;
-  #if defined(VARIATION_HEX) || defined(VARIATION_COURSES)
+  #if defined(VARIATION_HEX) || defined(VARIATION_COURSES) || defined(VARIATION_CELLS)
   vrSetUp();
   #endif
 `;
@@ -253,7 +294,11 @@ const WGSL_DEFINITIONS = `
     let centre = mat2x2f(1.0, 0.0, 0.5, 0.8660254) * corner / cells;
     let h = vrHash(corner + 0.5);
     let m = vrTurn((h.x * 2.0 - 1.0) * 3.14159265 * uniforms.vrParams.y);
+    #ifdef VARIATION_KEEP_HEIGHT
+    return VrCorner(m * (vrUV - centre) + centre + vec2f(h.y, 0.0), m);
+    #else
     return VrCorner(m * (vrUV - centre) + centre + h.yz, m);
+    #endif
   }
   fn vrSetUp() {
     let skewed = mat2x2f(1.0, 0.0, -0.57735027, 1.15470054) * (vrUV * uniforms.vrParams.x);
@@ -297,6 +342,22 @@ const WGSL_DEFINITIONS = `
     }
   }
   #endif
+
+  #ifdef VARIATION_CELLS
+  fn vrSetUp() {
+    let n = uniforms.vrParams.xy;
+    let g = vrUV * n;
+    let here = floor(g);
+    let h = vrHash(here + 0.5);
+    var turns = 0.0;
+    if (uniforms.vrParams.z > 1.5) { turns = floor(h.x * 4.0); }
+    let a = turns * 1.57079633;
+    var m = mat2x2f(cos(a), sin(a), -sin(a), cos(a));
+    if (uniforms.vrParams.z > 0.5 && h.w > 0.5) { m = m * mat2x2f(-1.0, 0.0, 0.0, 1.0); }
+    vrM0 = m;
+    vrST0 = (floor(h.yz * n) + 0.5 + m * (g - here - 0.5)) / n;
+  }
+  #endif
 `;
 
 const WGSL_MAIN_BEGIN = `
@@ -306,7 +367,7 @@ const WGSL_MAIN_BEGIN = `
   vrDx = dpdx(vrUV);
   vrDy = dpdy(vrUV);
   vrST0 = vrUV;
-  #if defined(VARIATION_HEX) || defined(VARIATION_COURSES)
+  #if defined(VARIATION_HEX) || defined(VARIATION_COURSES) || defined(VARIATION_CELLS)
   vrSetUp();
   #endif
 `;
@@ -331,6 +392,8 @@ const WGSL_BEFORE_LIGHTS = `
 class VariationDefines extends MaterialDefines {
   VARIATION_HEX = false;
   VARIATION_COURSES = false;
+  VARIATION_CELLS = false;
+  VARIATION_KEEP_HEIGHT = false;
 }
 
 /**
@@ -353,6 +416,9 @@ class SurfaceVariationPlugin extends MaterialPluginBase {
     } else if (sampling?.kind === "courses") {
       const { rows, run = [0.35, 0.9], joint = 0.006 } = sampling;
       this.params = [rows, run[0], run[1], joint];
+    } else if (sampling?.kind === "cells") {
+      const turn = { none: 0, mirror: 1, any: 2 }[sampling.turn ?? "any"];
+      this.params = [sampling.cells[0], sampling.cells[1], turn, 0];
     } else {
       this.params = [1, 0, 0, 1];
     }
@@ -370,8 +436,11 @@ class SurfaceVariationPlugin extends MaterialPluginBase {
   }
 
   override prepareDefines(defines: VariationDefines): void {
-    defines.VARIATION_HEX = this.options.sampling?.kind === "hex";
-    defines.VARIATION_COURSES = this.options.sampling?.kind === "courses";
+    const { sampling } = this.options;
+    defines.VARIATION_HEX = sampling?.kind === "hex";
+    defines.VARIATION_COURSES = sampling?.kind === "courses";
+    defines.VARIATION_CELLS = sampling?.kind === "cells";
+    defines.VARIATION_KEEP_HEIGHT = sampling?.kind === "hex" && !!sampling.keepHeight;
   }
 
   override getUniforms() {
