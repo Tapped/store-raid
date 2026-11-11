@@ -55,8 +55,10 @@ const { values, positionals } = parseArgs({
 
 const here = import.meta.dirname;
 const HELPERS = new Set(["lib", "build", "preview"]);
+// A script without build() is a module that model scripts share, not a model.
 const models = readdirSync(here)
   .filter((f) => f.endsWith(".py") && !HELPERS.has(basename(f, ".py")))
+  .filter((f) => /^def build\(/m.test(readFileSync(`${here}/${f}`, "utf8")))
   .map((f) => basename(f, ".py"))
   .sort();
 
