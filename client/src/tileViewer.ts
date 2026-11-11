@@ -382,6 +382,10 @@ function levelOf(shown: Source): Level {
     items: [],
     spawnPoint: () => ({ x: 0, z: 0 }),
     roof: top * STOREY,
+    grid: undefined,
+    rooms: [],
+    props: [],
+    lights: [],
   };
 }
 

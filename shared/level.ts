@@ -80,6 +80,75 @@ export interface ItemSpawn {
   z: number;
 }
 
+/** What a room is for, which decides its surfaces, what stands in it and how it's lit. */
+export type RoomKind =
+  /** Where players come in: the best lit room there is. */
+  | "entrance"
+  /** The shop floor: aisles of shelving, displays, tills. */
+  | "sales"
+  /** Back of house: pallet racking, crates, bare concrete. */
+  | "stock"
+  /** Desks, filing cabinets, carpet. */
+  | "office"
+  /** Lockers, a table, a vending machine. */
+  | "staff"
+  /** Boilers, ducts, switchgear: dark, loud, often in the basement. */
+  | "plant"
+  /** A passage between rooms. */
+  | "corridor"
+  /** Open air above the storey below, with railings round it. */
+  | "atrium";
+
+/** One room of a building: cells on one storey with walls or railings round them. */
+export interface Room {
+  /** Its index in `Level.rooms`. */
+  id: number;
+  kind: RoomKind;
+  storey: number;
+  /** The height of its floor. */
+  y: number;
+  /** Everything it covers, wall to wall; `cells` says which cells of that, for rooms that aren't rectangles. */
+  bounds: Box;
+  cells: { col: number; row: number }[];
+  /** How far in it is from the entrance, by the way players walk: 0 at the entrance, 1 the farthest room. */
+  depth: number;
+}
+
+/**
+ * Something standing in a level that never moves, drawn from a model: `models/props/<model>.glb`.
+ * It's only drawn: whatever it blocks is a box of kind "furniture" or "shelf" in `Level.boxes`.
+ * The model's front faces `turn` radians round y from north (+z), clockwise seen from above, as
+ * `Player.yaw` does.
+ */
+export interface PropSpawn {
+  model: string;
+  x: number;
+  y: number;
+  z: number;
+  turn: number;
+  /** The room it stands in, an index into `Level.rooms`, or -1. */
+  room: number;
+}
+
+/**
+ * A light fitting. `power` is how bright it is next to an ordinary ceiling tube, which is 1.
+ * A flickering one stutters; a dead one is a fitting that gives no light.
+ */
+export interface LightSpawn {
+  kind: "tube" | "bulb" | "emergency" | "exit";
+  x: number;
+  y: number;
+  z: number;
+  /** Radians round y, for fittings that have a length. */
+  turn: number;
+  /** Linear RGB, 0 to 1. */
+  color: [number, number, number];
+  power: number;
+  state: "on" | "flicker" | "dead";
+  /** The room it lights, an index into `Level.rooms`, or -1. */
+  room: number;
+}
+
 /** One building: what the server simulates and the client draws for it. */
 export interface Level {
   name: string;
@@ -109,6 +178,14 @@ export interface Level {
   spawnPoint(index: number): { x: number; y?: number; z: number };
   /** How high its roof is, or undefined if it's open to the sky. */
   roof: number | undefined;
+  /** The tiles it was built from, for levels that are: what `composeTiles` was given. */
+  grid: TileGrid | undefined;
+  /** Its rooms, where it has any: generated levels do. */
+  rooms: Room[];
+  /** Scenery standing in it, drawn from models. */
+  props: PropSpawn[];
+  /** Its light fittings. A level with none is lit evenly. */
+  lights: LightSpawn[];
 }
 
 /** Where finished items go. An item whose centre is in here counts as delivered. */
@@ -185,6 +262,10 @@ const STORE: Level = {
   // Along the front of the store, by the dock.
   spawnPoint: (index) => ({ x: -12 + (index % 8) * 3.4, z: 13 + (index % 2) * 2 }),
   roof: undefined,
+  grid: undefined,
+  rooms: [],
+  props: [],
+  lights: [],
 };
 
 // The playground: one brick hall under a roof on steel beams, to try things out in, built from tiles
@@ -250,6 +331,10 @@ const PLAYGROUND: Level = {
   // In the middle of the south side, facing north.
   spawnPoint: (index) => ({ x: -3 + (index % 4) * 2, z: -10.5 + (Math.floor(index / 4) % 2) }),
   roof: HALL_HEIGHT,
+  grid: PLAYGROUND_GRID,
+  rooms: [],
+  props: [],
+  lights: [],
 };
 
 // The harbour: the store where it stands, and the harbour around it to walk on, out of the dock
@@ -308,7 +393,8 @@ function generatedLevel(seed: number): Level {
   const { cols, rows, storeys, basements } = GENERATED_SIZE;
   const x = (-cols * CELL) / 2;
   const z = (-rows * CELL) / 2;
-  const tiles = composeTiles({ ...generated.grid, x, z });
+  const grid = { ...generated.grid, x, z };
+  const tiles = composeTiles(grid);
   const centre = (cell: { col: number; row: number }) => ({
     x: x + (cell.col + 0.5) * CELL,
     z: z + (cell.row + 0.5) * CELL,
@@ -338,6 +424,22 @@ function generatedLevel(seed: number): Level {
     })),
     spawnPoint: (index) => ({ x: entrance.x - 1 + (index % 3), z: entrance.z + 0.5 }),
     roof: (storeys - basements) * STOREY,
+    grid,
+    rooms: [],
+    props: [],
+    // A stand-in until the generator places them: a tube over every other floor.
+    lights: generated.floors
+      .filter((cell) => (cell.col + cell.row) % 2 === 0)
+      .map((cell) => ({
+        kind: "tube" as const,
+        ...centre(cell),
+        y: (cell.storey + 1) * STOREY - 0.35,
+        turn: 0,
+        color: [1, 0.93, 0.8] as [number, number, number],
+        power: 1,
+        state: "on" as const,
+        room: -1,
+      })),
   };
 }
 
