@@ -620,7 +620,8 @@ def bake_ao(obj, size, distance, work):
     so it moves with it; index.ts makes it the glTF occlusion texture of every material.
     """
     mesh = obj.data
-    main = mesh.uv_layers.active
+    # By name: adding a layer can move the others, leaving a reference to one dangling.
+    main = mesh.uv_layers.active.name
     ao = mesh.uv_layers.new(name="AO")
     mesh.uv_layers.active = ao
     _select(obj)
@@ -653,8 +654,8 @@ def bake_ao(obj, size, distance, work):
     image.save()
     for tree, node in targets:
         tree.nodes.remove(node)
-    mesh.uv_layers.active = main
-    main.active_render = True
+    mesh.uv_layers.active = mesh.uv_layers[main]
+    mesh.uv_layers[main].active_render = True
 
 
 def place_origin(obj, origin):
@@ -679,3 +680,212 @@ def place_origin(obj, origin):
 
 def triangles(obj):
     return sum(len(p.vertices) - 2 for p in obj.data.polygons)
+
+
+
+# Weathering: wear in layers for procedural() materials, after Saltline's METHOD.md, Part 2.
+# Added for the building's fittings; each helper takes the material's Nodes.
+
+
+def smoothstep(n, value, lo, hi):
+    """0 below lo, 1 above hi, a smooth ramp between."""
+    return n.add(
+        "ShaderNodeMapRange", {"Value": value, "From Min": lo, "From Max": hi},
+        interpolation_type="SMOOTHSTEP", clamp=True,
+    ).outputs["Result"]
+
+
+def shade(n, color, value):
+    """`color` with its brightness multiplied by `value` (a number or a socket)."""
+    return n.add(
+        "ShaderNodeHueSaturation", {"Color": color, "Value": value, "Hue": 0.5, "Saturation": 1.0}
+    ).outputs["Color"]
+
+
+def edges(n, radius=0.004):
+    """
+    About 1 on the model's edges and corners, 0 on flat faces: where the Bevel node's rounded
+    normal leaves the true one. Cycles only, which the bake is. Concave edges count too.
+    """
+    bevel = n.add("ShaderNodeBevel", {"Radius": radius}, samples=8).outputs["Normal"]
+    geo = n.add("ShaderNodeNewGeometry").outputs["Normal"]
+    dot = n.add("ShaderNodeVectorMath", operation="DOT_PRODUCT")
+    n.set(dot.inputs[0], bevel)
+    n.set(dot.inputs[1], geo)
+    return smoothstep(n, n.math("SUBTRACT", 1, dot.outputs["Value"]), 0.02, 0.2)
+
+
+def crevices(n, distance=0.05):
+    """About 1 deep in creases and corners `distance` meters across, 0 in the open (baked AO)."""
+    ao = n.add("ShaderNodeAmbientOcclusion", {"Distance": distance}, samples=16, only_local=True)
+    return n.math("SUBTRACT", 1, ao.outputs["AO"])
+
+
+def facing_up(n):
+    """The surface normal's up component: 1 on top faces, -1 underneath."""
+    return n.xyz(n.add("ShaderNodeNewGeometry").outputs["Normal"])[2]
+
+
+def _offset(n, dx=0.0, dy=0.0, dz=0.0):
+    node = n.add("ShaderNodeVectorMath", operation="ADD")
+    n.set(node.inputs[0], n.coord())
+    node.inputs[1].default_value = (dx, dy, dz)
+    return node.outputs["Vector"]
+
+
+def _stretched(n, sx, sy, sz):
+    node = n.add("ShaderNodeVectorMath", operation="MULTIPLY")
+    n.set(node.inputs[0], n.coord())
+    node.inputs[1].default_value = (sx, sy, sz)
+    return node.outputs["Vector"]
+
+
+def weathered(
+    n, paint, *, rough=0.42, chips=0.5, rust=0.5, dirt=0.5, dust=0.5, edge_wear=0.5,
+    dents=1.0, floor=None, bare=(0.3, 0.29, 0.28), primer=(0.2, 0.17, 0.12), height=None,
+    bump=0.004, scale=1.0, seed=0.0,
+):
+    """
+    Fifteen years of wear on painted metal (or plastic), as the outputs for n.out(**...):
+
+    - the paint (a colour or a socket, so labels can be mixed into it first) varies in shade and
+      roughness over the surface, with a fine orange peel and broad dents (`dents`);
+    - chips cluster in a few patches and on edges (`chips`, `edge_wear`): primer round each one,
+      bright steel in it, rust in the biggest (`rust`), and rust runs weeping down from them;
+    - dirt gathers in creases, in vertical wash streaks and, given `floor` (z in meters), low down
+      within half a meter of the floor (`dirt`);
+    - dust lies on faces turned up (`dust`).
+
+    `height` (a socket, 0 to 1) adds the model's own relief, such as seams, to the bump, which is
+    `bump` meters deep at full height. `scale` stretches every pattern, `seed` moves them.
+    """
+    s = scale
+    co = _offset(n, seed * 7.1, seed * 3.3, seed * 1.7)
+    z = n.xyz()[2]
+
+    macro = n.noise(2.5 / s, detail=3, vector=co)
+    color = shade(n, paint, n.math("ADD", 0.85, n.math("MULTIPLY", macro, 0.3)))
+    # Chalking: faded, a little lighter and greyer in broad patches.
+    chalk = n.math("MULTIPLY", smoothstep(n, n.noise(1.2 / s, detail=2, vector=co), 0.5, 0.75), 0.35)
+    color = n.mix(chalk, color, shade(n, n.mix(0.5, paint, (0.3, 0.3, 0.3)), 1.1))
+
+    # Chips: flakes where noise peaks, more of them inside a few clustered patches and on edges.
+    cluster = smoothstep(n, n.noise(1.6 / s, detail=4, vector=co), 0.48, 0.7)
+
+    def flakes(dz=0.0):
+        v = _offset(n, seed * 7.1, seed * 3.3, seed * 1.7 + dz) if dz else co
+        return n.noise(22 / s, detail=6, roughness=0.62, vector=v)
+
+    gate = n.math("SUBTRACT", 0.8, n.math("MULTIPLY", cluster, 0.44 * chips))
+    over = n.math("SUBTRACT", flakes(), gate)
+    edge = n.math(
+        "MULTIPLY", edges(n),
+        n.math("MULTIPLY", smoothstep(n, n.noise(45 / s, detail=4, vector=co), 0.45, 0.6),
+               edge_wear),
+    )
+    chip = n.math("MAXIMUM", smoothstep(n, over, 0.0, 0.015), edge)
+    halo = smoothstep(n, over, -0.03, -0.012)
+    core = n.math("MINIMUM", n.math("MULTIPLY", smoothstep(n, over, 0.05, 0.07), rust * 2), 1.0)
+
+    # Rust runs: chips a little higher up weep down in streaks.
+    streak = smoothstep(
+        n, n.noise(1.0, detail=3, vector=_stretched(n, 90 / s, 90 / s, 1.5 / s)), 0.5, 0.72
+    )
+    run = 0.0
+    for i in range(1, 5):
+        above = smoothstep(n, n.math("SUBTRACT", flakes(i * 0.025 * s), gate), 0.04, 0.08)
+        run = n.math("MAXIMUM", run, n.math("MULTIPLY", above, 1 - i / 5))
+    run = n.math("MULTIPLY", n.math("MULTIPLY", run, streak), rust)
+
+    # Dirt: creases, vertical wash streaks, and low down.
+    wash = smoothstep(
+        n, n.noise(1.0, detail=4, vector=_stretched(n, 40 / s, 40 / s, 2 / s)), 0.45, 0.75
+    )
+    grime = n.math("ADD", n.math("MULTIPLY", crevices(n), 1.4), n.math("MULTIPLY", wash, 0.35))
+    if floor is not None:
+        grime = n.math("ADD", grime, smoothstep(n, n.math("SUBTRACT", floor + 0.5, z), 0.0, 0.5))
+    grime = n.math("MULTIPLY", n.math("MINIMUM", grime, 1.0), dirt)
+    dust_mask = n.math(
+        "MULTIPLY",
+        smoothstep(n, facing_up(n), 0.45, 0.9),
+        n.math(
+            "MULTIPLY", n.math("ADD", 0.45, n.math("MULTIPLY", n.noise(25 / s, vector=co), 0.8)),
+            dust,
+        ),
+    )
+
+    rusty = n.mix(n.noise(120 / s, detail=3, vector=co), (0.11, 0.035, 0.012), (0.2, 0.075, 0.025))
+    color = n.mix(n.math("MULTIPLY", grime, 0.75), color, (0.03, 0.027, 0.022))
+    color = n.mix(n.math("MULTIPLY", halo, 0.8), color, primer)
+    color = n.mix(chip, color, bare)
+    color = n.mix(core, color, rusty)
+    color = n.mix(n.math("MULTIPLY", run, 0.75), color, (0.12, 0.045, 0.015))
+    color = n.mix(n.math("MINIMUM", dust_mask, 0.85), color, (0.2, 0.19, 0.17))
+
+    r = n.math("ADD", rough, n.math("MULTIPLY", n.math("SUBTRACT", macro, 0.5), 0.2))
+    r = n.math("ADD", r, n.math("MULTIPLY", chalk, 0.4))
+    r = n.lerp(n.math("MULTIPLY", grime, 0.8), r, 0.85)
+    r = n.lerp(halo, r, 0.75)
+    r = n.lerp(chip, r, 0.32)
+    r = n.lerp(core, r, 0.92)
+    r = n.lerp(run, r, 0.85)
+    r = n.lerp(dust_mask, r, 0.95)
+
+    peel = n.noise(300 / s, detail=2, vector=co)
+    dent = n.noise(7 / s, detail=3, vector=co)
+    h = n.math("ADD", n.math("MULTIPLY", peel, 0.06), n.math("MULTIPLY", dent, 1.2 * dents))
+    h = n.math("SUBTRACT", h, n.math("MULTIPLY", chip, 0.25))
+    h = n.math("SUBTRACT", h, n.math("MULTIPLY", halo, 0.08))
+    h = n.math("ADD", h, n.math("MULTIPLY", core, 0.12))
+    if height is not None:
+        h = n.math("ADD", h, height)
+    return {"Base Color": color, "Roughness": r, "Normal": n.bump(h, distance=bump)}
+
+
+def galvanised(
+    n, *, tone=0.45, dirt=0.5, dust=0.5, white_rust=0.4, dents=1.0, floor=None, height=None,
+    bump=0.004, scale=1.0,
+):
+    """
+    Galvanised steel, as the outputs for n.out(**...): a spangle of zinc crystals that differ in
+    shine, dull white rust in patches, dirt in creases and streaks, dust on top. Give the material
+    a metallic of about 0.8 (lib.material's, set with n.bsdf): baking keeps only a plain metallic.
+    """
+    s = scale
+    vor = n.add("ShaderNodeTexVoronoi", {"Vector": n.coord(), "Scale": 30 / s, "Randomness": 1.0})
+    warp = n.add("ShaderNodeTexVoronoi", {"Vector": n.coord(), "Scale": 75 / s, "Randomness": 1.0})
+    cell = n.xyz(vor.outputs["Color"])[0]
+    fine = n.xyz(warp.outputs["Color"])[1]
+    spangle = n.math("ADD", n.math("MULTIPLY", cell, 0.7), n.math("MULTIPLY", fine, 0.3))
+    macro = n.noise(2 / s, detail=3)
+    base = shade(
+        n, (tone, tone, tone * 1.02),
+        n.math("ADD", 0.8, n.math("ADD", n.math("MULTIPLY", spangle, 0.25),
+                                  n.math("MULTIPLY", macro, 0.15))),
+    )
+    whites = n.math("MULTIPLY", smoothstep(n, n.noise(3 / s, detail=5), 0.58, 0.72), white_rust)
+    wash = smoothstep(
+        n, n.noise(1.0, detail=4, vector=_stretched(n, 40 / s, 40 / s, 2 / s)), 0.45, 0.75
+    )
+    grime = n.math("ADD", n.math("MULTIPLY", crevices(n), 1.4), n.math("MULTIPLY", wash, 0.4))
+    if floor is not None:
+        z = n.xyz()[2]
+        grime = n.math("ADD", grime, smoothstep(n, n.math("SUBTRACT", floor + 0.5, z), 0.0, 0.5))
+    grime = n.math("MULTIPLY", n.math("MINIMUM", grime, 1.0), dirt)
+    dust_mask = n.math(
+        "MULTIPLY", smoothstep(n, facing_up(n), 0.45, 0.9),
+        n.math("MULTIPLY", n.math("ADD", 0.45, n.math("MULTIPLY", n.noise(25 / s), 0.8)), dust),
+    )
+    color = n.mix(whites, base, (0.55, 0.55, 0.52))
+    color = n.mix(n.math("MULTIPLY", grime, 0.7), color, (0.05, 0.045, 0.04))
+    color = n.mix(n.math("MINIMUM", dust_mask, 0.85), color, (0.2, 0.19, 0.17))
+    r = n.math("ADD", 0.3, n.math("MULTIPLY", spangle, 0.28))
+    r = n.lerp(whites, r, 0.8)
+    r = n.lerp(grime, r, 0.75)
+    r = n.lerp(dust_mask, r, 0.95)
+    h = n.math("MULTIPLY", n.noise(7 / s, detail=3), 1.2 * dents)
+    h = n.math("ADD", h, n.math("MULTIPLY", whites, 0.1))
+    h = n.math("ADD", h, n.math("MULTIPLY", spangle, 0.03))
+    if height is not None:
+        h = n.math("ADD", h, height)
+    return {"Base Color": color, "Roughness": r, "Normal": n.bump(h, distance=bump)}
