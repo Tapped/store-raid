@@ -334,11 +334,25 @@ const WGSL_LIGHT = `
   }
 `;
 
+/**
+ * A plugin added to a material that has already laid out its uniforms (one cloned from a model,
+ * say) needs them laid out again: Babylon does that before it counts the new plugin in.
+ */
+function rebuildUniforms(material: PBRMaterial) {
+  const inner = material as unknown as { _createUniformBuffer(): void };
+  material.resetDrawCache();
+  inner._createUniformBuffer();
+}
+
 /** Interior light in a PBR material, from the baked volume; see the module's comment. */
 class InteriorLightPlugin extends MaterialPluginBase {
   constructor(material: PBRMaterial) {
     super(material, "InteriorLight", 220);
+    // Cloned materials get their own when they're added to the scene: Babylon can't find this
+    // class by name to copy it.
+    this.doNotSerialize = true;
     this._enable(true);
+    rebuildUniforms(material);
   }
 
   override getClassName(): string {
@@ -353,17 +367,17 @@ class InteriorLightPlugin extends MaterialPluginBase {
     samplers.push("ilVolumeA", "ilVolumeB", "ilLights");
   }
 
-  override getUniforms() {
+  override getUniforms(shaderLanguage: ShaderLanguage = ShaderLanguage.GLSL) {
+    const names = ["ilOrigin", "ilDims", "ilParams", "ilShade", "ilMinimum"];
     return {
-      ubo: [
-        { name: "ilOrigin", size: 4, type: "vec4" },
-        { name: "ilDims", size: 4, type: "vec4" },
-        { name: "ilParams", size: 4, type: "vec4" },
-        { name: "ilShade", size: 4, type: "vec4" },
-        { name: "ilMinimum", size: 4, type: "vec4" },
-      ],
-      fragment:
-        "uniform vec4 ilOrigin;\nuniform vec4 ilDims;\nuniform vec4 ilParams;\nuniform vec4 ilShade;\nuniform vec4 ilMinimum;",
+      ubo: names.map((name) => ({ name, size: 4, type: "vec4" })),
+      fragment: names
+        .map((name) =>
+          shaderLanguage === ShaderLanguage.WGSL
+            ? `uniform ${name}: vec4f;`
+            : `uniform vec4 ${name};`,
+        )
+        .join("\n"),
     };
   }
 
@@ -426,7 +440,9 @@ class FixtureGlowPlugin extends MaterialPluginBase {
     private readonly tint: boolean,
   ) {
     super(material, "FixtureGlow", 230, new GlowDefines());
+    this.doNotSerialize = true;
     this._enable(true);
+    rebuildUniforms(material);
   }
 
   override getClassName(): string {
@@ -449,10 +465,13 @@ class FixtureGlowPlugin extends MaterialPluginBase {
     samplers.push("fgLights");
   }
 
-  override getUniforms() {
+  override getUniforms(shaderLanguage: ShaderLanguage = ShaderLanguage.GLSL) {
     return {
       ubo: [{ name: "fgParams", size: 4, type: "vec4" }],
-      fragment: "uniform vec4 fgParams;",
+      fragment:
+        shaderLanguage === ShaderLanguage.WGSL
+          ? "uniform fgParams: vec4f;"
+          : "uniform vec4 fgParams;",
     };
   }
 
@@ -941,8 +960,9 @@ export function addInteriorLighting(world: World): InteriorLighting | undefined 
       spread: BAKE.spread,
     };
     const output = await runBake(input);
+    const { grid: g, direct: d, bounce: b } = output.stages;
     console.info(
-      `Interior light baked in ${Math.round(output.ms)} ms: ${dims.join("×")} voxels, ${input.sources.length} lights`,
+      `Interior light baked in ${Math.round(output.ms)} ms (grid ${Math.round(g)}, direct ${Math.round(d)}, bounce ${Math.round(b)}): ${dims.join("×")} voxels, ${input.sources.length} lights`,
     );
     shared.a?.dispose();
     shared.b?.dispose();

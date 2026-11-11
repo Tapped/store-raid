@@ -64,8 +64,9 @@ export interface BakeOutput {
    * its colour and brightness.
    */
   b: Float32Array;
-  /** Milliseconds it took. */
+  /** Milliseconds it took, in all and by stage. */
   ms: number;
+  stages: { grid: number; direct: number; bounce: number };
 }
 
 /** How far boxes reach beyond themselves, so a centre on a box's face counts as inside it. */
@@ -143,6 +144,7 @@ export function bakeLight(input: BakeInput): BakeOutput {
     }
   }
 
+  const gridDone = performance.now();
   const steady = new Float32Array(count * 3);
   const direction = new Float32Array(count * 3);
   const changing = new Float32Array(count);
@@ -319,24 +321,37 @@ export function bakeLight(input: BakeInput): BakeOutput {
     }
   }
 
+  const directDone = performance.now();
   // Bounce: each pass, a voxel takes a little of its own direct light and the rest from the
   // average of its open neighbours. Light that can't get out of a room stays in it, and through
   // a doorway it fades over about `spread` meters.
   const reachVoxels = Math.max(1, input.spread / s);
   const keep = 1 / (1 + reachVoxels * reachVoxels);
-  const passes = Math.min(120, Math.ceil(reachVoxels * reachVoxels * 1.5));
+  // Updated in place, sweeping one way and then back (Gauss-Seidel), which settles in about half
+  // the passes of updating from a copy.
+  const passes = Math.min(80, Math.ceil(reachVoxels * reachVoxels * 0.8));
   const free: number[] = [];
-  for (let v = 0; v < count; v++) if (!solid[v]) free.push(v);
+  for (let v = 0; v < count; v++)
+    if (
+      !solid[v] &&
+      neighbours[v * 6] +
+        neighbours[v * 6 + 1] +
+        neighbours[v * 6 + 2] +
+        neighbours[v * 6 + 3] +
+        neighbours[v * 6 + 4] +
+        neighbours[v * 6 + 5] >
+        -6
+    )
+      free.push(v);
   const cells = Int32Array.from(free);
-  let bounce = Float32Array.from(steady);
-  let next = new Float32Array(count * 3);
+  const bounce = Float32Array.from(steady);
   // The changing light bounces too, as far as the voxels that are its own.
-  let bounceChanging = Float32Array.from(changing);
-  let nextChanging = new Float32Array(count);
+  const bounceChanging = Float32Array.from(changing);
   const owner = Int32Array.from(changingIndex);
   for (let pass = 0; pass < passes; pass++) {
+    const forward = pass % 2 === 0;
     for (let c = 0; c < cells.length; c++) {
-      const v = cells[c];
+      const v = cells[forward ? c : cells.length - 1 - c];
       let r = 0;
       let g = 0;
       let b = 0;
@@ -360,27 +375,18 @@ export function bakeLight(input: BakeInput): BakeOutput {
         }
         if (theirs === mine) dyn += bounceChanging[u];
       }
-      if (n === 0) {
-        next[v * 3] = steady[v * 3];
-        next[v * 3 + 1] = steady[v * 3 + 1];
-        next[v * 3 + 2] = steady[v * 3 + 2];
-        nextChanging[v] = changing[v];
-        continue;
-      }
       const take = (1 - keep) / n;
-      next[v * 3] = keep * steady[v * 3] + take * r;
-      next[v * 3 + 1] = keep * steady[v * 3 + 1] + take * g;
-      next[v * 3 + 2] = keep * steady[v * 3 + 2] + take * b;
+      bounce[v * 3] = keep * steady[v * 3] + take * r;
+      bounce[v * 3 + 1] = keep * steady[v * 3 + 1] + take * g;
+      bounce[v * 3 + 2] = keep * steady[v * 3 + 2] + take * b;
       if (mine < 0 && best >= 0) {
         // Not lit by a changing light itself: it takes on its brightest neighbour's.
         owner[v] = best;
-        nextChanging[v] = take * bestLight;
-      } else {
-        nextChanging[v] = keep * changing[v] + take * dyn;
+        bounceChanging[v] = take * bestLight;
+      } else if (mine >= 0) {
+        bounceChanging[v] = keep * changing[v] + take * dyn;
       }
     }
-    [bounce, next] = [next, bounce];
-    [bounceChanging, nextChanging] = [nextChanging, bounceChanging];
   }
 
   const a = new Float32Array(count * 4);
@@ -409,5 +415,11 @@ export function bakeLight(input: BakeInput): BakeOutput {
     b[v * 4 + 2] = direction[v * 3 + 2] / total;
     b[v * 4 + 3] = dyn;
   }
-  return { a, b, ms: performance.now() - start };
+  const end = performance.now();
+  return {
+    a,
+    b,
+    ms: end - start,
+    stages: { grid: gridDone - start, direct: directDone - gridDone, bounce: end - directDone },
+  };
 }
