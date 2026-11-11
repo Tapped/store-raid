@@ -16,16 +16,21 @@ export const STOREY = 3;
 export const PIT_DEPTH = 10;
 const PIT_WALL = 0.5;
 /** Thickness of the ground, of any other floor, and of a plank. */
-const GROUND = 0.3;
-const SLAB = 0.25;
+export const GROUND = 0.3;
+export const SLAB = 0.25;
 const PLANK = 0.08;
 const PLANK_WIDTH = 0.6;
 const RAIL_HEIGHT = 1;
 const RAIL = 0.06;
-/** Walls between cells: how thick, and how wide and high a doorway in one is. */
-const WALL = 0.2;
-const DOOR_WIDTH = 1.4;
-const DOOR_HEIGHT = 2.2;
+/**
+ * Walls between cells: how thick, and how wide and high a doorway in one is, and an arch: the wide
+ * opening between two big rooms the public walks between.
+ */
+export const WALL = 0.2;
+export const DOOR_WIDTH = 1.4;
+export const DOOR_HEIGHT = 2.2;
+export const ARCH_WIDTH = 3;
+export const ARCH_HEIGHT = 2.4;
 /** Stairs block in this many slices, each as high as the ramp at its lower end. */
 const STAIR_SLICES = 8;
 /** A ladder's width, the wall behind it, and how far out from that wall it can be climbed. */
@@ -190,8 +195,23 @@ export function fitsAbove(lower: Tile | undefined, upper: Tile | undefined): boo
   return true;
 }
 
-/** What's on the edge between two cells on a storey: nothing, a wall, or a wall with a doorway. */
-export type Edge = "none" | "wall" | "door";
+/**
+ * What's on the edge between two cells on a storey: nothing, a wall, a wall with a doorway, or a
+ * wall with an arch, a wider and higher opening.
+ */
+export type Edge = "none" | "wall" | "door" | "arch";
+
+/** Whether an edge can be walked through: a doorway or an arch. */
+export function isOpening(edge: Edge): boolean {
+  return edge === "door" || edge === "arch";
+}
+
+/** How wide and high the opening in an edge is, or undefined for a plain wall or none. */
+export function openingOf(edge: Edge): { width: number; height: number } | undefined {
+  if (edge === "door") return { width: DOOR_WIDTH, height: DOOR_HEIGHT };
+  if (edge === "arch") return { width: ARCH_WIDTH, height: ARCH_HEIGHT };
+  return undefined;
+}
 
 /**
  * A grid of tiles: the cell in the south-west corner starts at (x, z), and each storey is a list of
@@ -199,8 +219,8 @@ export type Edge = "none" | "wall" | "door";
  * lie below the ground, which is storey 0. Storeys above the last given are open air.
  *
  * A storey is written one character per cell, or with its walls drawn in between, every cell
- * surrounded by `+` corners and edges that are `-` or `|` for a wall, `d` for a doorway, or a space
- * for nothing. Walls round the outside of such a storey enclose it.
+ * surrounded by `+` corners and edges that are `-` or `|` for a wall, `d` for a doorway, `a` for an
+ * arch, or a space for nothing. Walls round the outside of such a storey enclose it.
  */
 export interface TileGrid {
   x: number;
@@ -246,7 +266,13 @@ export function parseTiles(grid: TileGrid): ParsedGrid {
         if (isDrawn) {
           const mark = (side: Side, value: string | undefined) => {
             const edge: Edge =
-              value === "d" ? "door" : value === "-" || value === "|" ? "wall" : "none";
+              value === "d"
+                ? "door"
+                : value === "a"
+                  ? "arch"
+                  : value === "-" || value === "|"
+                    ? "wall"
+                    : "none";
             if (edge !== "none") edges.set(edgeKey(storey, col, row, side), edge);
           };
           const above = lines[2 * (rows - 1 - row)];
@@ -314,7 +340,7 @@ export function checkTiles(grid: ParsedGrid): string | undefined {
           const next = grid.tile(storey, col + OFFSET[side][0], row + OFFSET[side][1]);
           if (edge === "wall" && MUST_LEAD_ON.includes(mine))
             return `${where}: a wall closes off its ${side} side`;
-          if (edge === "door" && !PASSABLE.includes(mine))
+          if (isOpening(edge) && !PASSABLE.includes(mine))
             return `${where}: a doorway on its ${side} side leads nowhere`;
           // Across a wall, anything goes but what must lead on.
           if (!next || edge === "wall") continue;
@@ -383,7 +409,7 @@ export function composeTiles(source: TileGrid): {
           // Brick round the outside, plaster between rooms.
           const kind = outer ? "wall" : "partition";
           if (edge !== "none") {
-            boxes.push(...wallBoxes(cell, side, base, ceiling, edge === "door", kind));
+            boxes.push(...wallBoxes(cell, side, base, ceiling, openingOf(edge), kind));
           }
         }
 
@@ -520,13 +546,13 @@ function screenFootprint({ x, z, faces }: Screen): Box {
   return { minX: x - halfX, maxX: x + halfX, minZ: z - halfZ, maxZ: z + halfZ };
 }
 
-/** A wall along one side of a cell, astride the edge, with a doorway in the middle if asked. */
+/** A wall along one side of a cell, astride the edge, with an opening in the middle if asked. */
 function wallBoxes(
   cell: Box,
   side: Side,
   y: number,
   height: number,
-  door: boolean,
+  opening: { width: number; height: number } | undefined,
   kind: "wall" | "partition",
 ): LevelBox[] {
   const alongX = side === "n" || side === "s";
@@ -552,13 +578,14 @@ function wallBoxes(
           height: top - bottom,
           kind,
         };
-  if (!door) return [span(start, end, y, y + height)];
+  if (!opening) return [span(start, end, y, y + height)];
   const middle = (start + end) / 2;
+  const half = opening.width / 2;
   return [
-    span(start, middle - DOOR_WIDTH / 2, y, y + height),
-    span(middle + DOOR_WIDTH / 2, end, y, y + height),
-    // Over the doorway, out of everyone's way.
-    span(middle - DOOR_WIDTH / 2, middle + DOOR_WIDTH / 2, y + DOOR_HEIGHT, y + height),
+    span(start, middle - half, y, y + height),
+    span(middle + half, end, y, y + height),
+    // Over the opening, out of everyone's way.
+    span(middle - half, middle + half, y + opening.height, y + height),
   ];
 }
 

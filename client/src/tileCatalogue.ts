@@ -66,6 +66,14 @@ export const CATALOGUE: Sample[] = [
     },
   },
   {
+    name: "walls and an arch",
+    grid: {
+      x: 0,
+      z: 0,
+      storeys: [["+-+-+-+", "|F F F|", "+a+-+a+", "|F F F|", "+-+-+-+"]],
+    },
+  },
+  {
     name: "rooms upstairs",
     grid: {
       x: 0,
