@@ -1,7 +1,7 @@
 # Friday Fun
 
 An online multiplayer browser game: one player per screen, on keyboard or controller. `PLAN.md` has
-the roadmap for the game, Night shift at the megastore.
+the roadmap for the game, a night raid on a harbour warehouse.
 
 ## Stack
 

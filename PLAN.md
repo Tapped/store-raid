@@ -10,7 +10,7 @@ The goal is a playable game after every step, with each step shipped separately.
 
 1. **Truck:** the crew starts in a large truck parked in the harbour, with no equipment the first
    time.
-2. **Raid:** they go into the building, a maze of shelving over several floors. It's lit near the
+2. **Raid:** they go into the building, a maze of racking, containers and back rooms over several floors. It's lit near the
    entrance and quickly gets dark further in.
 3. **Load:** loot counts once it's inside the truck. Players can make as many trips as they dare
    before dawn.
@@ -29,7 +29,8 @@ decides what's worth the risk. Missing the quota means replaying the level, poor
 
 ## Loot in the first building
 
-The first building is a megastore. Item value rises with how far in, how high up and how dark it
+The first building is a storage building in the shipping harbour: halls of pallet racking and
+containers, bonded cages, workshops, offices and a plant room in the basement. Item value rises with how far in, how high up and how dark it
 is, so the safe, lit floor near the entrance only holds small change.
 
 | Size        | Hands            | Examples                                 | Value       |
@@ -153,13 +154,20 @@ screen.
   with doorways, a way up from every storey, tiles by wave function collapse, and nothing left
   that can't be reached. The tile viewer (`/tiles.html`) draws generated levels, every tile and
   hand-written grids without a server, to inspect them.
-- **Next:** room types that decide what's in a room (props, loot, light), multi-cell pieces, and
-  loot placed so value rises with depth, height and darkness.
+- **The warehouse:** generated levels are a furnished harbour warehouse, 14 × 12 cells on four
+  storeys: rooms have kinds, `shared/furnish.ts` places props from `shared/props.ts`, light
+  fittings and loot by depth, height and darkness, and keeps 1.4 m ways through. The client draws
+  the building from the grid with finishes per room kind (`building.ts`), the props, decals and
+  dust (`dressing.ts`), on surfaces baked in code (`pnpm run surface`), lit by its own fittings
+  through a baked light volume (`interiorLight.ts`).
+- **Next:** the cargo models still drawn as boxes (forklift, bulk bag, cable reel, tarped machine,
+  tyre stack, rope coil, gas cage, weigh scale, bay sign, strip curtain), fewer and less crowded
+  offices and staff rooms, the jackpot safe, and multi-cell pieces.
 
 ### 5. First enemies
 
 - Health, and death: a ragdoll on the server, with the player's items dropped beside it.
-- Ticks and worms on the server, with simple pathfinding through the shelving.
+- Ticks and worms on the server, with simple pathfinding through the racking.
 - More and faster enemies, and failing lights, as dawn approaches.
 - The shovel as the first weapon, found in the building.
 - **Done when:** players get scared, and someone dies for a TV that wasn't worth it.
