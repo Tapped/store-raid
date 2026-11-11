@@ -1047,6 +1047,17 @@ function wallRect(ctx: Context, parts: PartBuilder, plan: Plan, face: WallFace) 
       fractions(columns, face.a0, face.a1),
       fractions(rows(plan.base, y0, y1), y0, y1),
     );
+    // Skirting and trim strips stand proud of the wall, to catch the light along their tops.
+    const trim = y1 - y0 <= 0.12 && (coat.surface === "rubber" || coat.surface === "painted-steel");
+    if (trim && face.code !== SLAB_EDGE) {
+      const proud = face.sign * (coat.surface === "rubber" ? 0.012 : 0.008);
+      const [lo, hi] = [
+        Math.min(face.coord, face.coord + proud),
+        Math.max(face.coord, face.coord + proud),
+      ];
+      if (face.axis === "x") parts.box(coat.surface, [lo, y0, face.a0], [hi, y1, face.a1], 0.003);
+      else parts.box(coat.surface, [face.a0, y0, lo], [face.a1, y1, hi], 0.003);
+    }
   }
   // Under the roof, a closure angle where the wall meets the deck, hiding the ribs' ends.
   if (plan.storey === ctx.top && face.y1 >= plan.ceiling - EPS && face.code !== SLAB_EDGE) {
@@ -1179,7 +1190,9 @@ function pilaster(ctx: Context, parts: PartBuilder, plan: Plan, face: WallFace, 
       "-y",
       "+y",
     ]);
-  // A base plate.
+  // A base plate, where there's a floor for it to stand on.
+  const standing = ctx.tile(plan.storey, face.col, face.row)?.kind;
+  if (standing !== "floor" && standing !== "tv" && standing !== "ladder") return;
   const plate = 0.025;
   const lo2 = Math.min(face.coord, face.coord + face.sign * (out + 0.03));
   const hi2 = Math.max(face.coord, face.coord + face.sign * (out + 0.03));
@@ -1985,8 +1998,21 @@ function lanes(ctx: Context, parts: PartBuilder) {
         const [a0, a1] = alongX ? [cell.minX, cell.maxX] : [cell.minZ, cell.maxZ];
         // Lines along x run into the corners; lines along z stop at them.
         const trim = alongX ? INSET : INSET + WIDTH;
-        const start = walled(col, row, s0 as Side) ? a0 + trim : a0;
-        const end = walled(col, row, s1 as Side) ? a1 - trim : a1;
+        // Ending short of whatever isn't floor beyond the cell: a pit's edge, stairs.
+        const floorBeyond = (side: Side) => {
+          const next = ctx.tile(room.storey, col + OFFSET[side][0], row + OFFSET[side][1])?.kind;
+          return next === "floor" || next === "tv";
+        };
+        const start = walled(col, row, s0 as Side)
+          ? a0 + trim
+          : floorBeyond(s0 as Side)
+            ? a0
+            : a0 + 0.3;
+        const end = walled(col, row, s1 as Side)
+          ? a1 - trim
+          : floorBeyond(s1 as Side)
+            ? a1
+            : a1 - 0.3;
         if (end - start < 0.2) continue;
         const line = {
           n: cell.maxZ - INSET,
