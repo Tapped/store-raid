@@ -24,6 +24,11 @@ client/src/hands.ts        FirstPersonHands: the player's own gloved hands at th
 client/src/players.ts      PlayerView: animated character (capsule if the model is missing) + billboard name tag
 client/src/items.ts        ItemView: a phone, flashlight, TV, box or sofa, drawn where the server says: models/props/<kind>.glb, else boxes
 client/src/props.ts        addProps(): scenery models, drawn only, with no collision
+client/src/dressing.ts     addDressing(): a generated level's props, thin instances chunked by room, lamps glowing with their fittings, placeholders for missing models
+client/src/propAtlas.ts    loadModel(): a prop .glb with its parts merged into one mesh over texture atlases, so it's one draw call
+client/src/visibility.ts   roomVisibility(): which rooms can be seen from a camera, through doorways and openings, to leave the rest undrawn
+client/src/decals.ts       addDecals(): lane lines, bay numbers, keep-clear boxes, stains, posters and signs, from one atlas drawn at load
+client/src/dust.ts         addDust(): motes round the camera that catch the room's light and flashlight beams
 client/src/playground.ts   addPlayground(): the playground hall: roof, beams, lights on the dimmer, and CONCEPTS on show
 client/src/terrain.ts      addTerrain(): a level's floors, planks, stairs, ladders, railings and pits; worldBox() for seamless tiling
 client/src/tileViewer.ts   the tile viewer at /tiles.html: generated levels, every tile and hand-written grids, drawn by the game's code, to inspect
