@@ -12,6 +12,7 @@ import {
 import type { Level, LightSpawn, PropSpawn } from "../../shared/level";
 import { PROPS, type PropKind, type PropName } from "../../shared/props";
 import { STOREY } from "../../shared/tiles";
+import { surfaceMaterial } from "./graphics";
 import type { InteriorLighting } from "./interiorLight";
 import { loadModel } from "./propAtlas";
 import type { World } from "./scene";
@@ -52,8 +53,12 @@ const LOOK = tunables(
       max: 1,
       hint: "How brightly glowing things on their own power (a snack machine's window) glow with the lights off",
     },
+    cullRooms: {
+      value: true,
+      hint: "Leave out rooms that can't be seen from the camera, behind walls and floors",
+    },
     steadyGlow: {
-      value: 1,
+      value: 2.5,
       min: 0,
       max: 10,
       hint: "How brightly glowing things that aren't light fittings glow",
@@ -378,9 +383,10 @@ export function addDressing(world: World, lighting: InteriorLighting | undefined
   /** Plain boxes for every model that isn't there yet: one mesh a chunk, for all of them. */
   const drawMissing = (missing: PropName[]) => {
     if (missing.length === 0) return;
-    const material = new PBRMaterial("dressing-placeholder", scene);
-    material.albedoColor = new Color3(0.32, 0.31, 0.3);
-    material.roughness = 0.85;
+    // Dull and mid-grey, so a box stands in without drawing the eye.
+    const material = surfaceMaterial("dressing-placeholder", scene, new Color3(0.36, 0.36, 0.38), {
+      roughness: 0.85,
+    });
     material.metallic = 0;
     const box = MeshBuilder.CreateBox("dressing-placeholder", { size: 1 }, scene);
     box.material = material;
@@ -437,7 +443,7 @@ export function addDressing(world: World, lighting: InteriorLighting | undefined
   scene.onBeforeRenderObservable.add(() => {
     const camera = scene.activeCamera;
     if (!camera) return;
-    const visible = visibility?.visible(camera);
+    const visible = LOOK.cullRooms ? visibility?.visible(camera) : undefined;
     lastVisible = visible;
     for (const [room, meshes] of rooms) {
       const show = room < 0 || !visible || visible.has(room);
@@ -471,6 +477,50 @@ export function addDressing(world: World, lighting: InteriorLighting | undefined
       return false;
     }
   };
+
+  /**
+   * Bulbs with no fitting of their own, as staff rooms and plant rooms have: a shade on a flex
+   * from the ceiling, round the lighting's glowing bulb.
+   */
+  const drawPendants = () => {
+    const bulbs = level.lights.filter((light, i) => light.kind === "bulb" && !lightsTaken.has(i));
+    if (bulbs.length === 0) return;
+    const flex = MeshBuilder.CreateCylinder(
+      "pendant-flex",
+      { diameter: 0.012, height: 0.26, tessellation: 6 },
+      scene,
+    );
+    flex.position.y = 0.17;
+    const shade = MeshBuilder.CreateCylinder(
+      "pendant-shade",
+      {
+        diameterTop: 0.07,
+        diameterBottom: 0.34,
+        height: 0.15,
+        tessellation: 20,
+        cap: Mesh.CAP_START,
+      },
+      scene,
+    );
+    shade.position.y = 0.03;
+    const pendant = Mesh.MergeMeshes([flex, shade], true) as Mesh;
+    pendant.name = "dressing-pendant";
+    pendant.material = surfaceMaterial("dressing-pendant", scene, new Color3(0.16, 0.22, 0.19), {
+      roughness: 0.45,
+      metallic: 0.4,
+    });
+    pendant.material.backFaceCulling = false;
+    pendant.isPickable = false;
+    const matrices = new Float32Array(bulbs.length * 16);
+    for (const [i, light] of bulbs.entries()) {
+      Matrix.Translation(light.x, light.y, light.z).copyToArray(matrices, i * 16);
+    }
+    pendant.thinInstanceSetBuffer("matrix", matrices, 16, true);
+    pendant.thinInstanceSetBuffer("previousMatrix", matrices, 16, true);
+    pendant.thinInstanceRefreshBoundingInfo(false);
+    pendant.freezeWorldMatrix();
+  };
+  drawPendants();
 
   const ready = (async () => {
     const models = [...byModel.keys()];
