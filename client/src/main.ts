@@ -4,6 +4,7 @@ import { modeFor } from "../../shared/modes";
 import { addAmbience } from "./ambience";
 import { addDecals } from "./decals";
 import { addDressing } from "./dressing";
+import { addDust } from "./dust";
 import { FOOTSTEPS } from "./footsteps";
 import { createEngine } from "./graphics";
 import { POSES } from "./hands";
@@ -42,6 +43,7 @@ const lighting = addInteriorLighting(world);
 const dressing = world.level.props.length > 0 ? addDressing(world, lighting) : undefined;
 // And the markings on its floors and walls (client/src/decals.ts).
 const decals = world.level.props.length > 0 ? addDecals(world) : undefined;
+if (lighting && world.level.props.length > 0) addDust(world, lighting);
 const playground = world.level.roof !== undefined ? addPlayground(world, lighting) : undefined;
 if (!playground) {
   void addProps(world);

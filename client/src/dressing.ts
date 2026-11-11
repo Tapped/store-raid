@@ -384,7 +384,7 @@ export function addDressing(world: World, lighting: InteriorLighting | undefined
   const drawMissing = (missing: PropName[]) => {
     if (missing.length === 0) return;
     // Dull and mid-grey, so a box stands in without drawing the eye.
-    const material = surfaceMaterial("dressing-placeholder", scene, new Color3(0.36, 0.36, 0.38), {
+    const material = surfaceMaterial("dressing-placeholder", scene, new Color3(0.22, 0.22, 0.23), {
       roughness: 0.85,
     });
     material.metallic = 0;

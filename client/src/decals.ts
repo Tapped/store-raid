@@ -20,7 +20,7 @@ import { tunables } from "./tuning";
 const LOOK = tunables(
   "Look/Decals",
   {
-    opacity: { value: 0.9, min: 0, max: 1, hint: "How strongly the markings show" },
+    opacity: { value: 0.8, min: 0, max: 1, hint: "How strongly the markings show" },
     roughness: { value: 0.75, min: 0, max: 1 },
   },
   (values) => {
@@ -272,7 +272,7 @@ function drawAtlas(context: CanvasRenderingContext2D) {
     context.stroke();
   }
   context.restore();
-  wear(context, hatch, 0.6, next);
+  wear(context, hatch, 0.75, next);
 
   // Oil: dark and slightly brown; drips: grey water stains with rings.
   for (const region of REGIONS.oil) blot(context, region, next, [12, 9, 6], 0.75, 26);
@@ -780,6 +780,7 @@ export function addDecals(world: World): Mesh | undefined {
   }
 
   // Keep-clear boxes either side of doorways, in rooms with painted floors.
+  const hatched: [number, number, number][] = [];
   for (const room of level.rooms) {
     if (!FLOOR_PAINT.has(room.kind)) continue;
     for (const { col, row } of room.cells) {
@@ -787,16 +788,21 @@ export function addDecals(world: World): Mesh | undefined {
       if (tile?.kind !== "floor") continue;
       for (const side of SIDES) {
         const edge = parsed.edge(room.storey, col, row, side);
-        if (edge !== "door" && edge !== "arch") continue;
+        // Doorways only: arches are wide ways through, not doors to keep clear.
+        if (edge !== "door") continue;
         const [dx, dz] = OFFSET[side];
         const middleX = grid.x + (col + 0.5) * CELL;
         const middleZ = grid.z + (row + 0.5) * CELL;
-        const wide = edge === "arch" ? 3.2 : 1.8;
+        const wide = 1.8;
         const deep = 1.1;
         const inset = CELL / 2 - WALL / 2 - deep / 2 - 0.08;
         const x = middleX + dx * inset;
         const z = middleZ + dz * inset;
         if (!free(room.y, x, z, 0)) continue;
+        // Nor where one is already, at a corner with doors on two sides.
+        if (hatched.some(([hx, hz, hy]) => hy === room.y && Math.hypot(hx - x, hz - z) < 1.6))
+          continue;
+        hatched.push([x, z, room.y]);
         // Its long side along the wall: its top away from the doorway.
         quads.floor(x, room.y, z, [-dx, -dz], wide, deep, REGIONS.hatch);
       }
