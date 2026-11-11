@@ -85,6 +85,23 @@ def profile(name, points, length, at, axis, mat, seed=0.0):
     return lib.assign(obj, mat)
 
 
+def cut(obj, cutter):
+    """Cut `cutter`'s volume out of obj (its modifiers applied first), then remove the cutter."""
+    bpy.context.view_layer.update()
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    for m in list(obj.modifiers):
+        bpy.ops.object.modifier_apply(modifier=m.name)
+    mod = obj.modifiers.new("cut", "BOOLEAN")
+    mod.operation = "DIFFERENCE"
+    mod.solver = "EXACT"
+    mod.object = cutter
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    bpy.data.objects.remove(cutter)
+    return obj
+
+
 def mesh_object(name, verts, faces, mat, seed=0.0):
     """An object from vertex and face lists, tagged as one part."""
     mesh = bpy.data.meshes.new(name)
@@ -139,6 +156,18 @@ def smooth(n, v, lo, hi):
     n.set(node.inputs["From Min"], lo)
     n.set(node.inputs["From Max"], hi)
     return node.outputs["Result"]
+
+
+def lettering(name, body, size, at, mat, facing="-y", depth=0.0008):
+    """lib.text() at a low curve resolution: signs and stencils don't need smooth letters."""
+    obj = lib.text(name, body, size, at, depth=depth, mat=mat, facing=facing)
+    obj.data.resolution_u = 1
+    return obj
+
+
+def inside_band(n, v, centre, half):
+    """1 where v is within `half` of `centre`, else 0."""
+    return n.math("LESS_THAN", n.math("ABSOLUTE", n.math("SUBTRACT", v, centre)), half)
 
 
 def inv(n, v):
@@ -214,12 +243,13 @@ SALT = (0.42, 0.41, 0.38)
 
 
 def paint(name, color, size=1024, wear=1.0, rust=1.0, gloss=0.42, dust=1.0, grime=1.0,
-          primer=PRIMER, floor=0.0, detail=None, chalky=0.35, salt=0.6):
+          primer=PRIMER, floor=0.0, detail=None, chalky=0.35, salt=0.6, decal=None):
     """
     Painted steel fifteen years on: mottled, chipped in clusters and along edges to primer, bare
     steel and rust, scuffed near the floor (`floor` is where the floor is, in model z), grimy low
     and in creases, dusty on top. `detail(n, p)` may add holes, slots or panel lines: it returns
     (dark, height): where it darkens to a hole and how it moves the surface (0 to 1, 1 the face).
+    `decal(n, base)` may print graphics on the paint before it wears: it returns the new colour.
     """
     mat, n = lib.procedural(name, size)
     p = seeded(n)
@@ -232,6 +262,8 @@ def paint(name, color, size=1024, wear=1.0, rust=1.0, gloss=0.42, dust=1.0, grim
     # Chalking: paint fades and lightens in broad patches.
     chalk = smooth(n, n.noise(0.9, detail=2, vector=p), 0.55, 0.8)
     base = n.mix(mul(n, chalk, chalky), base, tint(color, 1.5))
+    if decal is not None:
+        base = decal(n, base)
 
     edge = edges(n)
     crease = cavity(n)
@@ -1015,10 +1047,10 @@ def crate(at, size, mat, rng, ink=None):
     for sy in (-1, 1):
         part("brace", (b, t, h - 2 * b), (x, y + sy * (d / 2 - t / 2), zc), mat, rng.random())
     if ink is not None:
-        lib.text("stencil", "THIS WAY UP", 0.05, (x - w / 4, y - d / 2 + t - 0.0005, zc + 0.12),
-                 depth=0.0005, mat=ink)
-        lib.text("stencil", "NSS-0417", 0.045, (x - w / 4, y - d / 2 + t - 0.0005, zc - 0.1),
-                 depth=0.0005, mat=ink)
+        lettering("stencil", "THIS WAY UP", 0.05, (x - w / 4, y - d / 2 + t - 0.0005, zc + 0.12),
+                  ink, depth=0.0005)
+        lettering("stencil", "NSS-0417", 0.045, (x - w / 4, y - d / 2 + t - 0.0005, zc - 0.1), ink,
+                  depth=0.0005)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1237,12 +1269,12 @@ def butcher_block(name="benchtop", size=1024):
     x, y, z = n.xyz()
     p = seeded(n)
     strip = n.math("FLOOR", n.math("DIVIDE", y, 0.045))
-    tone = n.math("FRACT", n.math("MULTIPLY", n.math("SIN", n.math("MULTIPLY", strip, 12.9898)), 43758.5))
+    tone = n.math("FRACT", n.math("MULTIPLY", n.math("SINE", n.math("MULTIPLY", strip, 12.9898)), 43758.5))
     q = n.vec(n.math("MULTIPLY", x, 2.0), n.math("MULTIPLY", y, 60.0), n.math("ADD", n.math("MULTIPLY", z, 60.0), strip))
     grain = n.noise(1.0, 5, roughness=0.6, vector=q)
-    c = n.mix(tone, (0.3, 0.17, 0.08), (0.42, 0.25, 0.12))
-    c = n.mix(mul(n, grain, 0.4), c, (0.16, 0.08, 0.035))
-    oil = smooth(n, n.noise(1.6, 4, vector=p), 0.55, 0.7)
+    c = n.mix(tone, (0.17, 0.09, 0.04), (0.27, 0.15, 0.065))
+    c = n.mix(mul(n, grain, 0.4), c, (0.1, 0.05, 0.02))
+    oil = smooth(n, n.noise(1.6, 4, vector=p), 0.47, 0.66)
     ring = inv(n, smooth(n, n.math("ABSOLUTE", n.math("SUBTRACT", n.noise(3.0, 2, vector=p), 0.6)), 0.0, 0.008))
     c = n.mix(mul(n, oil, 0.85), c, (0.025, 0.02, 0.015))
     c = n.mix(mul(n, ring, 0.6), c, (0.03, 0.02, 0.012))
@@ -1256,4 +1288,62 @@ def butcher_block(name="benchtop", size=1024):
     rough = n.lerp(oil, rough, 0.3)
     n.out(**{"Base Color": c, "Roughness": rough,
              "Normal": bump(n, add(n, mul(n, grain, 0.4), mul(n, cuts, -1.0)), 0.0015)})
+    return mat
+
+
+# ---------------------------------------------------------------------------------------------
+# Office
+
+
+def laminate(name="laminate", color=(0.25, 0.23, 0.2), size=1024):
+    """
+    Office melamine: a fine speckle, worn shiny where arms rest, chipped to the brown core along
+    edges, mug rings and scratches, grubby low down and dusty on top.
+    """
+    mat, n = lib.procedural(name, size)
+    p = seeded(n)
+    _, _, wz = n.xyz()
+    speck = n.noise(220, 2, vector=p)
+    c = n.mix(speck, tint(color, 0.88), tint(color, 1.08))
+    c = n.mix(mul(n, smooth(n, n.noise(1.5, 3, vector=p), 0.5, 0.8), 0.4), c, tint(color, 0.7))
+    edge = edges(n, 0.004)
+    chip = mul(n, edge, smooth(n, n.noise(30, 6, vector=p), 0.55, 0.62))
+    c = n.mix(chip, c, (0.2, 0.13, 0.07))
+    ring = inv(n, smooth(n, n.math("ABSOLUTE", n.math("SUBTRACT", n.noise(2.4, 2, vector=p), 0.62)), 0.0, 0.006))
+    up = smooth(n, normal_z(n), 0.6, 0.9)
+    c = n.mix(mul(n, ring, up, 0.6), c, (0.08, 0.05, 0.025))
+    sv = vm(n, "MULTIPLY", p, (40.0, 3.0, 40.0))
+    scratch = inv(n, smooth(n, n.math("ABSOLUTE", n.math("SUBTRACT", n.noise(1.0, 2, vector=sv), 0.5)), 0.0, 0.008))
+    c = n.mix(mul(n, scratch, up, 0.4), c, tint(color, 1.4))
+    low = inv(n, smooth(n, wz, 0.0, 0.3))
+    c = n.mix(mul(n, add(n, low, mul(n, cavity(n), 0.7)), 0.6), c, DIRT)
+    dusty = mul(n, up, smooth(n, n.noise(5, 3, vector=p), 0.45, 0.8))
+    c = n.mix(mul(n, dusty, 0.5), c, DUST)
+    worn = smooth(n, n.noise(1.2, 2, vector=p), 0.55, 0.75)
+    rough = n.lerp(worn, 0.45, 0.25)
+    rough = n.lerp(chip, rough, 0.8)
+    rough = n.lerp(dusty, rough, 0.9)
+    n.out(**{"Base Color": c, "Roughness": rough,
+             "Normal": bump(n, add(n, mul(n, speck, 0.2), mul(n, chip, -1.0), mul(n, scratch, -0.3)), 0.0008)})
+    return mat
+
+
+def keys(name="keyboard", size=512):
+    """A dark keyboard: rows of keycaps with grime between, the commonest keys worn shiny."""
+    mat, n = lib.procedural(name, size)
+    L = attr(n, "local").outputs["Vector"]
+    lx, ly, lz = split(n, L)
+    p = seeded(n)
+    gx = n.math("FRACT", n.math("DIVIDE", lx, 0.019))
+    gy = n.math("FRACT", n.math("DIVIDE", ly, 0.019))
+    cap = mul(n, smooth(n, gx, 0.08, 0.16), inv(n, smooth(n, gx, 0.84, 0.92)),
+              smooth(n, gy, 0.08, 0.16), inv(n, smooth(n, gy, 0.84, 0.92)))
+    top = smooth(n, normal_z(n), 0.7, 0.9)
+    c = n.mix(cap, (0.008, 0.008, 0.009), (0.035, 0.035, 0.037))
+    glyph = mul(n, cap, top, n.math("GREATER_THAN", n.noise(1.0, 0, vector=vm(n, "MULTIPLY", p, (300.0, 300.0, 1.0))), 0.72))
+    c = n.mix(mul(n, glyph, 0.8), c, (0.3, 0.3, 0.3))
+    grime = mul(n, inv(n, cap), top)
+    c = n.mix(mul(n, grime, smooth(n, n.noise(20, 3, vector=p), 0.3, 0.7)), c, (0.06, 0.05, 0.04))
+    rough = n.lerp(mul(n, cap, smooth(n, n.noise(8, 2, vector=p), 0.5, 0.7)), 0.6, 0.3)
+    n.out(**{"Base Color": c, "Roughness": rough, "Normal": bump(n, mul(n, cap, top), 0.003)})
     return mat
