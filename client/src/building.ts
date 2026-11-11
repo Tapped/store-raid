@@ -1097,11 +1097,17 @@ function wallRect(ctx: Context, parts: PartBuilder, plan: Plan, face: WallFace) 
   ) {
     const grid = ctx.level.grid as NonNullable<Level["grid"]>;
     const origin = face.axis === "x" ? grid.z : grid.x;
+    // Faces are cut where the room behind them changes cell, so each cell boundary along the wall
+    // starts one face, or lies inside a longer one.
+    const cols = ctx.parsed.cols;
+    const rowCount = ctx.parsed.rows;
+    const last = face.axis === "x" ? rowCount : cols;
     for (
-      let k = Math.ceil((face.a0 - origin + 0.35) / CELL);
+      let k = Math.ceil((face.a0 - origin - EPS) / CELL);
       origin + k * CELL < face.a1 - 0.35;
       k++
     ) {
+      if (k <= 0 || k >= last) continue;
       pilaster(ctx, parts, plan, face, origin + k * CELL);
     }
   }
@@ -1646,6 +1652,28 @@ function railings(ctx: Context, parts: PartBuilder) {
       alongX ? [k1[0], k1[1], mid + half] : [mid + half, k1[1], k1[2]],
       0.002,
     );
+    // The slab's nose: a steel angle over its edge, and hazard paint inside the railing.
+    const across = alongX ? [box.minZ, box.maxZ] : [box.minX, box.maxX];
+    const middle = (start + end) / 2;
+    const openBeyond = (v: number) => {
+      const [col, row] = alongX ? ctx.cellOf(middle, v) : ctx.cellOf(v, middle);
+      const kind = ctx.tile(storey, col, row)?.kind;
+      return kind === "open" || kind === "well";
+    };
+    const sign = openBeyond(across[1] + 0.05) ? 1 : openBeyond(across[0] - 0.05) ? -1 : 0;
+    if (sign !== 0) {
+      const edge = sign > 0 ? across[1] : across[0];
+      const span = (a0: number, a1: number, y0: number, y1: number, surface: SurfaceName) =>
+        alongX
+          ? parts.box(surface, [start, y0, Math.min(a0, a1)], [end, y1, Math.max(a0, a1)], 0.002)
+          : parts.box(surface, [Math.min(a0, a1), y0, start], [Math.max(a0, a1), y1, end], 0.002);
+      parts.paint = linear(ctx.livery.steel);
+      span(edge - sign * 0.05, edge + sign * 0.006, box.y, box.y + 0.006, "painted-steel");
+      span(edge, edge + sign * 0.006, box.y - 0.1, box.y + 0.006, "painted-steel");
+      parts.paint = undefined;
+      span(edge - sign * 0.07, edge - sign * 0.19, box.y, box.y + 0.003, "hazard");
+      parts.paint = linear(ctx.livery.rail);
+    }
     const count = Math.max(1, Math.round((end - start) / 1.33));
     for (let i = 0; i <= count; i++) {
       const p = at(start + ((end - start) * i) / count, top);
@@ -2038,7 +2066,7 @@ function loadingDoor(ctx: Context, parts: PartBuilder) {
   parts.chunk = "s0";
   parts.wear = steelWear(ctx, 0, 0.6);
   // The curtain of slats.
-  parts.paint = linear(vary(ctx.livery.steel, ctx.seed + 41, 0.05).scale(1.5));
+  parts.paint = linear(vary(rgb(0.36, 0.4, 0.42), ctx.seed + 41, 0.06));
   const slat = 0.1;
   const vs: number[] = [];
   for (let y = 0.06; y <= height; y += slat / 4) vs.push(round(y));
