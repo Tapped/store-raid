@@ -1,5 +1,6 @@
 allowBuilds:
   esbuild: true
   msgpackr-extract: true
+  webgpu: false
 patchedDependencies:
   "@babylonjs/core@9.33.1": patches/@babylonjs__core@9.33.1.patch
