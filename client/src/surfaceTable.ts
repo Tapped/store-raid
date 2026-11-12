@@ -318,6 +318,58 @@ const TABLE = {
     },
     about: "River bed and bank: rounded wet cobbles and pebbles packed in sand",
   },
+  // Detail maps (client/src/detailMap.ts, lib/detail.wgsl): neutral micro-detail tiled over the
+  // village models' bakes close up. Normal from the height; base a colour multiplier as grey, 0.5
+  // for ×1; orm the cavity's occlusion and 0.5 + a roughness offset. Wood, bark and paint run along u.
+  "detail-wood": {
+    tile: 0.5,
+    size: 1024,
+    color: [0.5, 0.5, 0.5],
+    variation: {},
+    about: "Detail: weathered softwood along u, raised latewood, furred fibre, checks",
+  },
+  "detail-paint": {
+    tile: 0.5,
+    size: 1024,
+    color: [0.5, 0.5, 0.5],
+    variation: {},
+    about: "Detail: old paint on boards along u, grain telegraphing, crazing, lifting flakes",
+  },
+  "detail-stone": {
+    tile: 0.6,
+    size: 1024,
+    color: [0.5, 0.5, 0.5],
+    variation: {},
+    about: "Detail: granite and gneiss, salt-and-pepper crystals, pits, hairline cracks",
+  },
+  "detail-slate": {
+    tile: 0.5,
+    size: 1024,
+    color: [0.5, 0.5, 0.5],
+    variation: {},
+    about: "Detail: slate, cleavage laminae along u, flaked terraces, chipped steps",
+  },
+  "detail-moss": {
+    tile: 0.4,
+    size: 1024,
+    color: [0.5, 0.5, 0.5],
+    variation: {},
+    about: "Detail: moss cushions and turf, sprigs, tufts and dead fibre",
+  },
+  "detail-bark": {
+    tile: 0.5,
+    size: 1024,
+    color: [0.5, 0.5, 0.5],
+    variation: {},
+    about: "Detail: spruce and birch bark along u, plates, fissures, flaking scale",
+  },
+  "detail-iron": {
+    tile: 0.3,
+    size: 1024,
+    color: [0.5, 0.5, 0.5],
+    variation: {},
+    about: "Detail: rusted iron, pitting, flaking scale, granular oxide",
+  },
 } satisfies Record<string, SurfaceSpec>;
 
 export type SurfaceName = keyof typeof TABLE;

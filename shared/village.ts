@@ -245,7 +245,7 @@ export function fbm(x: number, z: number, octaves: number, salt: number): number
 function sideRise(s: number, x: number, z: number): number {
   const steep = s < 10 ? 0.04 * s * s : 4 + 0.9 * (s - 10) + 0.0011 * (s - 10) ** 2;
   // Levelling off into the fells, so a ridge line shows against the sky, with peaks along it.
-  const ridge = 150 + 110 * fbm(x / 160, z / 160, 3, 13);
+  const ridge = 150 + 110 * fbm(x / 160, z / 160, 3, 13) + 50 * (fbm(x / 38, z / 38, 3, 17) - 0.5);
   const base = steep < ridge ? steep : ridge + (steep - ridge) * 0.12;
   // Ridges and gullies, growing with the height.
   const rough = (fbm(x / 45, z / 45, 4, 11) - 0.5) * Math.min(1, s / 14) * (8 + 0.2 * s);
@@ -266,6 +266,9 @@ export function villageGround(x: number, z: number): number {
   // The ramp up the knoll, between its walls.
   if (Math.abs(x) <= PATH.half && z >= PATH.from && z <= PATH.to) return pathHeight(z);
   let h = floor;
+  // Crags along the headwall's top, so it doesn't meet the sky in a straight line.
+  if (z > HEADWALL + 20)
+    h += 70 * (fbm(x / 40, z / 40, 4, 19) - 0.5) * Math.min(1, (z - HEADWALL - 20) / 120);
   const { a, b } = channel(Math.floor(z));
   if (x > a - RIVER_BANK && x < b + RIVER_BANK) {
     const t =

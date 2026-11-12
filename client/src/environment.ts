@@ -27,6 +27,11 @@ export interface Environment {
   light: { group: string; hemi: number; sun: number; environment: number; fog: number };
   /** The sky light's colour from above and below, and the sun's, where they differ from dusk's. */
   colours?: { sky: Color3; ground: Color3; sun: Color3 };
+  /**
+   * Where the sun (or moon) shines from, if not dusk's, and whether its shadow map follows the
+   * camera, for scenery spread over a whole valley. Without, one map covers what casts shadows.
+   */
+  sun?: { direction: Vector3; follow: boolean };
   /** The spot the lobby camera circles while nobody has joined. */
   lobby: { target: Vector3; beta: number; radius: number };
   /** Draws it; settles once it has loaded. */
@@ -67,6 +72,8 @@ export const ENVIRONMENTS: Record<EnvironmentName, Environment> = {
       ground: new Color3(0.08, 0.09, 0.1),
       sun: new Color3(0.7, 0.8, 1),
     },
+    // A moon high behind the cloud, a little west of south: soft shadows that ground the buildings.
+    sun: { direction: new Vector3(0.35, -1, 0.45), follow: true },
     // On the track at the first farm, looking about the valley.
     lobby: { target: new Vector3(roadX(-60), 3, -60), beta: 1.42, radius: 8 },
     draw: (world) => addVillage(world),

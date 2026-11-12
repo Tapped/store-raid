@@ -111,6 +111,19 @@ export const CURVES = tunables(
 /** Every picture graded, to grade again when the settings change. */
 const graded = new Set<ImageProcessingConfiguration>();
 
+/**
+ * Settings of the grade an environment changes for itself (the village grades its night apart),
+ * applied over GRADE and CURVES. Levels without one are graded exactly as those say.
+ */
+export type GradeOverride = Partial<typeof GRADE & typeof CURVES>;
+let override: (() => GradeOverride) | undefined;
+
+/** Grades every picture with `get()`'s settings over the game's, from now on; regrade when they change. */
+export function overrideGrade(get: (() => GradeOverride) | undefined): void {
+  override = get;
+  regrade();
+}
+
 export function gradePicture(config: ImageProcessingConfiguration): void {
   config.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
   config.colorCurves = new ColorCurves();
@@ -124,15 +137,20 @@ export function gradePicture(config: ImageProcessingConfiguration): void {
 
 /** Puts the grade's settings into a picture, as they are now. */
 export function applyGrade(config: ImageProcessingConfiguration): void {
-  config.toneMappingEnabled = GRADE.toneMapping;
-  config.contrast = GRADE.contrast;
-  config.exposure = GRADE.exposure;
-  config.vignetteWeight = GRADE.vignetteWeight;
-  config.ditheringEnabled = GRADE.dithering;
-  if (config.colorCurves) Object.assign(config.colorCurves, CURVES);
+  const { toneMapping, contrast, exposure, vignetteWeight, dithering, ...curves } = {
+    ...GRADE,
+    ...CURVES,
+    ...override?.(),
+  };
+  config.toneMappingEnabled = toneMapping;
+  config.contrast = contrast;
+  config.exposure = exposure;
+  config.vignetteWeight = vignetteWeight;
+  config.ditheringEnabled = dithering;
+  if (config.colorCurves) Object.assign(config.colorCurves, curves);
 }
 
-function regrade() {
+export function regrade(): void {
   for (const config of graded) applyGrade(config);
 }
 
@@ -233,6 +251,15 @@ export function addCameraEffects(scene: Scene, camera: Camera): () => void {
   );
   ssao.samples = AMBIENT_OCCLUSION.samples;
   ssao.expensiveBlur = true;
+  // Its pass binds the random texture only once it knows its camera, which it's told when the pass
+  // before it runs. On a first frame where that pass's shader isn't ready yet but its own is, it
+  // drew without it: WebGPU rejected the bind group and the render loop stopped. Told up front.
+  const thin = (
+    ssao as unknown as {
+      _thinSSAORenderingPipeline?: { _ssaoPostProcess?: { camera: Camera | null } };
+    }
+  )._thinSSAORenderingPipeline?._ssaoPostProcess;
+  if (thin && !thin.camera) thin.camera = camera;
 
   // After ambient occlusion, so its noise is smoothed over frames along with the rest. Half floats
   // for the same reason as ambient occlusion. Its history can smear a moving picture: `taaFactor`

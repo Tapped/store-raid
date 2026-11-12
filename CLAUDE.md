@@ -42,7 +42,11 @@ client/src/store.ts        addShelves(): stocked shelving over the shelf collisi
 client/src/environment.ts  ENVIRONMENTS: what surrounds a level outdoors, as `Level.environment` names it: sky, fog, light, lobby spot, what draws it
 client/src/harbour.ts      addHarbour(): the harbour around the store, as instanced scenery with no collision
 client/src/village.ts      addVillage(): the valley round the village: ground from `villageGround`, track, river, bridge, models in culled chunks, mountains; its ambience
+client/src/groundCover.ts  GroundCover: grass, heather and fern cards toned to the ground they stand in, darker at the base, thinned out by distance
+client/src/heightFog.ts    addHeightFog(): mist lying in low ground, thinning upward, over every PBR surface (the village's)
+client/src/terrainBlend.ts TerrainBlend: large-scale patches, rock where steep (mapped from the side) and damp patches on a ground material
 client/src/paving.ts       addPavingVariation(): world-space brightness and damp patches on harbour paving
+client/src/detailMap.ts    addDetail(): tiling micro-detail (grain, crystals, moss) over the village models' bakes up close, triplanar in each piece's grain frame
 client/src/variation.ts    addSurfaceVariation(): breaks up tiled textures: hex tiling, shuffled brick courses or tiles, world-space drift and grime
 client/src/surfaces.ts     surface(scene, name, { tint }): the surface library as cached PBR materials: tint, cut-outs, variation
 client/src/surfaceTable.ts SURFACES: every library surface's tile size in meters, texture size, tint and variation
@@ -159,6 +163,9 @@ This is a solo, local project. Start everything with **`pnpm run dev`** (require
 - **Environments:** a level outdoors names what surrounds it, `Level.environment` (`"harbour"` for the store
   and harbour, `"village"`), and `ENVIRONMENTS` in `client/src/environment.ts` gives each its sky, fog
   colour, outdoor light (tunable under its own group), lobby spot, `draw()` and ambience. Halls have none.
+  An environment's `sun` can set its direction and make its one shadow map follow the camera
+  (`Rendering/Near shadows`), for scenery spread wide; `overrideGrade()` in graphics.ts lets it grade
+  its picture apart from the game's. Both are opt-in: levels without leave the harbour's look alone.
 - **The village** (`?level=village`, a game; `shared/village.ts`): a farm hamlet in a West Norwegian
   valley at night, pure and seeded. The track runs north from the truck (the dock, z ≈ -120) past
   farmsteads round yards, a farm over a footbridge and a boathouse, to a stave church on a knoll
@@ -170,6 +177,17 @@ This is a solo, local project. Start everything with **`pnpm run dev`** (require
   (sizes in `VILLAGE_MODELS`, origin mid-base, front +z), drawn as rough stand-ins until they exist;
   trees far off always are. The ground is the library's `meadow-grass`, `forest-floor`, `granite-rock`
   and `river-stones`, the track `gravel-track` (u along it, v across), each a plain colour if missing.
+  Its night look, all tunable under `Rendering/Village …`: its own grade (desaturated, blue-grey),
+  valley mist (`heightFog.ts`), the valley sides turning to rock where steep with large patches and
+  damp ground (`terrainBlend.ts`), ground darkened round the foot of buildings, trees, rocks and walls
+  (baked into its vertex colours), the moon's shadows from models near the camera onto the ground,
+  and a dense cover of small tufts laid round the walkable valley on the client (`coverPlacements()`),
+  all plants toned to the ground by `GroundCover`. `__village.torch(true)` lights a flashlight on the
+  active camera, to look about with the lobby camera.
+- **Material plugins** need a define of their own (`super(material, name, priority, { MY_PLUGIN:
+  false })` and `prepareDefines`) when only some materials get them: without one their code is left
+  out of any effect another material with the same defines compiled first. WebGPU allows 16
+  varyings: shadows take 2 per light (cascaded maps 9), detail maps 2, so add none lightly.
 - **Tiles** (`shared/tiles.ts`): the playground is a grid of 4 m cells on storeys 3 m apart,
   written as characters (`F` floor, `T` a TV showing static, `#` solid, `P` pit, `|`/`=` plank bridge, `^>v<` stairs and
   `nesw` ladders, both up towards that side, `.` open air). Storeys below ground are basements,
@@ -301,7 +319,9 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
   `assets/textures/surfaces/<name>-{base,normal,orm}.webp` and a contact sheet in
   `node_modules/.cache/surfaces/<name>/preview.png` in a second or two; `--watch` bakes again on every
   save of the recipe or library and prints compile errors as `file:line:col`, `--draft 512` writes only
-  the preview. Look at the sheet, then at the surface in the surface viewer. Meshes using `surface()` need UVs in meters ÷ `SURFACES[name].tile`,
+  the preview. Look at the sheet, then at the surface in the surface viewer. The `detail-*` surfaces are
+  detail maps, neutral (a colour multiplier as grey, a roughness offset; see `lib/detail.wgsl`), which
+  `client/src/detailMap.ts` tiles over the village models up close by material name (its `KINDS`). Meshes using `surface()` need UVs in meters ÷ `SURFACES[name].tile`,
   as `worldBox(…, SURFACES[name].tile)` makes; `upright` ones are a storey tall, v 0 on the floor.
 - `loadModel(scene, "models/props/crate.glb", placeholder)` shows the placeholder until the file
   exists, so use the final path from day one. Vite answers a missing asset with `200` and its HTML

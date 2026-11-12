@@ -74,6 +74,39 @@ export function createPlayerCamera(scene: Scene, name: string): FreeCamera {
   return camera;
 }
 
+/**
+ * Shadows from one map that follows the camera, for environments that ask for it: scenery spread
+ * over a whole valley would spread one fixed map too thin. Settings under Rendering/Near shadows.
+ * (Cascaded maps would cover further, but their receivers need more varyings than WebGPU allows
+ * materials that already carry many.)
+ */
+const NEAR_SHADOWS = tunables("Rendering/Near shadows", {
+  size: { value: 110, min: 20, max: 400, step: 5, hint: "Meters across the map round the camera" },
+});
+
+function followCamera(scene: Scene, sun: DirectionalLight) {
+  sun.autoUpdateExtends = false;
+  sun.autoCalcShadowZBounds = false;
+  sun.shadowMinZ = 0;
+  sun.shadowMaxZ = 600;
+  const at = new Vector3();
+  scene.onBeforeRenderObservable.add(() => {
+    const camera = scene.activeCamera;
+    if (!camera) return;
+    const size = NEAR_SHADOWS.size;
+    sun.shadowFrustumSize = size;
+    // Its middle a little ahead of the camera, snapped to whole texels so edges don't crawl.
+    const texel = size / SHADOW_MAP_SIZE;
+    const ahead = camera.getForwardRay(1).direction;
+    at.set(
+      Math.round((camera.globalPosition.x + ahead.x * size * 0.3) / texel) * texel,
+      Math.round(camera.globalPosition.y / texel) * texel,
+      Math.round((camera.globalPosition.z + ahead.z * size * 0.3) / texel) * texel,
+    );
+    sun.position.copyFrom(at).subtractInPlace(sun.direction.scale(300));
+  });
+}
+
 /** Static world: lights, ground and the level's boxes from shared/level.ts. */
 export function createWorld(engine: AbstractEngine, level: Level): World {
   const scene = new Scene(engine);
@@ -124,6 +157,8 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
     hemi.groundColor = environment.colours.ground;
     sun.diffuse = environment.colours.sun;
   }
+  if (environment?.sun) sun.direction = environment.sun.direction.normalizeToNew();
+  if (environment?.sun?.follow) followCamera(scene, sun);
   const shadows = new ShadowGenerator(SHADOW_MAP_SIZE, sun);
   configureShadows(shadows);
   // Outdoors: how much light comes from the sky, the sun and the reflections, as the environment

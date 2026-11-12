@@ -1,8 +1,12 @@
 import {
+  type AbstractMesh,
   Color3,
+  type DirectionalLight,
   DynamicTexture,
   Geometry,
+  Light,
   type Material,
+  type MaterialDefines,
   MaterialPluginBase,
   Matrix,
   Mesh,
@@ -10,6 +14,7 @@ import {
   PBRMaterial,
   type Scene,
   ShaderLanguage,
+  SpotLight,
   StandardMaterial,
   Texture,
   type TransformNode,
@@ -36,11 +41,15 @@ import {
   waterLevel,
 } from "../../shared/village";
 import { Loop } from "./audio";
-import { surfaceMaterial } from "./graphics";
+import { addDetail } from "./detailMap";
+import { overrideGrade, regrade, surfaceMaterial } from "./graphics";
+import { GroundCover, type GroundCoverLook } from "./groundCover";
+import { addHeightFog, type HeightFogLook } from "./heightFog";
 import { loadModel } from "./propAtlas";
-import type { World } from "./scene";
+import { LIGHT_PRIORITY, type World } from "./scene";
 import { SURFACES, type SurfaceName, surface } from "./surfaces";
 import { worldBox } from "./terrain";
+import { TerrainBlend, type TerrainLook } from "./terrainBlend";
 import { tunables } from "./tuning";
 
 /**
@@ -57,22 +66,61 @@ import { tunables } from "./tuning";
  * of its size built here, until a later page load finds it.
  */
 
-/** How far away each kind of thing is still drawn, in meters: the fog has taken it by then. */
-const REACH = tunables("Rendering/Village", {
-  plants: { value: 70, min: 10, max: 300, step: 5, hint: "Grass, heather and ferns" },
-  props: { value: 200, min: 20, max: 600, step: 10, hint: "Fences, walls, carts, poles" },
-  rocks: { value: 300, min: 20, max: 800, step: 10, hint: "Boulders and outcrops" },
-  trees: { value: 380, min: 50, max: 1000, step: 10 },
-  treeDetail: {
-    value: 160,
-    min: 0,
-    max: 1000,
-    step: 10,
-    hint: "Trees further off than this are drawn as rough stand-ins",
+/**
+ * The ground cover: grass, heather and fern, toned to the ground they stand in (GroundCover), and the
+ * dense cover of small tufts laid here over the walkable valley and its edges, close round the
+ * camera, so the ground reads as one field rather than a lawn dotted with tufts.
+ */
+const COVER = tunables(
+  "Rendering/Village ground cover",
+  {
+    grass: { value: 0.8, min: 0, max: 2, hint: "Grass tufts' brightness against the ground" },
+    heather: { value: 0.8, min: 0, max: 2 },
+    fern: { value: 0.7, min: 0, max: 2 },
+    saturation: { value: 0.6, min: 0, max: 1.5, hint: "1 keeps the cards' own colour" },
+    base: { value: 0.35, min: 0, max: 1, hint: "How dark the plants are at their foot" },
+    up: { value: 0.75, min: 0, max: 1, hint: "How far the cards are lit as the ground is" },
+    reach: { value: 36, min: 8, max: 80, step: 1, hint: "Meters the dense cover reaches" },
+    density: {
+      value: 1.6,
+      min: 0,
+      max: 4,
+      step: 0.1,
+      hint: "Dense cover's tufts per square meter at most (on reload)",
+    },
   },
-});
+  () => {
+    for (const update of coverLooks) update();
+  },
+);
+const coverLooks: (() => void)[] = [];
 
-type ModelClass = "building" | "prop" | "tree" | "rock" | "plant";
+/** Turns the models' shadows on or off, once they've loaded. */
+let setShadows: ((on: boolean) => void) | undefined;
+/** How far away each kind of thing is still drawn, in meters: the fog has taken it by then. */
+const REACH = tunables(
+  "Rendering/Village",
+  {
+    plants: { value: 70, min: 10, max: 300, step: 5, hint: "Grass, heather and ferns" },
+    props: { value: 200, min: 20, max: 600, step: 10, hint: "Fences, walls, carts, poles" },
+    rocks: { value: 300, min: 20, max: 800, step: 10, hint: "Boulders and outcrops" },
+    trees: { value: 380, min: 50, max: 1000, step: 10 },
+    shadows: { value: true, hint: "Buildings, props, rocks and trees cast the moon's shadows" },
+    treeDetail: {
+      value: 160,
+      min: 0,
+      max: 1000,
+      step: 10,
+      hint: "Trees further off than this are drawn as rough stand-ins",
+    },
+  },
+  ({ shadows }, key) => {
+    if (key === "shadows") setShadows?.(shadows);
+  },
+);
+
+/** "cover" is the dense ground cover laid round the walkable valley here, not in the layout. */
+type ModelClass = "building" | "prop" | "tree" | "rock" | "plant" | "cover";
 
 const CLASS: Record<VillageModel, ModelClass> = {
   "log-farmhouse": "building",
@@ -120,18 +168,21 @@ const CHUNK: Record<ModelClass, number> = {
   tree: 96,
   rock: 96,
   plant: 32,
+  cover: 32,
 };
 
 const reachOf = (kind: ModelClass) =>
   kind === "plant"
     ? REACH.plants
-    : kind === "prop"
-      ? REACH.props
-      : kind === "rock"
-        ? REACH.rocks
-        : kind === "tree"
-          ? REACH.trees
-          : Number.POSITIVE_INFINITY;
+    : kind === "cover"
+      ? COVER.reach
+      : kind === "prop"
+        ? REACH.props
+        : kind === "rock"
+          ? REACH.rocks
+          : kind === "tree"
+            ? REACH.trees
+            : Number.POSITIVE_INFINITY;
 
 // --- The ground's surfaces. ---
 
@@ -262,7 +313,8 @@ function axis(
     let step = 1;
     let v = start;
     while (Math.abs(v) < extent) {
-      step = Math.min(step * 1.22, 30);
+      // No coarser than 12 m, so the ridges against the sky don't run in straight lines.
+      step = Math.min(step * 1.22, 12);
       v += direction * step;
       list.push(v);
     }
@@ -276,6 +328,39 @@ function inChannel(x: number, z: number): boolean {
   const { a, b } = channel(Math.floor(z));
   return x > a - RIVER_BANK && x < b + RIVER_BANK && outside(x, z) < 1;
 }
+
+/** The ground's large-scale variation and the valley sides' rock (terrainBlend.ts). */
+const TERRAIN = tunables(
+  "Rendering/Village terrain",
+  {
+    rock: { value: 1, min: 0, max: 1, hint: "Bare rock on the valley sides where they're steep" },
+    steep: { value: 0.72, min: 0.3, max: 1, hint: "How upright ground keeps its forest floor" },
+    rockBrightness: { value: 0.45, min: 0, max: 2 },
+    macro: { value: 0.55, min: 0, max: 1, hint: "Large patches of lighter and darker ground" },
+    wet: {
+      value: 0.8,
+      min: 0,
+      max: 1,
+      hint: "Damp patches on the flat: darker, glossy by flashlight",
+    },
+  },
+  (values) => setTerrain(values),
+);
+const sideLook: TerrainLook = {
+  rock: 0,
+  steep: 0,
+  macro: 0,
+  rockTile: 1,
+  rockBrightness: 1,
+  wet: 0,
+};
+const flatLook: TerrainLook = { ...sideLook };
+function setTerrain(values: typeof TERRAIN) {
+  const tile = SURFACES["granite-rock"].tile * 2;
+  Object.assign(sideLook, { ...values, rockTile: tile });
+  Object.assign(flatLook, { ...values, rock: 0, rockTile: tile, macro: values.macro * 0.6 });
+}
+setTerrain(TERRAIN);
 
 /** The ground: the valley floor and its sides, split by surface into one mesh each. */
 function addGround(scene: Scene) {
@@ -339,6 +424,11 @@ function addGround(scene: Scene) {
   for (const [kind, list] of Object.entries(cells) as [Exclude<GroundKind, "track">, number[]][]) {
     if (list.length === 0) continue;
     const { material, tile } = groundSurface(scene, kind);
+    const rock = surface(scene, "granite-rock").albedoTexture;
+    if (rock && !material.pluginManager?.getPlugin("TerrainBlend")) {
+      // Only the valley sides turn to rock where they're steep; the knoll's are rock already.
+      new TerrainBlend(material, kind === "forest" ? sideLook : flatLook, rock);
+    }
     const remap = new Map<number, number>();
     const positions: number[] = [];
     const normalData: number[] = [];
@@ -362,7 +452,9 @@ function addGround(scene: Scene) {
         const across = Math.abs(normals[v * 3]) > Math.abs(normals[v * 3 + 2]) ? z : x;
         uvs.push(across / tile, y / tile);
       } else uvs.push(x / tile, z / tile);
-      colours.push(...groundColour(kind, x, y, z), 1);
+      const open = occlusion(x, z);
+      const [r, g, b] = groundColour(kind, x, y, z);
+      colours.push(r * open, g * open, b * open, 1);
       return index;
     };
     for (const a of list) {
@@ -430,10 +522,89 @@ function groundColour(kind: GroundKind, x: number, y: number, z: number): [numbe
   return [light, light, light * 1.02];
 }
 
+/** What surface the ground at a point is drawn with, as addGround splits it. */
+function groundKindAt(x: number, z: number): Exclude<GroundKind, "track"> {
+  if (inChannel(x, z)) return "riverbed";
+  if (outside(x, z) > 2.5 + 3 * fbm(x / 20, z / 20, 2, 3)) return "forest";
+  return normalAt(x, z) < 0.74 ? "rock" : "meadow";
+}
+
+/**
+ * How things standing on the ground shade it, as the sky above sees it: dark round the foot of a
+ * building, under a spruce's skirt, beside a boulder or a wall. Overcast and moonless, the sky is
+ * the only light, so this is what grounds them: 1 open, less where shaded, multiplying the ground's
+ * colour and the colour of the plants growing there.
+ */
+let occluders: ((x: number, z: number) => number) | undefined;
+
+/** How much a model shades the ground round it: how dark at its foot, and over how many meters it fades. */
+function shadeOf(model: VillageModel): { dark: number; reach: number; round: boolean } | undefined {
+  const kind = CLASS[model];
+  if (kind === "building") return { dark: 0.55, reach: 1.6, round: false };
+  if (model === "spruce-a" || model === "spruce-b") return { dark: 0.5, reach: 0, round: true };
+  if (kind === "tree") return { dark: 0.25, reach: 0, round: true };
+  if (kind === "rock") return { dark: 0.5, reach: 0.7, round: false };
+  if (model === "stone-wall" || model === "stone-wall-end" || model === "woodpile")
+    return { dark: 0.4, reach: 0.5, round: false };
+  if (model === "well" || model === "hay-cart" || model === "milk-ramp")
+    return { dark: 0.35, reach: 0.6, round: false };
+  return undefined;
+}
+
+function occlusion(x: number, z: number): number {
+  if (!occluders) {
+    const CELL = 16;
+    const cells = new Map<string, ((x: number, z: number) => number)[]>();
+    for (const p of village(VILLAGE_SEED).placements) {
+      const shade = shadeOf(p.model);
+      if (!shade) continue;
+      const [w, d] = VILLAGE_MODELS[p.model];
+      const c = Math.abs(Math.cos(p.turn));
+      const s = Math.abs(Math.sin(p.turn));
+      const scale = scaleOf(p, CLASS[p.model]);
+      const hx = ((w * c + d * s) / 2) * scale;
+      const hz = ((w * s + d * c) / 2) * scale;
+      // A tree shades the ground under its crown, most at the trunk; anything else round its foot.
+      const radius = shade.round ? Math.max(hx, hz) * 0.9 : 0;
+      const fade = shade.round ? radius : shade.reach;
+      const of = shade.round
+        ? (px: number, pz: number) => {
+            const t = 1 - Math.hypot(px - p.x, pz - p.z) / radius;
+            return t <= 0 ? 1 : 1 - shade.dark * t * t * (3 - 2 * t);
+          }
+        : (px: number, pz: number) => {
+            const ox = Math.max(Math.abs(px - p.x) - hx, 0);
+            const oz = Math.max(Math.abs(pz - p.z) - hz, 0);
+            const away = Math.hypot(ox, oz);
+            return away > fade * 3 ? 1 : 1 - shade.dark * Math.exp(-away / fade);
+          };
+      const reach = Math.max(hx, hz) + fade * 3;
+      for (let i = Math.floor((p.x - reach) / CELL); i <= Math.floor((p.x + reach) / CELL); i++) {
+        for (let j = Math.floor((p.z - reach) / CELL); j <= Math.floor((p.z + reach) / CELL); j++) {
+          const key = `${i}:${j}`;
+          const list = cells.get(key);
+          if (list) list.push(of);
+          else cells.set(key, [of]);
+        }
+      }
+    }
+    occluders = (px, pz) => {
+      let open = 1;
+      for (const of of cells.get(`${Math.floor(px / CELL)}:${Math.floor(pz / CELL)}`) ?? [])
+        open *= of(px, pz);
+      return open;
+    };
+  }
+  return occluders(x, z);
+}
+
 /** The track: a strip of gravel laid on the ground, from beyond the valley's south end up to the church. */
 function addTrack(scene: Scene, churchFront: number) {
   const { material, tile } = groundSurface(scene, "track");
   material.zOffset = -2;
+  const rock = surface(scene, "granite-rock").albedoTexture;
+  if (rock && !material.pluginManager?.getPlugin("TerrainBlend"))
+    new TerrainBlend(material, flatLook, rock);
   const positions: number[] = [];
   const uvs: number[] = [];
   const colours: number[] = [];
@@ -458,7 +629,8 @@ function addTrack(scene: Scene, churchFront: number) {
       uvs.push(along / tile, 0.5 + (t * half) / tile);
       // Darker along the edges, where grass creeps in, and down the middle.
       const fine = fbm(px / 1.5, z / 1.5, 2, 61);
-      const light = (Math.abs(t) > 0.9 ? 0.72 : t === 0 ? 0.8 : 1) * (0.85 + 0.3 * fine);
+      const light =
+        (Math.abs(t) > 0.9 ? 0.72 : t === 0 ? 0.8 : 1) * (0.85 + 0.3 * fine) * occlusion(px, z);
       colours.push(light, light, light * 0.97, 1);
     }
     if (rows > 0) {
@@ -869,12 +1041,17 @@ class FoliageCutout extends MaterialPluginBase {
     material: PBRMaterial,
     private readonly size: number,
   ) {
-    super(material, "FoliageCutout", 195);
+    // A define of its own, so its code isn't left out of an effect another material compiled.
+    super(material, "FoliageCutout", 195, { FOLIAGECUTOUT: false });
     this._enable(true);
   }
 
   override getClassName(): string {
     return "FoliageCutout";
+  }
+
+  override prepareDefines(defines: MaterialDefines): void {
+    defines.FOLIAGECUTOUT = true;
   }
 
   override isCompatible(): boolean {
@@ -950,17 +1127,108 @@ function scaleOf(p: VillagePlacement, kind: ModelClass): number {
   const [roll] = dice(p.x, p.z, 5);
   if (kind === "tree") return 0.82 + 0.4 * roll;
   if (kind === "plant") return 0.7 + 0.6 * roll;
+  // The cover: mostly small tufts, the odd big one.
+  if (kind === "cover") return 0.45 + 0.5 * roll * roll;
   if (kind === "rock") return outside(p.x, p.z) > 0 ? 0.8 + 0.6 * roll : 0.85 + 0.15 * roll;
   return 1;
 }
 
-/** A copy's colour: a little lighter or darker, warmer or cooler. */
+/**
+ * The colour of the ground at a point, relative to the meadow's, as a plant growing there takes it:
+ * its surface, its patches and wear, and what shades it.
+ */
+function groundTone(x: number, z: number): [number, number, number] {
+  const kind = groundKindAt(x, z);
+  const surface = SURFACES[GROUND[kind].name as SurfaceName]?.color ?? GROUND[kind].color;
+  const meadow = SURFACES["meadow-grass"].color;
+  const own = groundColour(kind, x, villageGround(x, z), z);
+  const open = occlusion(x, z);
+  return [0, 1, 2].map((i) => (surface[i] / meadow[i]) ** 1.5 * own[i] * open) as [
+    number,
+    number,
+    number,
+  ];
+}
+
+/** A copy's colour: a little lighter or darker, warmer or cooler; a plant's, the ground's it stands on. */
 function colourOf(p: VillagePlacement, kind: ModelClass): [number, number, number, number] {
   const [, a, b] = dice(p.x, p.z, 9);
+  if (kind === "plant" || kind === "cover") {
+    // The ground's brightness, not its hue: the plant keeps its own, greyed by GroundCover.
+    const [r, g, bl] = groundTone(p.x, p.z);
+    const light = (0.2126 * r + 0.7152 * g + 0.0722 * bl) * (0.8 + 0.4 * a);
+    const warm = 0.08 * (b * 2 - 1);
+    // The cover's alpha is a hair under 1, which tells GroundCover how far it reaches.
+    return [light * (1 + warm), light, light * (1 - warm), kind === "cover" ? 0.99 : 1];
+  }
   const k = kind === "building" ? 0.4 : kind === "prop" ? 0.6 : 1;
   const light = 1 + k * 0.18 * (a * 2 - 1);
   const warm = k * 0.06 * (b * 2 - 1);
   return [light * (1 + warm), light, light * (1 - warm * 1.3), 1];
+}
+
+/**
+ * The dense ground cover: small tufts on a jittered grid over the walkable valley and a little way up
+ * its sides, thick in patches and along edges, thin in worn yards, none on the track (but its crown),
+ * in the river or under anything solid. Seeded by place, so every screen lays the same.
+ */
+function coverPlacements(): VillagePlacement[] {
+  const layout = village(VILLAGE_SEED);
+  const CELL = 8;
+  const solids = new Map<string, { minX: number; maxX: number; minZ: number; maxZ: number }[]>();
+  for (const box of layout.boxes) {
+    // The long boxes round the valley's edges keep players in; the cover runs on under them.
+    if ((box.maxX - box.minX) * (box.maxZ - box.minZ) > 400) continue;
+    for (let i = Math.floor(box.minX / CELL); i <= Math.floor(box.maxX / CELL); i++) {
+      for (let j = Math.floor(box.minZ / CELL); j <= Math.floor(box.maxZ / CELL); j++) {
+        const key = `${i}:${j}`;
+        const list = solids.get(key);
+        if (list) list.push(box);
+        else solids.set(key, [box]);
+      }
+    }
+  }
+  const blocked = (x: number, z: number) =>
+    (solids.get(`${Math.floor(x / CELL)}:${Math.floor(z / CELL)}`) ?? []).some(
+      (b) => x > b.minX - 0.1 && x < b.maxX + 0.1 && z > b.minZ - 0.1 && z < b.maxZ + 0.1,
+    ) ||
+    layout.bridges.some((b) => x > b.minX && x < b.maxX && z > b.minZ - 0.3 && z < b.maxZ + 0.3);
+  const worn = (x: number, z: number) =>
+    layout.yards.some((y) => x > y.minX && x < y.maxX && z > y.minZ && z < y.maxZ);
+  const step = 1 / Math.sqrt(Math.max(COVER.density, 0.01));
+  const placements: VillagePlacement[] = [];
+  for (let z = -142; z < 136; z += step) {
+    for (let x = -80; x < 100; x += step) {
+      const [jx, jz, roll] = dice(x, z, 77);
+      const px = x + (jx - 0.5) * step;
+      const pz = z + (jz - 0.5) * step;
+      const out = outside(px, pz);
+      if (out > 14) continue;
+      if (inChannel(px, pz) && !(roll < 0.15)) continue;
+      const fromRoad = Math.abs(px - roadX(pz));
+      const onTrack = pz < 94 ? fromRoad < ROAD_HALF - 0.1 : Math.abs(px) < 2.6 && pz < 112;
+      // The track's crown keeps a line of grass.
+      if (onTrack && !(pz < 94 && fromRoad < 0.3 && roll < 0.5)) continue;
+      const patch = fbm(px / 7, pz / 7, 3, 81);
+      const edge = fromRoad < ROAD_HALF + 1.5 || out > -3 ? 0.35 : 0;
+      let density = Math.min(1, 0.25 + 1.1 * Math.max(0, patch - 0.35) + edge);
+      if (worn(px, pz)) density *= 0.25;
+      if (out > 0) density *= 1 - out / 14;
+      if (roll > density) continue;
+      if (blocked(px, pz)) continue;
+      const [kindRoll, turn] = dice(px, pz, 79);
+      const model: VillageModel =
+        out > -5 && kindRoll < 0.35 ? (kindRoll < 0.2 ? "heather" : "fern") : "grass-tuft";
+      placements.push({
+        model,
+        x: px,
+        y: villageGround(px, pz) - 0.04,
+        z: pz,
+        turn: turn * Math.PI * 2,
+      });
+    }
+  }
+  return placements;
 }
 
 /** A new mesh drawing what `source` draws, with its own thin instances, over the same vertex buffers. */
@@ -997,12 +1265,43 @@ interface Chunk {
 /** What the console can ask of the village. */
 export interface VillageView {
   stats(): { model: string; copies: number; chunks: number; missing: boolean }[];
+  /**
+   * A flashlight on the active camera, shaped as a held one's beam, to see the village by without
+   * walking there: for the lobby camera, which can be put anywhere.
+   */
+  torch(on: boolean): void;
+}
+
+let torchBeam: SpotLight | undefined;
+
+function torch(scene: Scene, on: boolean) {
+  const camera = scene.activeCamera;
+  if (!camera) return;
+  if (!torchBeam) {
+    torchBeam = new SpotLight(
+      "village-torch",
+      new Vector3(0.25, -0.2, 0.3),
+      Vector3.Forward(),
+      1.07,
+      2,
+      scene,
+    );
+    torchBeam.falloffType = Light.FALLOFF_GLTF;
+    torchBeam.innerAngle = 0.25;
+    torchBeam.range = 45;
+    torchBeam.diffuse = new Color3(1, 0.92, 0.78);
+    torchBeam.specular = torchBeam.diffuse;
+    torchBeam.renderPriority = LIGHT_PRIORITY.own;
+  }
+  torchBeam.parent = camera;
+  torchBeam.intensity = on ? 220 : 0;
 }
 
 let view: VillageView | undefined;
 
 /** Draws every model in the village, chunk by chunk, from its file or its stand-in. */
-async function addModels(scene: Scene): Promise<void> {
+async function addModels(world: World): Promise<void> {
+  const { scene } = world;
   const byModel = new Map<VillageModel, VillagePlacement[]>();
   for (const p of village(VILLAGE_SEED).placements) {
     let list = byModel.get(p.model);
@@ -1013,8 +1312,9 @@ async function addModels(scene: Scene): Promise<void> {
     list.push(p);
   }
   const chunks: Chunk[] = [];
+  const casters: Mesh[] = [];
   const stats: ReturnType<VillageView["stats"]> = [];
-  view = { stats: () => stats };
+  view = { stats: () => stats, torch: (on) => torch(scene, on) };
   const material = surfaceMaterial("village-placeholder", scene, new Color3(1, 1, 1), {
     roughness: 0.9,
   });
@@ -1027,8 +1327,9 @@ async function addModels(scene: Scene): Promise<void> {
     gltf: boolean,
     root?: TransformNode,
     farSource?: Mesh,
-  ) => {
-    const kind = CLASS[model];
+    kind = CLASS[model],
+  ): Mesh[] => {
+    const made: Mesh[] = [];
     const size = CHUNK[kind];
     const groups = new Map<string, VillagePlacement[]>();
     for (const p of copies) {
@@ -1079,7 +1380,12 @@ async function addModels(scene: Scene): Promise<void> {
         colours.set(colourOf(p, kind), i * 4);
       }
       for (const source of sources) {
-        const mesh = first ? source : sharing(source, `${source.name}-${key}`, scene);
+        // The cover draws what the plants already do: it never takes over their sources.
+        const mesh =
+          first && kind !== "cover"
+            ? source
+            : sharing(source, `${source.name}-${kind}-${key}`, scene);
+        made.push(mesh);
         mesh.isPickable = false;
         mesh.thinInstanceSetBuffer("matrix", matrices, 16, true);
         mesh.thinInstanceSetBuffer("previousMatrix", matrices, 16, true);
@@ -1090,6 +1396,10 @@ async function addModels(scene: Scene): Promise<void> {
         mesh.thinInstanceRefreshBoundingInfo(false);
         mesh.freezeWorldMatrix();
         chunk.meshes.push(mesh);
+        // Everything but the plants casts the moon's soft shadows (scene.ts). Only the ground takes
+        // them: the shadow's varyings would take a two-sided, detail-mapped material past the 16
+        // WebGPU allows, and on the models their baked occlusion does the work.
+        if (kind !== "plant" && kind !== "cover") casters.push(mesh);
       }
       if (farSource) {
         const far = sharing(farSource, `${farSource.name}-${key}`, scene);
@@ -1109,18 +1419,61 @@ async function addModels(scene: Scene): Promise<void> {
       first = false;
       chunks.push(chunk);
     }
-    stats.push({ model, copies: copies.length, chunks: groups.size, missing: !gltf });
+    stats.push({
+      model: kind === "cover" ? `${model} (cover)` : model,
+      copies: copies.length,
+      chunks: groups.size,
+      missing: !gltf,
+    });
+    return made;
+  };
+
+  const cover = new Map<VillageModel, VillagePlacement[]>();
+  for (const p of coverPlacements()) {
+    const list = cover.get(p.model);
+    if (list) list.push(p);
+    else cover.set(p.model, [p]);
+  }
+  /** A plant's look, the same for the layout's and the cover's, which differ only in reach. */
+  const lookOf = (model: VillageModel): GroundCoverLook => {
+    const look: GroundCoverLook = {
+      tint: [1, 1, 1],
+      saturation: 1,
+      base: 1,
+      up: 0,
+      reach: 0,
+      coverReach: 0,
+    };
+    const update = () => {
+      const bright =
+        model === "heather" ? COVER.heather : model === "fern" ? COVER.fern : COVER.grass;
+      // Towards the meadow's olive: dead grass by night reads as the ground it grows from.
+      const hue =
+        model === "heather" ? [1, 0.88, 0.92] : model === "fern" ? [1, 0.92, 0.7] : [0.88, 1, 0.7];
+      look.tint = [bright * hue[0], bright * hue[1], bright * hue[2]];
+      look.saturation = COVER.saturation;
+      look.base = COVER.base;
+      look.up = COVER.up;
+      look.reach = REACH.plants;
+      look.coverReach = COVER.reach;
+    };
+    update();
+    coverLooks.push(update);
+    return look;
   };
 
   await Promise.all(
     [...byModel].map(async ([model, copies]) => {
-      const container = await loadModel(scene, `models/village/${model}.glb`).catch((err) => {
+      // Not shrunk into an atlas: the bakes are seen up close.
+      const path = `models/village/${model}.glb`;
+      const container = await loadModel(scene, path, { shrink: false }).catch((err) => {
         console.warn(`Could not load models/village/${model}.glb`, err);
         return undefined;
       });
       if (container) {
         container.addAllToScene();
         keepFoliage(container.materials);
+        addDetail(scene, container.meshes, model);
         const root = container.rootNodes[0] as TransformNode | undefined;
         root?.computeWorldMatrix(true);
         const sources = container.meshes.filter(
@@ -1134,6 +1487,17 @@ async function addModels(scene: Scene): Promise<void> {
           far.isVisible = false;
         }
         draw(model, copies, sources, true, root, far);
+        if (CLASS[model] === "plant") {
+          const look = lookOf(model);
+          for (const m of container.materials) {
+            if (!(m instanceof PBRMaterial)) continue;
+            new GroundCover(m, VILLAGE_MODELS[model][2], look);
+            // Dry blades scatter light, they don't mirror it: at a glance along the cards the sky's
+            // reflection otherwise lights them up pale against the ground.
+            m.metallicF0Factor = 0.2;
+          }
+          draw(model, cover.get(model) ?? [], sources, true, root, undefined, "cover");
+        }
       } else {
         const mesh = placeholder(scene, model);
         mesh.material = material;
@@ -1141,6 +1505,41 @@ async function addModels(scene: Scene): Promise<void> {
       }
     }),
   );
+
+  const castShadows = (on: boolean) => {
+    for (const mesh of casters) {
+      if (on) world.shadows.addShadowCaster(mesh, false);
+      else world.shadows.removeShadowCaster(mesh, false);
+    }
+  };
+  castShadows(REACH.shadows);
+  setShadows = castShadows;
+  // The shadow map only reaches so far round the camera (scene.ts): models beyond it aren't drawn
+  // into it, which would cost a draw each for nothing.
+  const ours = new Set<AbstractMesh>(casters);
+  const sun = world.shadows.getLight();
+  const near: AbstractMesh[] = [];
+  const map = world.shadows.getShadowMap();
+  if (map)
+    map.getCustomRenderList = (_layer, list, length) => {
+      near.length = 0;
+      const camera = scene.activeCamera;
+      if (!list || !camera) return null;
+      const { x, z } = camera.globalPosition;
+      const reach = (sun as DirectionalLight).shadowFrustumSize * 0.7 || Number.POSITIVE_INFINITY;
+      for (let i = 0; i < length; i++) {
+        const mesh = list[i];
+        if (ours.has(mesh)) {
+          if (!mesh.isVisible) continue;
+          const { minimumWorld: min, maximumWorld: max } = mesh.getBoundingInfo().boundingBox;
+          const dx = Math.max(min.x - x, 0, x - max.x);
+          const dz = Math.max(min.z - z, 0, z - max.z);
+          if (dx * dx + dz * dz > reach * reach) continue;
+        }
+        near.push(mesh);
+      }
+      return near;
+    };
 
   // Chunks too far away to see through the fog aren't drawn.
   scene.onBeforeRenderObservable.add(() => {
@@ -1208,6 +1607,60 @@ function addMountains(scene: Scene, haze: Color3) {
   }
 }
 
+/**
+ * Mist lying in the valley (heightFog.ts): thick over the river and meadows, thinning up the sides,
+ * so buildings stand out against the slopes behind them and the ridges stand clear of the sky.
+ */
+const MIST_COLOUR = new Color3(52 / 255, 58 / 255, 70 / 255);
+const mist: HeightFogLook = {
+  color: MIST_COLOUR.clone(),
+  density: 0,
+  falloff: 1,
+  floor: 0,
+  most: 0,
+};
+const MIST = tunables(
+  "Rendering/Village mist",
+  {
+    density: {
+      value: 0.022,
+      min: 0,
+      max: 0.15,
+      step: 0.001,
+      hint: "How thick it is at the valley floor, per meter",
+    },
+    falloff: { value: 7, min: 1, max: 60, hint: "Meters up over which it thins to a third" },
+    floor: { value: 0.5, min: -10, max: 20, hint: "The height it's thickest at" },
+    most: { value: 0.9, min: 0, max: 1, hint: "The most of anything it can hide" },
+    brightness: { value: 1, min: 0, max: 3, hint: "Its colour's brightness" },
+  },
+  (values) => setMist(values),
+);
+function setMist(values: typeof MIST) {
+  mist.color = MIST_COLOUR.scale(values.brightness);
+  mist.density = values.density;
+  mist.falloff = values.falloff;
+  mist.floor = values.floor;
+  mist.most = values.most;
+}
+setMist(MIST);
+
+/**
+ * The village's own grade over the game's (graphics.ts): night takes the colour out of things, so
+ * painted walls and autumn leaves read by value, not as flat colour.
+ */
+const PICTURE = tunables(
+  "Rendering/Village picture",
+  {
+    exposure: { value: 1, min: 0.1, max: 3 },
+    contrast: { value: 1.15, min: 0.5, max: 2.5 },
+    saturation: { value: -35, min: -100, max: 100, step: 1, hint: "Over the whole picture" },
+    shadowsSaturation: { value: -35, min: -100, max: 100, step: 1 },
+    shadowsDensity: { value: 60, min: 0, max: 100, step: 1, hint: "How blue-grey the dark is" },
+  },
+  () => regrade(),
+);
+
 /** The village's valley round the level: everything in it that's drawn. Settles once its models have loaded. */
 export async function addVillage(world: World): Promise<void> {
   const { scene } = world;
@@ -1218,7 +1671,15 @@ export async function addVillage(world: World): Promise<void> {
   addWater(scene);
   addBridges(scene);
   addMountains(scene, scene.fogColor);
-  await addModels(scene);
+  addHeightFog(scene, mist);
+  overrideGrade(() => ({
+    exposure: PICTURE.exposure,
+    contrast: PICTURE.contrast,
+    globalSaturation: PICTURE.saturation,
+    shadowsSaturation: PICTURE.shadowsSaturation,
+    shadowsDensity: PICTURE.shadowsDensity,
+  }));
+  await addModels(world);
   if (import.meta.env.DEV) Object.assign(window, { __village: view });
 }
 

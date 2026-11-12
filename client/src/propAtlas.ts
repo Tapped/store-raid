@@ -108,8 +108,8 @@ interface Tile {
   h: number;
 }
 
-/** Shelf-packs tiles into a square atlas, shrinking textured ones until they fit. */
-function pack(tiles: Tile[]): { width: number; height: number } | undefined {
+/** Shelf-packs tiles into a square atlas, shrinking textured ones until they fit, by `scale`. */
+function pack(tiles: Tile[]): { width: number; height: number; scale: number } | undefined {
   for (let scale = 1; scale >= 1 / 16; scale /= 2) {
     const sized = tiles
       .map((tile) => {
@@ -144,7 +144,7 @@ function pack(tiles: Tile[]): { width: number; height: number } | undefined {
     }
     if (!fits) continue;
     const pow = (v: number) => 2 ** Math.ceil(Math.log2(Math.max(v, 16)));
-    return { width: pow(width), height: pow(y + shelf) };
+    return { width: pow(width), height: pow(y + shelf), scale };
   }
   return undefined;
 }
@@ -212,11 +212,30 @@ function mergeable(mesh: Mesh, textured: boolean): boolean {
   return true;
 }
 
+export interface LoadOptions {
+  /**
+   * False keeps a model's parts apart rather than shrink their images to fit the atlas: for big
+   * models seen up close, whose bakes would lose half or more of their resolution.
+   */
+  shrink?: boolean;
+}
+
+/** One merged part's vertices, as `merged.metadata.parts` lists them: from `start`, `count` of them. */
+export interface MergedPart {
+  material: string;
+  start: number;
+  count: number;
+}
+
 /**
  * Loads a model with its parts merged where they can be (see the module's comment), or undefined
  * if the file isn't there. Parts are left under the glTF root, as the loader made them.
  */
-export async function loadModel(scene: Scene, path: string): Promise<AssetContainer | undefined> {
+export async function loadModel(
+  scene: Scene,
+  path: string,
+  options: LoadOptions = {},
+): Promise<AssetContainer | undefined> {
   let buffer: ArrayBuffer;
   try {
     const response = await fetch(assetUrl(path));
@@ -233,7 +252,7 @@ export async function loadModel(scene: Scene, path: string): Promise<AssetContai
     name: path,
   });
   try {
-    await merge(scene, container, buffer, path);
+    await merge(scene, container, buffer, path, options);
   } catch (err) {
     console.warn(`Could not merge ${path}; drawing it as it is`, err);
   }
@@ -245,7 +264,13 @@ export async function loadModel(scene: Scene, path: string): Promise<AssetContai
   return container;
 }
 
-async function merge(scene: Scene, container: AssetContainer, buffer: ArrayBuffer, path: string) {
+async function merge(
+  scene: Scene,
+  container: AssetContainer,
+  buffer: ArrayBuffer,
+  path: string,
+  options: LoadOptions,
+) {
   const gltf = readGlb(buffer);
   if (!gltf) return;
   const materials = new Map((gltf.json.materials ?? []).map((m) => [m.name ?? "", m]));
@@ -307,7 +332,7 @@ async function merge(scene: Scene, container: AssetContainer, buffer: ArrayBuffe
   if (merging.length < 2) return;
   const all = [...tiles.values()];
   const size = pack(all);
-  if (!size) return;
+  if (!size || (options.shrink === false && size.scale < 1)) return;
 
   const name = path.replace(/^.*\//, "").replace(/\.glb$/, "");
   const albedo = atlasTexture(
@@ -369,6 +394,7 @@ async function merge(scene: Scene, container: AssetContainer, buffer: ArrayBuffe
   const uvs: number[] = [];
   const uv2s: number[] = [];
   const indices: number[] = [];
+  const ranges: MergedPart[] = [];
   for (const part of merging) {
     const tile = tiles.get(part.material?.name ?? "") as Tile;
     const p = part.getVerticesData(VertexBuffer.PositionKind) ?? [];
@@ -377,6 +403,7 @@ async function merge(scene: Scene, container: AssetContainer, buffer: ArrayBuffe
     const uv2 = part.getVerticesData(VertexBuffer.UV2Kind);
     const base = positions.length / 3;
     const count = p.length / 3;
+    ranges.push({ material: part.material?.name ?? "", start: base, count });
     for (let i = 0; i < count; i++) {
       positions.push(p[i * 3], p[i * 3 + 1], p[i * 3 + 2]);
       normalData.push(n[i * 3], n[i * 3 + 1], n[i * 3 + 2]);
@@ -404,6 +431,7 @@ async function merge(scene: Scene, container: AssetContainer, buffer: ArrayBuffe
   const merged = new Mesh(`${name}-merged`, scene);
   data.applyToMesh(merged);
   merged.parent = root ?? null;
+  merged.metadata = { parts: ranges };
 
   // Its material: a copy of a textured part's, for everything the loader set, with the atlases.
   const template = (merging.find((part) => tiles.get(part.material?.name ?? "")?.base)?.material ??
