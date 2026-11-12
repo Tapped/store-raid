@@ -64,13 +64,14 @@ def build():
             hs = [rng.uniform(0.16, 0.24)]
             while z + hs[-1] < top - 0.08:
                 z += hs[-1] * 0.85
-                sizes.append(sizes[-1] * rng.uniform(0.75, 0.9))
+                sizes.append(sizes[-1] * rng.uniform(0.7, 1.05))
                 hs.append(min(rng.uniform(0.1, 0.18), top - z + 0.03))
             z = 0.0
             for sz, hh in zip(sizes, hs):
-                v.stone(part, stone, (x + rng.uniform(-0.03, 0.03), y + rng.uniform(-0.03, 0.03), z + hh / 2),
-                        (sz, sz * rng.uniform(0.85, 1.0), hh * 1.15), rng, cuts=1, ground=0.0,
-                        flat_top=0.4, round_=0.55, rough=0.2)
+                # Not a neat cake: each stone off the middle, turned any way, of its own shape.
+                v.stone(part, stone, (x + rng.uniform(-0.07, 0.07), y + rng.uniform(-0.07, 0.07), z + hh / 2),
+                        (sz, sz * rng.uniform(0.6, 0.95), hh * 1.2), rng, cuts=2, ground=0.0,
+                        flat_top=0.3, round_=0.5, rough=0.25, yaw=rng.uniform(0, math.pi))
                 z += hh * 0.85
             top = z + 0.03
             ph = POST_TOP - top - 0.08

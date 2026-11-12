@@ -30,16 +30,16 @@ PH, PY = 1.6, -4.1  # half width, front
 PTOP = 3.05  # its wall plate
 CHIMNEY = (0.9, YC)
 
-OCHRE = (0.17, 0.105, 0.035)
-WHITE = (0.44, 0.425, 0.38)
+OCHRE = (0.13, 0.09, 0.042)
+WHITE = (0.3, 0.29, 0.26)
 WIN_W, WIN_H, WIN_Z = 0.95, 1.45, 1.55  # windows: width, height, sill
 
 
 def build():
     m = {
-        "clad": vb.wood("cladding", 51, 4096, paint=OCHRE, peel=0.26, silvering=0.7,
+        "clad": vb.wood("cladding", 51, 4096, paint=OCHRE, peel=0.5, silvering=0.7,
                         weather=(-0.6, -0.8, 0.0), lichen=0.25),
-        "trim": vb.wood("trim", 52, 2048, paint=WHITE, peel=0.24, peel_scale=6.0, silvering=0.7, lichen=0.2),
+        "trim": vb.wood("trim", 52, 2048, paint=WHITE, peel=0.42, peel_scale=6.0, silvering=0.7, lichen=0.2),
         "grey": vb.wood("grey-wood", 53, 1024, silvering=0.75, lichen=0.4),
         "slate": vb.slates("slate", 54, 2048, width=0.28, moss=0.5, moss_top=5.5),
         "stone": vb.stone("stone", 55, 2048, moss=0.5, lichen=0.4),

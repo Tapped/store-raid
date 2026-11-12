@@ -854,6 +854,47 @@ def stone_wall(b, wall, s0, s1, z0, z1, mat, joint, *, size=(0.5, 0.3), relief=0
 
 
 def _stone(b, wall, sa, sb, za, zb, mat, rng, relief, gap, batter, base, tag):
+    """
+    One stone of a wall: a fieldstone from village_stone, its flat face out, standing `relief`
+    (varied) proud of the wall plane, the rest of it sunk into the wall. Faces turned in to the
+    wall behind its plane are left off.
+    """
+    import village_stone as vs
+    w, h = sb - sa, zb - za
+    g = gap / 2
+    r = relief * rng.uniform(0.6, 1.5)
+    depth = 2 * r + 0.12
+    cs, cz = (sa + sb) / 2, (za + zb) / 2
+    # Laid tight: the stones fill their places, only a narrow dark joint between.
+    roundness = rng.uniform(0.25, 0.6) if rng.random() < 0.5 else rng.uniform(0.0, 0.25)
+    size = (w - g * 2 + 0.09, depth, h - g * 2 + 0.08)
+    verts, tris = vs.fieldstone(size, rng.randrange(1 << 30),
+                                points=20 if max(w, h) > 0.45 else 15, round_=roundness,
+                                breaks=rng.randint(1, 2),
+                                faces=(((rng.uniform(-0.2, 0.2), -1, rng.uniform(-0.2, 0.2)),
+                                        rng.uniform(0.75, 0.95)),), bed=0.15)
+    out = Vector(wall.out).normalized()
+    along = Vector(wall.along).normalized()
+    centre = wall.at(cs, cz, -batter * (cz - base) + r - depth / 2)
+    tilt = rng.uniform(-0.12, 0.12)
+    ax = along * math.cos(tilt) + UP * math.sin(tilt)
+    az = UP * math.cos(tilt) - along * math.sin(tilt)
+    world = [centre + ax * p.x - out * p.y + az * p.z for p in verts]
+    plane = wall.at(cs, cz, -batter * (cz - base))
+    piece = b.piece(tag)
+    bv = [b.bm.verts.new(p) for p in world]
+    for t in tris:
+        pts = [world[i] for i in t]
+        mid = sum(pts, Vector()) / 3
+        if (mid - plane).dot(out) < -0.02:
+            continue  # inside the wall
+        b.face([bv[i] for i in t], mat, mid - centre, piece)
+    for v in [v for v in bv if not v.link_faces]:
+        b.bm.verts.remove(v)
+
+
+def _pillow_stone(b, wall, sa, sb, za, zb, mat, rng, relief, gap, batter, base, tag):
+    """The old stone: an eight-sided pillow standing out of the wall. Kept for reference."""
     w, h = sb - sa, zb - za
     j = min(w, h) * 0.24
     g = gap / 2
@@ -1105,14 +1146,24 @@ def wood(name, seed, size=4096, *, tar=((0.014, 0.011, 0.008), (0.05, 0.034, 0.0
         peel_v = n.math("ADD", peel_v, n.math("MULTIPLY", w, 0.1))
         peel_v = n.math("ADD", peel_v, n.math("MULTIPLY", smooth(n, z, 1.0, 0.0), 0.12))
         peel_v = n.math("ADD", peel_v, n.math("MULTIPLY", tag, 0.5))
+        # Paint lasts in shelter, under the eaves and in corners (the building's own occlusion),
+        # and goes first where the weather and splash reach.
+        shelter = n.xyz(_attr(n, "ao"))[0]
+        peel_v = n.math("SUBTRACT", peel_v, n.math("MULTIPLY", smooth(n, shelter, 0.15, 0.6), 0.22))
         thr = 0.95 - peel * 0.5
         paintm = smooth(n, peel_v, thr + 0.008, thr - 0.008)
         rim = n.math("SUBTRACT", smooth(n, peel_v, thr - 0.05, thr), 0.0)
         rim = n.math("MULTIPLY", rim, paintm)
         mottle = f.noise(1.5, 3)
         pc = n.mix(mottle, [c * 0.8 for c in paint], [c * 1.1 for c in paint])
-        chalk = n.math("MULTIPLY", smooth(n, f.noise(0.9, 3), 0.45, 0.75), 0.4)
-        pc = n.mix(chalk, pc, [c * 0.75 + 0.06 for c in paint])
+        # Old paint chalks: paler and greyer all over, more so in broad patches, worn thin to the
+        # grey wood beneath in places.
+        grey = sum(paint) / 3
+        pc = n.mix(0.35, pc, [grey * 1.1 + 0.01] * 3)
+        chalk = n.math("MULTIPLY", smooth(n, f.noise(0.9, 3), 0.4, 0.75), 0.55)
+        pc = n.mix(chalk, pc, [c * 0.55 + grey * 0.4 + 0.035 for c in paint])
+        thin = n.math("MULTIPLY", smooth(n, f.noise(6, 4), 0.5, 0.7), 0.6)
+        pc = n.mix(thin, pc, n.mix(0.5, pc, color))
         streak = smooth(n, f.noise(1.0, 3, stretch=(50, 50, 1.2)), 0.55, 0.75)
         pc = n.mix(n.math("MULTIPLY", streak, 0.4), pc, _shade(n, pc, 0.6))
         pc = _shade(n, pc, n.lerp(fibre, 0.9, 1.06))
@@ -1366,9 +1417,9 @@ def plain(kind):
     table = {
         "tar-edge": ((0.016, 0.012, 0.009), 0.8, 0.0),
         "grey-edge": ((0.07, 0.065, 0.056), 0.88, 0.0),
-        "red-edge": ((0.085, 0.018, 0.011), 0.85, 0.0),
+        "red-edge": ((0.06, 0.028, 0.02), 0.85, 0.0),
         "white-edge": ((0.3, 0.29, 0.26), 0.8, 0.0),
-        "ochre-edge": ((0.2, 0.12, 0.035), 0.8, 0.0),
+        "ochre-edge": ((0.12, 0.085, 0.045), 0.8, 0.0),
         "step": ((0.012, 0.009, 0.007), 0.9, 0.0),
         "slate-edge": ((0.03, 0.034, 0.037), 0.75, 0.0),
         "under": ((0.03, 0.024, 0.018), 0.9, 0.0),

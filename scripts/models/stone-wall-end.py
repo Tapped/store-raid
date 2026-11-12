@@ -10,10 +10,10 @@ import village_props as vp
 
 OUT = "models/village/stone-wall-end.glb"
 ORIGIN = "bottom"
-TRIS = 2400
+TRIS = 2500
 AO = 1024
 AO_DISTANCE = 0.2
-SMOOTH_ANGLE = 70
+SMOOTH_ANGLE = 48
 
 WIDTH = 1.2
 
@@ -21,14 +21,13 @@ WIDTH = 1.2
 def build():
     rng = random.Random(1931)
     stones = vp.stone_material("stones", 1024, moss=0.8, lichen=0.7)
-    earth = lib.material("core", (0.018, 0.016, 0.012), roughness=0.95)
     x0, x1 = -WIDTH / 2, WIDTH / 2
 
     def height_at(x):
-        if x < -0.42:
+        if x < -0.3:
             return 1.0
         if x < 0.15:
-            return 1.0 - 0.75 * (x + 0.42) / 0.57
+            return 1.0 - 0.75 * (x + 0.3) / 0.45
         return max(0.0, 0.25 - (x - 0.15) * 1.2)
 
     def spill(size):
@@ -40,7 +39,8 @@ def build():
         return (x, y, size[2] * 0.4, rng.uniform(-1.5, 1.5),
                 (rng.uniform(-0.35, 0.35), rng.uniform(-0.35, 0.35)))
 
-    vp.dry_wall(stones, earth, rng, x0, x1, height_at=height_at, spill=spill, periodic=False)
+    vp.dry_wall(stones, stones, rng, x0, x1, height_at=height_at, spill=spill, periodic=False,
+                scale=0.75)
     # A heap of thrown-down stones round the stump, thinning out away from it.
     for i in range(16):
         t = rng.random() ** 0.7

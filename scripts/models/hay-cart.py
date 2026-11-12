@@ -24,12 +24,12 @@ TRACK = 0.66  # wheel centre from the middle
 BEAM_X = 0.47
 BED = (-0.6, 1.58)  # the bed along y
 TIP_Y = -1.98  # shaft tips, on the ground
-RED = (0.12, 0.022, 0.014)
+RED = (0.085, 0.03, 0.021)
 
 
 def build():
     rng = random.Random(1961)
-    wood = vp.wood("cart", 2048, tone="silver", moss=0.35, lichen=0.55, paint=RED, cover=0.58)
+    wood = vp.wood("cart", 2048, tone="silver", moss=0.35, lichen=0.55, paint=RED, cover=0.56)
     iron = vp.rust("iron", 1024)
 
     # The frame is built level, its beams at height FZ, then tipped forward about the axle until

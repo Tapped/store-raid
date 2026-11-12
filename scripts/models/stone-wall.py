@@ -10,19 +10,20 @@ import village_props as vp
 
 OUT = "models/village/stone-wall.glb"
 ORIGIN = "bottom"
-TRIS = 3600
+TRIS = 4300
 AO = 1024
 AO_DISTANCE = 0.2
-SMOOTH_ANGLE = 70
+SMOOTH_ANGLE = 48
 
 LENGTH = 4.0
+# The caps stand a little proud of this: about 0.99 m to the top of the highest.
+HEIGHT = 0.99
 
 
 def build():
     rng = random.Random(1907)
-    stones = vp.stone_material("stones", 2048, moss=0.7, lichen=0.7)
-    earth = lib.material("core", (0.018, 0.016, 0.012), roughness=0.95)
-    vp.dry_wall(stones, earth, rng, -LENGTH / 2, LENGTH / 2)
+    stones = vp.stone_material("stones", 2048, moss=0.85, lichen=0.75)
+    vp.dry_wall(stones, stones, rng, -LENGTH / 2, LENGTH / 2, height=HEIGHT)
     vp.wrap_x(LENGTH / 2)
     vp.clip_ground()
     vp.report("stone-wall")

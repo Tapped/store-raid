@@ -25,6 +25,7 @@ from mathutils import noise as mnoise
 import lib
 
 BARK, SPLIT, END, STONE, HAY = 1, 0, 2, 3, 4
+CORE = 5  # a dry-stone wall's hidden core of rubble and earth, seen in the gaps
 
 
 # ---------------------------------------------------------------------------------------------
@@ -311,42 +312,32 @@ def rod(name, points, radius, mat, seed, sides=6, kind=BARK, rough=0.1, caps=Tru
 
 
 def stone(name, size, at, mat, seed, *, cuts=2, roundness=0.6, lump=0.12, turn=0.0,
-          tilt=(0.0, 0.0), facets=2, flat=0.25):
+          tilt=(0.0, 0.0), facets=2, flat=0.25, faces=(), points=None):
     """
-    A fieldstone `size` = (x, y, z) across, centred on `at`: a rounded block, lumpy, with a few
-    broken flat facets and a flattish bed, turned `turn` round z and tilted `tilt` (x, y radians).
-    cuts=2 is 108 triangles, cuts=1 48.
+    A fieldstone `size` = (x, y, z) across, centred on `at`: the hull of a rounded block
+    (village_stone.fieldstone), angular where `facets` fracture planes broke it and where `faces`
+    (more planes, as (direction, depth)) flatten it, rounder with `roundness`, a flattish bed by
+    `flat`, turned `turn` round z and tilted `tilt` (x, y radians). `points` sets the detail:
+    about 2 × points triangles; by default cuts=2 is 40 points, cuts=1 24, cuts=0 14.
     """
-    rng = random.Random(int(seed * 100003) + 11)
-    off = rng.uniform(0, 500)
+    import village_stone as vs
+    pts = points or {0: 14, 1: 24}.get(cuts, 40)
+    verts, tris = vs.fieldstone(size, int(seed * 100003) + 11, points=pts, round_=roundness,
+                                breaks=facets, faces=faces, bed=flat, top=flat * 0.3,
+                                lump=lump * 0.6)
     bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=2)
-    if cuts:
-        bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=cuts, use_grid_fill=True)
-    planes = []
-    for _ in range(facets):
-        d = Vector((rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-0.6, 0.6))).normalized()
-        planes.append((d, rng.uniform(0.62, 0.8)))
-    half = Vector(size) / 2
-    rot = Matrix.Rotation(turn, 3, "Z") @ Matrix.Rotation(tilt[0], 3, "X") @ Matrix.Rotation(tilt[1], 3, "Y")
     wpos, wmeta = _layers(bm)
     sd = _seed01(seed)
-    for v in bm.verts:
-        c = v.co.copy()
-        p = c.lerp(c.normalized(), roundness)
-        p *= 1 + lump * _n(p * 1.3, off) + lump * 0.4 * _n(p * 3.1, off + 9)
-        for d, dist in planes:
-            e = p.dot(d) - dist
-            if e > 0:
-                p -= d * e * 0.85
-        if p.z < 0:
-            p.z *= 1 - flat
-        else:
-            p.z *= 1 - flat * 0.4
-        local = Vector((p.x * half.x, p.y * half.y, p.z * half.z))
+    rot = (Matrix.Translation(Vector(at)) @ Matrix.Rotation(turn, 4, "Z")
+           @ Matrix.Rotation(tilt[0], 4, "X") @ Matrix.Rotation(tilt[1], 4, "Y"))
+
+    def make(b, local, world):
+        v = b.verts.new(world)
         v[wpos] = local
         v[wmeta] = (sd, STONE, 0)
-        v.co = rot @ local + Vector(at)
+        return v
+
+    vs.to_bmesh(bm, verts, tris, rot, make)
     bm.normal_update()
     return _obj(name, bm, mat)
 
@@ -579,6 +570,13 @@ def voronoi(n, vec, scale, out="Distance", feature="F1", rand=1.0):
     return node.outputs[out]
 
 
+def warped_m(n, co, amount=0.04, scale=6.0):
+    """co pushed about by noise, so cell patterns lose their regular look."""
+    wn = n.add("ShaderNodeTexNoise", {"Vector": co, "Scale": scale, "Detail": 3.0})
+    return vm(n, "ADD", co, vm(n, "MULTIPLY", vm(n, "SUBTRACT", wn.outputs["Color"], (0.5, 0.5, 0.5)),
+                                (amount, amount, amount)))
+
+
 def _attrs(n):
     P = attr(n, "wpos").outputs["Vector"]
     M = attr(n, "wmeta").outputs["Vector"]
@@ -733,7 +731,12 @@ def wood(name, size=2048, *, tone="silver", bark=None, moss=0.4, lichen=0.5, pai
         peel = add(n, peel, mul(n, sm(n, up_facing(n), 0.2, 0.9), -0.12))
         keep = sm(n, peel, 1 - cover - 0.02, 1 - cover + 0.02)
         keep = mul(n, keep, inv(n, end_m), sm(n, crack, 0.5, 0.0))
-        chalky = n.mix(n.noise(3, 3, vector=co), lib.shade(n, paint, 0.8), lib.shade(n, paint, 1.1))
+        grey = sum(paint) / 3
+        faded = [c * 0.6 + grey * 0.4 + 0.012 for c in paint]
+        chalky = n.mix(n.noise(3, 3, vector=co), lib.shade(n, faded, 0.8), lib.shade(n, faded, 1.1))
+        chalky = n.mix(mul(n, sm(n, n.noise(1.2, 3, vector=co), 0.45, 0.75), 0.5), chalky,
+                       [c * 0.5 + grey * 0.5 + 0.03 for c in paint])
+        chalky = n.mix(mul(n, sm(n, n.noise(7, 4, vector=q), 0.5, 0.7), 0.5), chalky, color)
         color = n.mix(keep, color, chalky)
         paint_h = mul(n, keep, 0.5)
     else:
@@ -773,44 +776,153 @@ def stone_material(name, size=2048, *, moss=0.6, lichen=0.7, ground=0.25, tint=N
     q = vm(n, "ADD", P, off)
     sd = n.math("FRACT", mul(n, seed, 5.3))
     sd2 = n.math("FRACT", mul(n, seed, 11.7))
+    sd3 = n.math("FRACT", mul(n, seed, 23.1))
+    up = up_facing(n)
+    geo_n = n.add("ShaderNodeNewGeometry").outputs["Normal"]
+    _, ny, _ = split(n, geo_n)
 
-    grey = n.mix(sd, (0.045, 0.044, 0.042), (0.11, 0.105, 0.098))
-    warm = (0.1, 0.08, 0.062)
-    grey = n.mix(mul(n, sm(n, sd2, 0.7, 0.9), 0.7), grey, warm)
+    # Each stone its own rock: dark amphibolite, grey gneiss, pale granite, a few iron-brown.
+    grey = n.mix(sd, (0.028, 0.029, 0.03), (0.075, 0.075, 0.074))
+    grey = n.mix(mul(n, sm(n, sd, 0.82, 0.95), 0.8), grey, (0.12, 0.116, 0.108))
+    grey = n.mix(mul(n, sm(n, sd2, 0.72, 0.9), 0.7), grey, (0.085, 0.07, 0.056))
     if tint is not None:
         grey = n.add("ShaderNodeMix", {"Factor": 1.0, "A": grey, "B": tint}, data_type="RGBA",
                      blend_type="MULTIPLY").outputs["Result"]
     mott = n.noise(6, detail=5, vector=q)
     broad = n.noise(1.8, detail=3, vector=q)
-    color = lib.shade(n, grey, mul(n, add(n, 0.75, mul(n, mott, 0.5)), add(n, 0.6, mul(n, broad, 0.8))))
+    color = lib.shade(n, grey, mul(n, add(n, 0.72, mul(n, mott, 0.55)), add(n, 0.62, mul(n, broad, 0.75))))
     # A paler weathered rind on faces turned to the sky, dark rain streaks down the sides.
-    color = n.mix(mul(n, sm(n, up_facing(n), 0.3, 0.9), 0.35), color, lib.shade(n, color, 1.5))
-    streaks = sm(n, n.noise(1.0, 3, vector=scaled(n, q, 25, 25, 1.2)), 0.58, 0.72)
-    color = n.mix(mul(n, streaks, sm(n, up_facing(n), 0.5, -0.2), 0.5), color, (0.02, 0.02, 0.019))
-    # Gneiss banding on a third of the stones.
+    color = n.mix(mul(n, sm(n, up, 0.3, 0.9), 0.3), color, lib.shade(n, color, 1.3))
+    streaks = sm(n, n.noise(1.0, 3, vector=scaled(n, q, 25, 25, 1.2)), 0.55, 0.72)
+    color = n.mix(mul(n, streaks, sm(n, up, 0.5, -0.2), 0.55), color, (0.014, 0.014, 0.013))
+    # Gneiss banding on a third of the stones, quartz veins on a few.
     band = n.noise(1.0, detail=3, vector=scaled(n, q, 2, 2, 22))
     band_on = n.math("LESS_THAN", sd2, 0.33)
-    color = n.mix(mul(n, sm(n, band, 0.55, 0.65), band_on, 0.5), color, (0.04, 0.038, 0.036))
+    color = n.mix(mul(n, sm(n, band, 0.55, 0.65), band_on, 0.55), color, (0.03, 0.029, 0.028))
+    vein = sm(n, n.math("ABSOLUTE", n.math("SUBTRACT", n.noise(1.0, 2, vector=scaled(n, q, 3, 9, 3)), 0.5)),
+              0.004, 0.001)
+    color = n.mix(mul(n, vein, n.math("LESS_THAN", sd3, 0.12), 0.35), color, (0.11, 0.108, 0.104))
+    # Iron staining in rusty blooms on some stones.
+    iron = mul(n, sm(n, n.noise(4, 4, vector=q), 0.55, 0.75), n.math("GREATER_THAN", sd3, 0.7))
+    color = n.mix(mul(n, iron, 0.6), color, (0.075, 0.045, 0.025))
     # Speckle: dark mica and pale feldspar grains.
     sp = n.add("ShaderNodeTexVoronoi", {"Vector": q, "Scale": 260.0, "Randomness": 1.0})
     spc = split(n, sp.outputs["Color"])
     grain = sm(n, sp.outputs["Distance"], 0.35, 0.15)
-    color = n.mix(mul(n, grain, n.math("LESS_THAN", spc[0], 0.3), 0.8), color, (0.02, 0.02, 0.02))
-    color = n.mix(mul(n, grain, n.math("GREATER_THAN", spc[0], 0.85), 0.6), color, (0.3, 0.28, 0.26))
+    color = n.mix(mul(n, grain, n.math("LESS_THAN", spc[0], 0.3), 0.8), color, (0.015, 0.015, 0.015))
+    color = n.mix(mul(n, grain, n.math("GREATER_THAN", spc[0], 0.85), 0.5), color, (0.2, 0.19, 0.18))
 
-    pits = n.noise(120, detail=3, vector=q)
+    # Relief: grain, pitting, knobbly weathering, and hairline cracks.
+    pits_v = n.add("ShaderNodeTexVoronoi", {"Vector": q, "Scale": 55.0, "Randomness": 1.0})
+    pit = mul(n, sm(n, pits_v.outputs["Distance"], 0.22, 0.05),
+              sm(n, n.noise(9, 3, vector=q), 0.45, 0.6))
+    fine = n.noise(120, detail=3, vector=q)
     knobs = n.noise(22, detail=4, vector=q)
-    rough = add(n, 0.72, mul(n, pits, 0.15))
-    height = add(n, mul(n, pits, 0.35), mul(n, mott, 0.9), mul(n, knobs, 0.6), mul(n, grain, 0.1))
+    crack = sm(n, n.math("ABSOLUTE", n.math("SUBTRACT", n.noise(3.5, 3, vector=q), 0.5)), 0.012, 0.0)
+    crack = mul(n, crack, sm(n, n.noise(2, 2, vector=q), 0.45, 0.6))
+    color = n.mix(mul(n, pit, 0.5), color, lib.shade(n, color, 0.45))
+    color = n.mix(mul(n, crack, 0.85), color, (0.008, 0.008, 0.008))
+    rough = add(n, 0.74, mul(n, fine, 0.14))
+    lumps = n.noise(3, detail=4, roughness=0.6, vector=q)
+    height = add(n, mul(n, fine, 0.15), mul(n, mott, 0.7), mul(n, knobs, 0.5), mul(n, grain, 0.06),
+                 mul(n, lumps, 1.2), mul(n, pit, -0.3), mul(n, crack, -0.6))
 
-    # Earth at the foot, damp dark below.
-    low = mul(n, sm(n, z, ground, 0.0), sm(n, n.noise(5, 4, vector=co), 0.3, 0.6))
-    color = n.mix(mul(n, low, 0.85), color, EARTH)
     dirt = cavity(n, 0.08)
-    color = n.mix(mul(n, dirt, 0.75), color, (0.012, 0.011, 0.01))
-    rough = n.lerp(dirt, rough, 0.9)
-    color, rough, height = _moss_lichen(n, color, rough, height, co, z, moss, lichen, ground)
-    n.out(**{"Base Color": color, "Roughness": rough, "Normal": n.bump(height, distance=0.006)})
+    color = n.mix(mul(n, dirt, 0.8), color, (0.01, 0.009, 0.008))
+    rough = n.lerp(dirt, rough, 0.92)
+
+    # Lichen crusts, mostly on the flanks: pale grey-green, white, a little dull yellow.
+    if lichen > 0:
+        wn = n.add("ShaderNodeTexNoise", {"Vector": co, "Scale": 9.0, "Detail": 4.0})
+        warped = vm(n, "ADD", co, vm(n, "MULTIPLY", vm(n, "SUBTRACT", wn.outputs["Color"],
+                                                       (0.5, 0.5, 0.5)), (0.1, 0.1, 0.1)))
+        cell = n.add("ShaderNodeTexVoronoi", {"Vector": warped, "Scale": 7.0, "Randomness": 1.0})
+        dist = cell.outputs["Distance"]
+        pick = split(n, cell.outputs["Color"])
+        rad = add(n, 0.08, mul(n, pick[0], 0.3))
+        edge_noise = mul(n, n.noise(80, detail=4, vector=co), 0.22)
+        crust = sm(n, add(n, dist, edge_noise), add(n, rad, 0.05), rad)
+        crust = mul(n, crust, sm(n, n.noise(50, detail=3, vector=co), 0.32, 0.52))
+        crust = mul(n, crust, n.math("LESS_THAN", pick[1], 0.2 + 0.5 * lichen), sm(n, up, -0.6, 0.1))
+        lc = n.mix(sm(n, pick[2], 0.55, 0.6), (0.13, 0.14, 0.115), (0.19, 0.19, 0.175))
+        lc = n.mix(sm(n, pick[2], 0.9, 0.93), lc, (0.15, 0.125, 0.07))
+        lc = lib.shade(n, lc, add(n, 0.65, mul(n, n.noise(35, 3, vector=co), 0.55)))
+        color = n.mix(mul(n, crust, 0.85), color, lc)
+        rough = n.lerp(crust, rough, 0.9)
+        height = add(n, height, mul(n, crust, 0.12))
+        # Black dot lichen and soot-dark crust on the weather side.
+        dots = mul(n, sm(n, n.noise(45, 3, vector=co), 0.7, 0.74), sm(n, ny, -0.2, 0.6), lichen)
+        color = n.mix(mul(n, dots, 0.8), color, (0.012, 0.012, 0.011))
+
+    # Moss: thick cushions on top and over the weather side (+y), creeping down the hollows and
+    # cracks, its edge breaking up into patches; a thin green film round it.
+    if moss > 0:
+        edge = n.noise(4, detail=6, roughness=0.65, vector=co)
+        patch = n.noise(1.2, detail=3, vector=co)
+        m = add(n, mul(n, up, 0.9), mul(n, sm(n, ny, 0.1, 0.9), 0.35),
+                mul(n, dirt, 0.5), mul(n, crack, 0.3),
+                mul(n, n.math("SUBTRACT", edge, 0.5), 1.1), mul(n, n.math("SUBTRACT", patch, 0.5), 0.6))
+        lo_t = 0.95 - 0.45 * moss
+        thick = sm(n, m, lo_t, lo_t + 0.1)
+        film = sm(n, m, lo_t - 0.35, lo_t)
+        clump_v = n.add("ShaderNodeTexVoronoi", {"Vector": warped_m(n, co), "Scale": 18.0,
+                                                 "Randomness": 1.0})
+        clump = mul(n, sm(n, clump_v.outputs["Distance"], 0.9, 0.1),
+                    add(n, 0.4, mul(n, n.noise(9, 4, vector=co), 0.9)))
+        fuzz = n.noise(160, detail=3, vector=co)
+        cushion = mul(n, thick, add(n, 0.45, mul(n, clump, 0.6)), add(n, 0.75, mul(n, fuzz, 0.5)))
+        # Broken edge: the thick moss frays into the film in specks.
+        cushion = mul(n, cushion, sm(n, add(n, thick, mul(n, fuzz, 0.6)), 0.55, 0.85))
+        mc = n.mix(n.noise(14, detail=3, vector=co), (0.018, 0.022, 0.01), (0.058, 0.066, 0.028))
+        mc = n.mix(mul(n, sm(n, n.noise(3, 3, vector=co), 0.55, 0.75), 0.7), mc, (0.06, 0.055, 0.03))
+        mc = lib.shade(n, mc, add(n, 0.6, mul(n, clump, 0.4), mul(n, fuzz, 0.3)))
+        color = n.mix(mul(n, film, 0.5), color, lib.shade(n, n.mix(0.5, color, (0.03, 0.04, 0.022)), 0.85))
+        mm = sm(n, cushion, 0.05, 0.25)
+        color = n.mix(mm, color, mc)
+        rough = n.lerp(mm, rough, 0.97)
+        height = add(n, height, mul(n, cushion, 2.2))
+
+    # Earth at the foot, a dark wet line where it meets the ground, dead grass caught round it,
+    # and fallen leaves on the ledges.
+    low = mul(n, sm(n, add(n, z, mul(n, n.math("SUBTRACT", n.noise(5, 4, vector=co), 0.5), 0.12)),
+                    ground * 0.6, 0.0), 0.9)
+    color = n.mix(low, color, n.mix(n.noise(30, 3, vector=co), EARTH, (0.04, 0.032, 0.022)))
+    wet = sm(n, z, 0.07, 0.0)
+    color = n.mix(mul(n, wet, 0.7), color, lib.shade(n, color, 0.4))
+    rough = n.lerp(low, rough, 0.95)
+    rough = n.lerp(wet, rough, 0.6)
+    blades = n.noise(1.0, detail=3, vector=scaled(n, co, 110, 110, 5))
+    grass = mul(n, sm(n, add(n, z, mul(n, n.noise(7, 3, vector=co), 0.1)), 0.16, 0.02),
+                sm(n, blades, 0.45, 0.62), sm(n, up, 0.7, -0.2))
+    gc = n.mix(sm(n, z, 0.0, 0.14), (0.03, 0.026, 0.016), (0.1, 0.085, 0.05))
+    color = n.mix(grass, color, gc)
+    height = add(n, height, mul(n, grass, 0.6))
+    leaf_v = n.add("ShaderNodeTexVoronoi", {"Vector": scaled(n, co, 1, 1, 0.3), "Scale": 22.0,
+                                            "Randomness": 1.0})
+    lpick = split(n, leaf_v.outputs["Color"])
+    leaf = mul(n, sm(n, leaf_v.outputs["Distance"], 0.42, 0.3),
+               n.math("LESS_THAN", lpick[0], add(n, 0.12, mul(n, sm(n, z, 0.3, 0.0), 0.4))),
+               sm(n, up, 0.35, 0.8))
+    lcol = n.mix(lpick[1], (0.05, 0.03, 0.015), (0.11, 0.07, 0.03))
+    lcol = n.mix(sm(n, lpick[2], 0.6, 0.9), lcol, (0.03, 0.024, 0.017))
+    color = n.mix(leaf, color, lcol)
+    height = add(n, height, mul(n, leaf, 0.2))
+    # The core, seen deep in the gaps: small dark stones packed in earth.
+    core = is_kind(n, kind, CORE)
+    rco = warped_m(n, co, 0.05, 4.0)
+    rub = n.add("ShaderNodeTexVoronoi", {"Vector": rco, "Scale": 9.0, "Randomness": 1.0})
+    rub_e = n.add("ShaderNodeTexVoronoi", {"Vector": rco, "Scale": 9.0, "Randomness": 1.0},
+                  feature="DISTANCE_TO_EDGE")
+    rpick = split(n, rub.outputs["Color"])
+    pebble = mul(n, sm(n, add(n, rub_e.outputs["Distance"], mul(n, n.noise(25, 3, vector=co), 0.08)),
+                       0.02, 0.14), add(n, 0.6, mul(n, rpick[1], 0.4)))
+    rc = n.mix(pebble, (0.004, 0.0037, 0.0033),
+               lib.shade(n, n.mix(rpick[0], (0.008, 0.008, 0.008), (0.022, 0.021, 0.019)),
+                         add(n, 0.6, mul(n, n.noise(20, 4, vector=co), 0.8))))
+    color = n.mix(core, color, rc)
+    rough = n.lerp(core, rough, 0.9)
+    height = n.lerp(core, height, mul(n, pebble, 1.5))
+    n.out(**{"Base Color": color, "Roughness": rough, "Normal": n.bump(height, distance=0.01)})
     return mat
 
 
@@ -902,14 +1014,15 @@ def wall_face(z, depth, top_depth, height):
 
 
 def dry_wall(stone_mat, core_mat, rng, x0, x1, *, height=1.0, depth=0.9, top_depth=0.56,
-             height_at=None, spill=None, periodic=True):
+             height_at=None, spill=None, periodic=True, scale=1.0):
     """
     A dry-stone field wall from x0 to x1 along x: two faces of rounded fieldstones of every size,
     packed course on course where each stone settles on the ones below it, leaning in to the top,
     capped by mossy through-stones, small stones chinked into the gaps, and a dark core of rubble
     and earth behind. `periodic` packs it as a loop, so with wrap_x it tiles. `height_at(x)` lowers
     the wall where it has tumbled; the stones that would have stood there are handed to
-    `spill(size)` -> (x, y, z, turn, tilt) to lie on the ground, or left out.
+    `spill(size)` -> (x, y, z, turn, tilt) to lie on the ground, or left out. `scale` sizes the
+    stones (a short piece wants smaller ones).
     Returns the stones and the core.
     """
     height_at = height_at or (lambda x: height)
@@ -930,11 +1043,19 @@ def dry_wall(stone_mat, core_mat, rng, x0, x1, *, height=1.0, depth=0.9, top_dep
                 out.append(i)
         return out
 
-    def place(name, size, at, cuts=2, turn=0.0, tilt=(0.0, 0.0), roundness=None, side=0):
-        o = stone(name, size, at, stone_mat, rng.random(), cuts=cuts,
-                  roundness=roundness if roundness is not None else rng.uniform(0.35, 0.75),
-                  lump=rng.uniform(0.07, 0.15), turn=turn, tilt=tilt, facets=rng.randint(0, 2),
-                  flat=rng.uniform(0.1, 0.3))
+    def place(name, size, at, cuts=2, turn=0.0, tilt=(0.0, 0.0), roundness=None, side=0,
+              outward=None, points=None, facets=None):
+        if roundness is None:
+            # Glacial fieldstones: some ice-rounded, some broken and angular.
+            roundness = rng.uniform(0.4, 0.72) if rng.random() < 0.55 else rng.uniform(0.05, 0.35)
+        faces = ()
+        if side and outward is not None:
+            # Laid with a flat face outwards, as a waller picks them.
+            faces = (((rng.uniform(-0.15, 0.15), side, rng.uniform(-0.15, 0.1)), outward),)
+        o = stone(name, size, at, stone_mat, rng.random(), cuts=cuts, roundness=roundness,
+                  lump=rng.uniform(0.07, 0.15), turn=turn, tilt=tilt,
+                  facets=rng.randint(1, 3) if facets is None else facets,
+                  flat=rng.uniform(0.1, 0.3), faces=faces, points=points)
         if side:
             # Faces turned in to the core, deep inside the wall, and on the ground are never seen.
             def hidden(c, nrm):
@@ -947,6 +1068,7 @@ def dry_wall(stone_mat, core_mat, rng, x0, x1, *, height=1.0, depth=0.9, top_dep
     def fallen(size):
         if spill is None:
             return
+        size = tuple(min(v, 0.5) for v in size)
         res = spill(size)
         if res:
             x, y, z, turn, tilt = res
@@ -955,37 +1077,65 @@ def dry_wall(stone_mat, core_mat, rng, x0, x1, *, height=1.0, depth=0.9, top_dep
     cap_h = 0.3
     face_top = height - cap_h
     skies = {}
+    # The courses sag and rise along the wall where the ground has settled (periodic, so it tiles).
+    ph = [rng.uniform(0, 6.28) for _ in range(3)]
+
+    def sag(x):
+        t = (x - x0) / span * 2 * math.pi
+        return (0.035 * math.sin(t + ph[0]) + 0.02 * math.sin(2 * t + ph[1])
+                + 0.01 * math.sin(3 * t + ph[2]))
+
+    joints = []  # (side, x, z) where stones meet: chinking goes there
     for side in (-1, 1):
-        sky = [0.0] * N
-        for row in range(7):
+        sky = [sag(x0 + (i + 0.5) * cell) - 0.05 for i in range(N)]
+        for row in range(8):
             x = x0 + rng.uniform(0, span) if periodic else x0 - rng.uniform(0.0, 0.2)
             end = x + span if periodic else x1
             while x < end - 0.05:
-                big = rng.random() < 0.35
-                L = rng.uniform(0.55, 0.85) if big else rng.uniform(0.3, 0.52)
-                if end - (x + L) < 0.2:
+                cs0 = cells(x, 0.3)
+                lvl = (sum(sky[i] for i in cs0) / len(cs0)) if cs0 else 0.0
+                # Big stones low down, smaller towards the top.
+                grade = (1.3 - 0.75 * min(max(lvl / face_top, 0.0), 1.0)) * scale
+                r = rng.random()
+                if r < 0.3:
+                    L = rng.uniform(0.55, 0.9) * grade
+                    h = L * rng.uniform(0.45, 0.75)
+                elif r < 0.4 and lvl < 0.25:
+                    # A stone set on end.
+                    L = rng.uniform(0.22, 0.34) * scale
+                    h = L * rng.uniform(1.2, 1.7)
+                else:
+                    L = rng.uniform(0.2, 0.5) * grade
+                    h = L * rng.uniform(0.5, 0.9)
+                L = max(0.16, L)
+                if end - (x + L) < 0.16:
                     L = end - x
-                h = L * rng.uniform(0.55, 0.85) + rng.uniform(-0.03, 0.04)
                 cs = cells(x, L)
                 cx = x + L / 2
+                x0s = x
                 x += L
                 if not cs:
                     continue
-                bottom = max(sky[i] for i in cs) - 0.03
-                limit = min(face_top, height_at(cx) - 0.12)
+                bottom = max(sky[i] for i in cs) - 0.035
+                limit = min(face_top + sag(cx), height_at(cx) - 0.12)
                 room = limit - bottom
-                if room < 0.1:
+                if room < 0.08:
                     if bottom < height and height_at(cx) < height - 0.1 and row < 3:
                         fallen((L, rng.uniform(0.3, 0.45), h))
                     continue
-                h = max(0.12, min(h, room + 0.06))
-                d = min(rng.uniform(0.32, 0.48), face(bottom) * 1.1)
+                h = max(0.1, min(h, room + 0.06))
+                d = min(rng.uniform(0.3, 0.5), face(bottom) * 1.1)
                 zc = bottom + h / 2
-                y = side * (face(zc) - d / 2 + rng.uniform(-0.035, 0.015))
-                small = L < 0.47
-                place("stone", (L + 0.05, d, h + 0.02), (cx, y, zc),
-                      cuts=1 if small else 2, turn=rng.uniform(-0.1, 0.1),
-                      tilt=(rng.uniform(-0.08, 0.08), rng.uniform(-0.12, 0.12)), side=side)
+                y = side * (face(zc) - d / 2 + rng.uniform(-0.04, 0.02))
+                big = L > 0.42 or h > 0.36
+                place("stone", (L + 0.09, d, h + 0.06), (cx, y, zc),
+                      cuts=2 if big else 1, points=40 if big else (22 if L > 0.28 else 16),
+                      turn=rng.uniform(-0.12, 0.12),
+                      tilt=(rng.uniform(-0.1, 0.1), rng.uniform(-0.16, 0.16)), side=side,
+                      outward=rng.uniform(0.7, 0.92))
+                joints.append((side, x0s, bottom + h * rng.uniform(0.75, 1.0)))
+                if rng.random() < 0.5:
+                    joints.append((side, x0s, bottom + h * rng.uniform(0.0, 0.25)))
                 for i in cs:
                     sky[i] = bottom + h
         skies[side] = sky
@@ -1008,20 +1158,34 @@ def dry_wall(stone_mat, core_mat, rng, x0, x1, *, height=1.0, depth=0.9, top_dep
             continue
         zc = bottom + h / 2
         d = 2 * face(zc) + rng.uniform(-0.04, 0.04)
-        place("cap", (L + 0.05, d, h + 0.03), (cx, rng.uniform(-0.03, 0.03), zc), cuts=2,
-              turn=rng.uniform(-0.15, 0.15), tilt=(rng.uniform(-0.1, 0.1), rng.uniform(-0.12, 0.12)),
-              roundness=rng.uniform(0.55, 0.85))
-    # Chinking: small stones wedged into the gaps on both faces.
-    for _ in range(int(span * 1.3)):
-        side = rng.choice((-1, 1))
-        cx = rng.uniform(x0, x1)
-        zc = rng.uniform(0.15, face_top - 0.05)
-        if zc > height_at(cx) - 0.2:
+        if rng.random() < 0.3 and d > 0.4:
+            # Two stones side by side across the top instead of one through-stone.
+            for s in (-1, 1):
+                place("cap", (L * rng.uniform(0.85, 1.05), d * 0.56, h * rng.uniform(0.8, 1.05)),
+                      (cx + rng.uniform(-0.04, 0.04), s * d * 0.24, zc), cuts=2, points=28,
+                      turn=rng.uniform(-0.25, 0.25),
+                      tilt=(rng.uniform(-0.15, 0.15), rng.uniform(-0.15, 0.15)))
             continue
-        sz = rng.uniform(0.09, 0.15)
-        place("chink", (sz * rng.uniform(1.0, 1.6), sz, sz * rng.uniform(0.6, 0.9)),
-              (cx, side * (face(zc) - sz * 0.6), zc), cuts=1, turn=rng.uniform(-0.5, 0.5),
-              roundness=0.5, side=side)
+        place("cap", (L + 0.05, d, h + 0.03), (cx, rng.uniform(-0.04, 0.04), zc), cuts=2,
+              points=36, turn=rng.uniform(-0.2, 0.2),
+              tilt=(rng.uniform(-0.12, 0.12), rng.uniform(-0.15, 0.15)),
+              roundness=rng.uniform(0.25, 0.8))
+    # Chinking: small stones wedged into the joints where face stones meet, and a few slivers
+    # driven into the bed joints.
+    for side, cx, zc in joints:
+        if rng.random() > 0.75 or zc < 0.04 or zc > height_at(cx) - 0.15:
+            continue
+        sz = rng.uniform(0.08, 0.16)
+        if rng.random() < 0.15:
+            size = (sz * rng.uniform(1.6, 2.4), sz, sz * rng.uniform(0.3, 0.45))
+        else:
+            size = (sz * rng.uniform(0.8, 1.4), sz, sz * rng.uniform(0.6, 1.0))
+        cx = cx + rng.uniform(-0.03, 0.03)
+        if periodic and not (x0 < cx < x1):
+            cx = x0 + (cx - x0) % span
+        place("chink", size, (cx, side * (face(zc) - sz * 0.78), zc), cuts=0,
+              points=15, turn=rng.uniform(-0.5, 0.5), roundness=rng.uniform(0.45, 0.8),
+              tilt=(0, rng.uniform(-0.4, 0.4)), side=side, facets=rng.randint(0, 1))
 
     # The core: a dark mass of earth and rubble, its top following the wall down where it's fallen.
     bm = bmesh.new()
@@ -1029,8 +1193,8 @@ def dry_wall(stone_mat, core_mat, rng, x0, x1, *, height=1.0, depth=0.9, top_dep
     xs = [x for x in xs if height_at(x) > 0.3]
     rows = []
     for x in xs:
-        top = max(0.05, min(height_at(x), height) - 0.16)
-        fb, ft = face(0) - 0.14, face(top) - 0.14
+        top = max(0.05, min(height_at(x), height) - 0.3)
+        fb, ft = face(0) - 0.2, face(top) - 0.2
         rows.append([bm.verts.new(p) for p in
                      ((x, -fb, 0.0), (x, -ft, top), (x, ft, top), (x, fb, 0.0))])
     for r0, r1 in zip(rows, rows[1:]):
@@ -1038,6 +1202,7 @@ def dry_wall(stone_mat, core_mat, rng, x0, x1, *, height=1.0, depth=0.9, top_dep
             _face(bm, (r0[i], r0[i + 1], r1[i + 1], r1[i]),
                   Vector((0, [-1, 0, 1][i], 1 if i == 1 else 0.3)))
     core = _obj("core", bm, core_mat)
+    tag_all(core, rng.random(), CORE)
     return stones, core
 
 

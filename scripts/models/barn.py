@@ -34,15 +34,15 @@ KVIST = 1.9
 RAMP_Y0, RAMP_Y1, RAMP_X0, RAMP_X1 = 3.0, 5.0, 1.6, 7.6
 LAND_X0, LAND_Y0 = -1.9, 3.7
 
-FALU = (0.11, 0.017, 0.011)
-WHITE = (0.42, 0.405, 0.36)
+FALU = (0.08, 0.028, 0.02)
+WHITE = (0.3, 0.29, 0.26)
 
 
 def build():
     m = {
-        "red": vb.wood("red", 31, 4096, paint=FALU, peel=0.28, silvering=0.7,
+        "red": vb.wood("red", 31, 4096, paint=FALU, peel=0.55, silvering=0.7,
                        weather=(0.5, -0.85, 0.0), lichen=0.3),
-        "trim": vb.wood("trim", 32, 2048, paint=WHITE, peel=0.3, peel_scale=6.0, silvering=0.7, lichen=0.3),
+        "trim": vb.wood("trim", 32, 2048, paint=WHITE, peel=0.45, peel_scale=6.0, silvering=0.7, lichen=0.3),
         "timber": vb.wood("timber", 33, 2048, silvering=0.55, lichen=0.5),
         "slate": vb.slates("slate", 34, 4096, width=0.3, moss=0.45, moss_top=7.0),
         "stone": vb.stone("stone", 35, 4096, moss=0.5, lichen=0.35),

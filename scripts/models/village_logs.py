@@ -427,36 +427,31 @@ def log_walls(part, mats, hx, hy, z0, courses, pitch, rt, rv, head, rng, opening
 def stone(part, mat, centre, size, rng, cuts=1, round_=0.45, rough=0.16, yaw=None, ground=None,
           flat_top=0.0):
     """
-    A fieldstone: a subdivided box rounded towards an ellipsoid, lumpy, `size` (x, y, z) across,
-    turned `yaw` round z. `ground` cuts it off flat below that z; `flat_top` flattens the top.
+    A fieldstone `size` (x, y, z) across, turned `yaw` round z: the hull of a rounded block from
+    village_stone.fieldstone(), some ice-rounded and some broken flat, so no two alike. `ground`
+    cuts it off flat below that z; `flat_top` flattens the top. `cuts` sets the detail (0 small
+    chinking stones, 2 big ones), `round_` how rounded, `rough` how lumpy.
     """
-    bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=2)
-    if cuts:
-        bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=cuts, use_grid_fill=True)
-    seed = Vector((rng.uniform(-90, 90), rng.uniform(-90, 90), rng.uniform(-90, 90)))
+    import village_stone as vs
     yaw = rng.uniform(-0.25, 0.25) if yaw is None else yaw
-    rot = Matrix.Rotation(yaw, 3, "Z") @ Matrix.Rotation(rng.uniform(-0.06, 0.06), 3, "X")
-    c = Vector(centre)
-    h = Vector(size) / 2
-    for v in bm.verts:
-        p = v.co.copy()
-        sphere = p.normalized()
-        p = p.lerp(sphere * 1.15, round_)
-        if flat_top and p.z > 1 - flat_top:
-            p.z = 1 - flat_top + (p.z - 1 + flat_top) * 0.25
-        q = Vector((p.x * h.x, p.y * h.y, p.z * h.z))
-        q += q.normalized() * rough * min(h) * mnoise.noise(p * 1.3 + seed)
-        q += q.normalized() * rough * 0.4 * min(h) * mnoise.noise(p * 3.1 + seed)
-        w = rot @ q + c
-        if ground is not None and w.z < ground:
-            w.z = ground
-        v.co = w
-    verts = {v: part.bm.verts.new(v.co) for v in bm.verts}
-    for f in bm.faces:
-        nf = part.bm.faces.new([verts[v] for v in f.verts])
-        nf.material_index = part.slot(mat)
-    bm.free()
+    rot = (Matrix.Translation(Vector(centre)) @ Matrix.Rotation(yaw, 4, "Z")
+           @ Matrix.Rotation(rng.uniform(-0.06, 0.06), 4, "X"))
+    # Half the stones keep their rounding, half are broken and angular.
+    r = min(1.0, round_ + rng.uniform(-0.1, 0.25)) if rng.random() < 0.5 else rng.uniform(0.05, 0.35)
+    # A hull rounds off the box's corners: size it up so packed stones still meet.
+    size = (size[0] * 1.12, size[1] * 1.08, size[2] * 1.1)
+    verts, tris = vs.fieldstone(size, rng.randrange(1 << 30), points={0: 14, 1: 24}.get(cuts, 38),
+                                round_=r, breaks=rng.randint(1, 3), bed=0.2, top=flat_top,
+                                lump=rough * 0.4)
+    slot = part.slot(mat)
+
+    def make(bm, local, world):
+        if ground is not None and world.z < ground:
+            world = Vector((world.x, world.y, ground))
+        return bm.verts.new(world)
+
+    for f in vs.to_bmesh(part.bm, verts, tris, rot, make):
+        f.material_index = slot
 
 
 def fieldstones(part, mat, core_mat, hx, hy, height, width, rng, ground=0.0, skip=()):
@@ -1105,9 +1100,9 @@ SILVER = (0.105, 0.099, 0.087)
 SILVER_PALE = (0.15, 0.143, 0.127)
 TAR = (0.02, 0.014, 0.0095)
 TAR_BROWN = (0.058, 0.036, 0.021)
-FALU = (0.095, 0.02, 0.012)
-OCHRE = (0.3, 0.17, 0.045)
-TRIM = (0.42, 0.4, 0.34)
+FALU = (0.078, 0.027, 0.019)
+OCHRE = (0.19, 0.125, 0.055)
+TRIM = (0.3, 0.29, 0.26)
 LICHEN_GREEN = (0.16, 0.17, 0.1)
 LICHEN_YELLOW = (0.2, 0.17, 0.065)
 MOSS = (0.035, 0.05, 0.014)
@@ -1226,7 +1221,8 @@ def timber(name, size, along="x", seed=0, dark=0.5, dark_axis=None, kind="log", 
         # Paint, chalky and mottled, brushed along the grain, peeling back to grey wood.
         pm = n.mix(f.noise(1.6, 3), [c * 0.8 for c in paint], [c * 1.12 for c in paint])
         chalk = smooth(n, f.noise(0.9, 3), 0.45, 0.8)
-        pm = n.mix(n.math("MULTIPLY", chalk, 0.35), pm, [0.7 * c + 0.3 * sum(paint) / 3 + 0.015 for c in paint])
+        pm = n.mix(0.35, pm, [sum(paint) / 3 * 1.1 + 0.01] * 3)
+        pm = n.mix(n.math("MULTIPLY", chalk, 0.55), pm, [0.55 * c + 0.4 * sum(paint) / 3 + 0.03 for c in paint])
         brush = f.noise(4, 3, stretch=st(25))
         pm = n.mix(n.math("MULTIPLY", brush, 0.25), pm, [c * 0.7 for c in paint])
         pm = n.mix(n.math("MULTIPLY", grooves, 0.4), pm, [c * 0.45 for c in paint])

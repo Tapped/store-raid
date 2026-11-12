@@ -629,7 +629,7 @@ def spruce_curtain(tw, rng, ox, oy, span):
 
 BIRCH_TWIG = srgb("#3a2722")
 BIRCH_TWIG_OLD = srgb("#5a4a44")
-BIRCH_LEAF = srgb("#b89a2e")
+BIRCH_LEAF = srgb("#8a7434")
 
 
 def _birch_twig(tw, rng, p, heading, length, level, box, leaves, z=0.0):
@@ -671,7 +671,7 @@ def _birch_twig(tw, rng, p, heading, length, level, box, leaves, z=0.0):
             stalk = pts[-1] + d * 0.012
             tw.stem([pts[-1], stalk], 0.0008, 0.0006, BIRCH_TWIG, sides=3)
             tone = rng.random()
-            lc = lerp3(BIRCH_LEAF, srgb("#7a5a24") if tone < 0.4 else srgb("#c8ac40"),
+            lc = lerp3(BIRCH_LEAF, srgb("#5e4a2a") if tone < 0.5 else srgb("#9a8646"),
                        rng.uniform(0.2, 0.7))
             tw.leaf(stalk, d, rng.uniform(0.032, 0.045), rng.uniform(0.024, 0.032), lc,
                     curl=rng.uniform(0.2, 0.6))
@@ -703,8 +703,11 @@ def birch_spray_fine(tw, rng, ox, oy, span):
 # Ground plant cards (seen from the side: +y is up the tile)
 
 
-GRASS = (srgb("#8a7a45"), srgb("#a39462"), srgb("#6d6038"), srgb("#7c7556"))
-GRASS_BASE = srgb("#4f5133")
+# Late-autumn tussock grass: mostly dead, straw to grey-brown, some blades still dull green; each
+# blade dark at the root (in the tussock's own shade) and palest at its tip.
+GRASS = (srgb("#6e6243"), srgb("#7d6f4c"), srgb("#5c5238"), srgb("#6b6650"))
+GRASS_GREEN = (srgb("#48502f"), srgb("#3c4529"), srgb("#535934"))
+GRASS_BASE = srgb("#1d1f14")
 
 
 def grass_tile(flop):
@@ -731,31 +734,36 @@ def grass_tile(flop):
                 p = p + Vector((math.cos(a), math.sin(a), 0)) * (ln / n)
                 p.x = min(max(p.x, ox + 0.02 * span), ox + 0.98 * span)
                 p.y = min(max(p.y, oy + 0.01 * span), oy + 0.98 * span)
-            tone = rng.choice(GRASS)
-            k = rng.uniform(0.7, 1.15)
+            green = rng.random() < (0.45 if flop < 0.4 else 0.2)
+            tone = rng.choice(GRASS_GREEN if green else GRASS)
+            k = rng.uniform(0.65, 1.1)
+            # Dead tips bleach paler than the rest of the blade.
+            tip = lerp3(tone, srgb("#8a7d5c"), 0.0 if green else rng.uniform(0.2, 0.6))
             tw.ribbon(pts, widths,
-                      lambda i, tone=tone, k=k: tuple(
-                          c * k for c in lerp3(GRASS_BASE, tone, min(1, i / 3))),
+                      lambda i, tone=tone, k=k, tip=tip: tuple(
+                          c * k for c in (lerp3(GRASS_BASE, tone, smooth(i / (n * 0.65)))
+                                          if i < n * 0.65 else
+                                          lerp3(tone, tip, (i - n * 0.65) / (n * 0.35)))),
                       twist=rng.uniform(-1.5, 1.5))
         # A few seed heads on taller stems: airy panicles.
         for _ in range(int(7 * span / 0.8)):
             x0 = base.x + rng.gauss(0, 0.05 * span)
             top = Vector((x0 + rng.gauss(0, 0.06 * span), oy + span * rng.uniform(0.75, 0.95), 0))
             tw.stem([Vector((x0, base.y, 0)), (Vector((x0, base.y, 0)) + top) / 2
-                     + Vector((rng.gauss(0, 0.02), 0, 0)), top], 0.0012, 0.0008, GRASS[1], 3)
+                     + Vector((rng.gauss(0, 0.02), 0, 0)), top], 0.0012, 0.0008, GRASS[2], 3)
             for _ in range(14):
                 d = _heading(math.pi / 2 + rng.uniform(-1.0, 1.0))
                 q = top - Vector((0, rng.uniform(0, 0.12 * span), 0))
                 end = q + d * rng.uniform(0.015, 0.04) * span / 0.6
-                tw.stem([q, end], 0.0006, 0.0005, GRASS[0], 3)
-                tw.blob(end, (0.002, 0.0012), GRASS[1])
+                tw.stem([q, end], 0.0006, 0.0005, GRASS[2], 3)
+                tw.blob(end, (0.002, 0.0012), GRASS[0])
     draw.__name__ = f"grass_tile_{flop}"
     return draw
 
 
 HEATHER_STEM = srgb("#3b2f2a")
 HEATHER_LEAF = (srgb("#3d3c33"), srgb("#4a4538"), srgb("#5a4a4e"))
-HEATHER_FLOWER = (srgb("#6e5560"), srgb("#7a5a50"), srgb("#5e4a48"))
+HEATHER_FLOWER = (srgb("#5e4c52"), srgb("#64504a"), srgb("#4f4240"))
 
 
 def heather_tile(tw, rng, ox, oy, span):
@@ -773,12 +781,16 @@ def heather_tile(tw, rng, ox, oy, span):
         flowering = level > 0 and rng.random() < 0.6
         for i, q in enumerate(pts[1:], 1):
             f = i / n
+            # Darker deep in the dome, where little light gets in.
+            k = 0.45 + 0.55 * smooth((q.y - oy) / (0.7 * span))
             for _ in range(5):
                 d = _heading(hd + rng.uniform(-1.4, 1.4))
                 if flowering and f > 0.45:
-                    tw.blob(q + d * 0.004, (0.0032, 0.0024), rng.choice(HEATHER_FLOWER))
+                    c = rng.choice(HEATHER_FLOWER)
+                    tw.blob(q + d * 0.004, (0.0032, 0.0024), tuple(x * k for x in c))
                 else:
-                    tw.needle(q, d, 0.006, 0.0022, rng.choice(HEATHER_LEAF))
+                    c = rng.choice(HEATHER_LEAF)
+                    tw.needle(q, d, 0.006, 0.0022, tuple(x * k * rng.uniform(0.8, 1.1) for x in c))
             if level < 2 and rng.random() < 0.35:
                 shoot(q, hd + rng.choice((-1, 1)) * rng.uniform(0.3, 0.7),
                       ln * (1 - f) * 0.7, level + 1)
@@ -788,7 +800,8 @@ def heather_tile(tw, rng, ox, oy, span):
               math.pi / 2 + rng.gauss(0, 0.4), span * rng.uniform(0.5, 0.92), 0)
 
 
-FERN = (srgb("#6b4a28"), srgb("#7d5830"), srgb("#553a20"), srgb("#5e4a30"))
+# Dead bracken: rust-brown going grey-brown and dark where it rots, not orange.
+FERN = (srgb("#5a4129"), srgb("#684b2f"), srgb("#463323"), srgb("#544634"), srgb("#3d3326"))
 
 
 def fern_tile(shrivel):
@@ -817,10 +830,11 @@ def fern_tile(shrivel):
                     c = q + d * (ln * g) + Vector((0, 0, -shrivel * 0.02 * g))
                     w = 0.02 * (1 - g * 0.5) * span / 0.9
                     # a pinnule each side, shrivelled ones narrower and curled
+                    shade = 0.6 + 0.4 * g
                     for s2 in (1, -1):
                         pd = rotate(d, UP, s2 * math.radians(65))
                         tw.leaf(c, pd, w * (1 - shrivel * 0.4), w * 0.7 * (1 - shrivel * 0.5),
-                                tone, curl=0.3 + shrivel)
+                                tuple(x * shade for x in tone), curl=0.3 + shrivel)
                     prev = c
                 tw.stem([q, prev], 0.0013, 0.0008, tone, 3)
     draw.__name__ = f"fern_tile_{shrivel}"
@@ -1141,10 +1155,11 @@ def spruce(height, width, seed, bark_size=1024, tile_px=1024, density=1.0, key="
 
 
 def birch(height, width, seed, bark_size=1024, tile_px=1024, forks=2, lean=0.08, density=1.0,
-          key="birch", leaves=0.25, dead=False):
+          key="birch", leaves=0.25, dead=False, twigs=1.0):
     """
     A downy birch: a trunk that forks into leaders, branches that rise, arch out and let their tips
     hang, fine red-brown twigs in sprays round the outside of the crown, a few yellow leaves left.
+    `twigs` scales how many twig cards line the branches (a card every 13 to 20 cm at 1).
     """
     rng = random.Random(seed)
     R = width / 2 * 0.85
@@ -1223,21 +1238,38 @@ def birch(height, width, seed, bark_size=1024, tile_px=1024, forks=2, lean=0.08,
                 if inside(p + cd * ln) > 1.15:
                     ln *= 0.6
                 branch(p, cd, ln, max(0.006, radius * 0.4), 2, rng.uniform(0, 9))
-        # Twig sprays: along the outer part of the branch and at its tip.
-        cnt = 3 if level == 2 else 1
-        for j in range(cnt + 1):
-            f = 0.4 + 0.6 * j / max(1, cnt)
-            p, T = _along(pts, min(f, 0.999))
-            for _ in range(1 if j < cnt else 2):
-                U = (T + Vector((rng.gauss(0, 0.3), rng.gauss(0, 0.3), rng.gauss(0, 0.2)))
-                     ).normalized()
-                V = rotate(perpendicular(U), U, rng.uniform(-1.0, 1.0) + math.pi / 2 * 0.6)
-                w = rng.uniform(0.4, 0.65) * (1.0 if level == 2 else 1.15)
-                hh = w * rng.uniform(0.75, 1.0)
-                o = p - U * (w * 0.08) - V * (hh / 2)
-                ti = 1 if rng.random() < leaves else rng.choice((0, 2, 3))
-                card(cards, o, U, V, w, hh, tile_rect(ti), bent, segs=2,
-                     droop=rng.uniform(0.04, 0.14))
+        # Twig sprays: a fine haze of small cards all along the outer part of every branch,
+        # drooping, and a tassel of them hanging from its tip, so the crown builds up as one
+        # soft mass of thin hanging twigs rather than clumps on sticks.
+        def tile():
+            if rng.random() < leaves:
+                return 1
+            return 2 if rng.random() < 0.55 else rng.choice((0, 3))
+
+        step = (0.13 if level == 2 else 0.2) / twigs
+        s = length * (0.25 if level == 2 else 0.4) + rng.uniform(0, step)
+        while s < length * 0.97:
+            f = s / length
+            p, T = _along(pts, f)
+            U = (T + Vector((rng.gauss(0, 0.35), rng.gauss(0, 0.35), rng.gauss(0, 0.2)))
+                 ).normalized()
+            U = (U - UP * rng.uniform(0.3, 0.9)).normalized()
+            V = rotate(perpendicular(U), U, rng.uniform(0, math.pi))
+            w = rng.uniform(0.34, 0.55) * (1.1 - 0.25 * f)
+            hh = w * rng.uniform(0.7, 1.0)
+            o = p - U * (w * 0.06) - V * (hh / 2)
+            card(cards, o, U, V, w, hh, tile_rect(tile()), bent, segs=1)
+            s += step * rng.uniform(0.7, 1.3)
+        p, T = _along(pts, 0.999)
+        for _ in range(rng.randint(2, 3) if level == 2 else 2):
+            U = (T * rng.uniform(0.2, 0.6) - UP + Vector((rng.gauss(0, 0.3), rng.gauss(0, 0.3),
+                                                          0))).normalized()
+            V = rotate(perpendicular(U), U, rng.uniform(0, math.pi))
+            w = rng.uniform(0.32, 0.5)
+            hh = w * rng.uniform(0.6, 0.85)
+            o = p - U * (w * 0.05) - V * (hh / 2)
+            card(cards, o, U, V, w, hh, tile_rect(tile()), bent, segs=2,
+                 droop=rng.uniform(0.03, 0.1))
 
     # Main branches off the upper trunk and the leaders.
     sources = [(tpts, tradii, 0.55)] + [(lp, lr, 0.12) for lp, _, lr in leaders]
@@ -1430,6 +1462,13 @@ def rock(name, size, seed, mat, tris=1500, planes=10, rounding=0.3, fractures=3,
         el = rng.uniform(-0.1, 0.9)
         nrm = Vector((math.cos(az) * math.cos(el), math.sin(az) * math.cos(el), math.sin(el)))
         hard.append((nrm, rng.uniform(0.62, 0.8), rng.uniform(0, 100)))
+    # Joints: shallow grooves where the rock is cracking along planes, a few centimetres deep.
+    joints = []
+    for i in range(3):
+        az = rng.uniform(0, 6.28)
+        el = rng.uniform(-0.6, 0.6)
+        joints.append((Vector((math.cos(az) * math.cos(el), math.sin(az) * math.cos(el),
+                               math.sin(el))), rng.uniform(-0.5, 0.5)))
     k = max(0.02, rounding * 0.25)
     off = Vector((rng.uniform(0, 50), rng.uniform(0, 50), rng.uniform(0, 50)))
     for v in bm.verts:
@@ -1441,15 +1480,21 @@ def rock(name, size, seed, mat, tris=1500, planes=10, rounding=0.3, fractures=3,
         for nn, h, ph in hard:
             dn = d.dot(nn)
             if dn > 0.04:
-                # a fracture face: flat, with a step or two across it
+                # a fracture face: flat, broken in steps where it spalled off in layers
                 step = 0.02 * noise.noise(d * 2.5 + Vector((ph, 0, 0)))
+                terr = noise.noise(d * 1.7 + Vector((0, ph, 0)))
+                step += 0.035 * math.floor(terr * 2.5) / 2.5
                 th = (h + step) / dn
                 kk = 0.025  # sharp, but not knife-edged
                 mm = min(t, th)
                 t = mm - kk * math.log(math.exp(-(t - mm) / kk) + math.exp(-(th - mm) / kk))
         t *= 1 + warp * noise.noise(d * 1.4 + off) + warp * 0.35 * noise.noise(d * 3.7 + off)
-        # weathered relief: knobs and runnels a few centimetres deep
-        t *= 1 + 0.018 * noise.noise(d * 9 + off) - 0.012 * abs(noise.noise(d * 17 + off))
+        # weathered relief: knobs and runnels a few centimetres deep, grooves along the joints
+        t *= 1 + 0.03 * noise.noise(d * 9 + off) - 0.02 * abs(noise.noise(d * 17 + off))
+        t *= 1 + 0.012 * noise.noise(d * 31 + off)
+        for jn, jo in joints:
+            g = abs(d.dot(jn) - jo + 0.03 * noise.noise(d * 6 + off))
+            t *= 1 - 0.035 * max(0.0, 1 - g / 0.035)
         v.co = d * t
     lo = Vector([min(v.co[i] for v in bm.verts) for i in range(3)])
     hi = Vector([max(v.co[i] for v in bm.verts) for i in range(3)])
@@ -1527,35 +1572,56 @@ def rock_material(size=1024, moss=1.0, lichen=1.0, name="granite", scale=1.0, tu
     yellow = n.math("MULTIPLY", lib.smoothstep(n, n.math("ADD", rosette, n.math("MULTIPLY", n.noise(30 / s, detail=4), 0.25)), 0.32, 0.26),
                     n.math("MULTIPLY", lib.smoothstep(n, n.noise(1.7 / s, detail=2), 0.55, 0.65), lichen))
     yellow = n.math("MULTIPLY", yellow, lib.smoothstep(n, up, -0.3, 0.2))
-    color = n.mix(n.math("MULTIPLY", lich, 0.85), color, lib.shade(n, srgb("#9aa07a", 0.6),
+    color = n.mix(n.math("MULTIPLY", lich, 0.85), color, lib.shade(n, srgb("#8d9182", 0.6),
                                          n.math("ADD", 0.8, n.math("MULTIPLY", grain, 0.4))))
-    color = n.mix(n.math("MULTIPLY", yellow, 0.9), color, srgb("#c2b45a", 0.55))
+    color = n.mix(n.math("MULTIPLY", yellow, 0.45), color, srgb("#958a5e", 0.5))
     dots = lib.smoothstep(n, n.noise(40 / s, detail=3), 0.7, 0.74)
     color = n.mix(n.math("MULTIPLY", dots, 0.7), color, srgb("#22221e"))
     # Moss: on top and in hollows, its edge broken up.
     edge = n.noise(3 / s, detail=6, roughness=0.6)
-    m = n.math("ADD", up, n.math("MULTIPLY", n.math("SUBTRACT", edge, 0.5), 0.9))
-    m = n.math("ADD", m, n.math("MULTIPLY", hollow, 0.9))
-    mask = n.math("MULTIPLY", lib.smoothstep(n, m, 0.62, 0.76), moss)
+    speck = n.noise(70 / s, detail=4, roughness=0.6)
+    m = n.math("ADD", up, n.math("MULTIPLY", n.math("SUBTRACT", edge, 0.5), 1.1))
+    m = n.math("ADD", m, n.math("MULTIPLY", hollow, 1.3))
+    m = n.math("ADD", m, n.math("MULTIPLY", n.math("SUBTRACT", n.noise(0.8 / s, detail=3), 0.5), 0.6))
+    # The edge frays into islands and specks rather than stopping on a line.
+    m = n.math("ADD", m, n.math("MULTIPLY", n.math("SUBTRACT", speck, 0.5), 0.5))
+    mask = n.math("MULTIPLY", lib.smoothstep(n, m, 0.66, 0.74), moss)
     clump = n.noise(45 / s, detail=5, roughness=0.6)
-    moss_col = n.mix(clump, srgb("#202a12"), srgb("#47552b", 0.85))
+    moss_col = n.mix(clump, srgb("#1c2111"), srgb("#3d4528", 0.85))
     moss_col = n.mix(lib.smoothstep(n, n.noise(2.2 / s, detail=3), 0.55, 0.75), moss_col,
-                     srgb("#5e6230"))
+                     srgb("#4f4d2e"))
+    moss_col = lib.shade(n, moss_col, n.math("ADD", 0.7, n.math("MULTIPLY", speck, 0.6)))
     # thin moss creeping out before the thick
-    thin = n.math("MULTIPLY", lib.smoothstep(n, m, 0.42, 0.62), moss)
-    color = n.mix(n.math("MULTIPLY", thin, 0.45), color, srgb("#363d22"))
+    thin = n.math("MULTIPLY", lib.smoothstep(n, m, 0.4, 0.66), moss)
+    color = n.mix(n.math("MULTIPLY", thin, 0.45), color, srgb("#2f3322"))
     color = n.mix(mask, color, moss_col)
     rough = n.lerp(wet, 0.82, 0.5)
     rough = n.lerp(lich, rough, 0.9)
     rough = n.lerp(mask, rough, 0.95)
     pits = lib.smoothstep(n, n.noise(28 / s, detail=4, roughness=0.65), 0.58, 0.7)
-    h = n.math("ADD", n.math("MULTIPLY", grain, 0.18), n.math("MULTIPLY", n.noise(9 / s, detail=6, roughness=0.65),
-                                                              0.5))
-    h = n.math("SUBTRACT", h, n.math("MULTIPLY", pits, 0.25))
+    pv = n.add("ShaderNodeTexVoronoi", {"Vector": co, "Scale": 60 / s, "Randomness": 1.0}).outputs["Distance"]
+    pocks = n.math("MULTIPLY", lib.smoothstep(n, pv, 0.25, 0.06),
+                   lib.smoothstep(n, n.noise(6 / s, detail=3), 0.45, 0.62))
+    crack = lib.smoothstep(n, n.math("ABSOLUTE", n.math("SUBTRACT", n.noise(2.5 / s, detail=4), 0.5)), 0.006, 0.0)
+    crack = n.math("MULTIPLY", crack, lib.smoothstep(n, n.noise(1.5 / s, detail=2), 0.4, 0.6))
+    h = n.math("ADD", n.math("MULTIPLY", grain, 0.25), n.math("MULTIPLY", n.noise(9 / s, detail=6, roughness=0.65),
+                                                              0.6))
+    h = n.math("ADD", h, n.math("MULTIPLY", n.noise(2.5 / s, detail=5, roughness=0.6), 0.8))
+    h = n.math("SUBTRACT", h, n.math("MULTIPLY", pits, 0.3))
+    h = n.math("SUBTRACT", h, n.math("MULTIPLY", pocks, 0.35))
+    h = n.math("SUBTRACT", h, n.math("MULTIPLY", crack, 0.8))
     color = lib.shade(n, color, n.math("SUBTRACT", 1, n.math("MULTIPLY", pits, 0.3)))
+    color = lib.shade(n, color, n.math("SUBTRACT", 1, n.math("MULTIPLY", pocks, 0.5)))
+    color = n.mix(n.math("MULTIPLY", crack, 0.45), color, srgb("#1c1c1a"))
+    # The foot: earth splashed up, and a dark wet line where the rock meets the ground.
+    foot = lib.smoothstep(n, n.math("ADD", z, n.math("MULTIPLY", n.math("SUBTRACT", edge, 0.5), 0.15)), 0.3, 0.0)
+    color = n.mix(n.math("MULTIPLY", foot, 0.7), color, srgb("#2a241c"))
+    wetline = lib.smoothstep(n, z, 0.1, 0.0)
+    color = lib.shade(n, color, n.math("SUBTRACT", 1, n.math("MULTIPLY", wetline, 0.6)))
+    rough = n.lerp(wetline, rough, 0.55)
     h = n.math("ADD", h, n.math("MULTIPLY", lich, 0.15))
-    h = n.math("ADD", h, n.math("MULTIPLY", mask, n.math("ADD", 0.6, n.math("MULTIPLY", clump,
-                                                                            0.8))))
+    h = n.math("ADD", h, n.math("MULTIPLY", mask, n.math("ADD", 0.9, n.math("ADD", n.math("MULTIPLY", clump, 0.9),
+                                                                              n.math("MULTIPLY", speck, 0.6)))))
     if turf:
         # Turf: dead grass over moss low down, where the ground runs up to the rock.
         low = lib.smoothstep(n, n.math("ADD", n.math("SUBTRACT", turf, z),
@@ -1563,8 +1629,8 @@ def rock_material(size=1024, moss=1.0, lichen=1.0, name="granite", scale=1.0, tu
                              0.0, 0.12)
         low = n.math("MULTIPLY", low, lib.smoothstep(n, up, 0.1, 0.5))
         blades = n.noise(1.0, detail=3, vector=lib._stretched(n, 90, 90, 6))
-        grass = n.mix(blades, srgb("#5e5432"), srgb("#8a7a45"))
-        grass = n.mix(lib.smoothstep(n, n.noise(4, detail=3), 0.5, 0.7), grass, srgb("#47552b"))
+        grass = n.mix(blades, srgb("#2e2a1d"), srgb("#5e5640"))
+        grass = n.mix(lib.smoothstep(n, n.noise(4, detail=3), 0.5, 0.7), grass, srgb("#353a25"))
         color = n.mix(low, color, grass)
         rough = n.lerp(low, rough, 0.95)
         h = n.math("ADD", h, n.math("MULTIPLY", low, n.math("MULTIPLY", blades, 1.2)))
@@ -1583,18 +1649,24 @@ def outcrop(size, seed, tris=4000, tex=2048):
     rock("outcrop-main", (sx * 0.8, sy * 0.74, sz), seed, mat, tris=int(tris * 0.4), planes=12,
          rounding=0.3, fractures=3, sink=0.05, flat=0.4, at=(sx * 0.04, sy * 0.03, 0),
          tilt=(0.06, -0.08), warp=0.09)
+    # Ledges stepping down from the main mass: the same bedrock, so bedded the same way (turned
+    # little from it) and sunk well into it, not slabs leaning on it.
     ledges = [
-        ((sx * 0.5, sy * 0.48, sz * 0.55), (sx * 0.2, -sy * 0.12, 0), (0.0, 0.1)),
-        ((sx * 0.46, sy * 0.44, sz * 0.72), (-sx * 0.2, sy * 0.1, 0), (-0.08, -0.05)),
-        ((sx * 0.42, sy * 0.36, sz * 0.36), (-sx * 0.06, -sy * 0.22, 0), (0.12, 0.0)),
+        ((sx * 0.5, sy * 0.48, sz * 0.5), (sx * 0.16, -sy * 0.09, 0), (0.06, -0.08)),
+        ((sx * 0.46, sy * 0.44, sz * 0.66), (-sx * 0.15, sy * 0.07, 0), (0.06, -0.08)),
+        ((sx * 0.42, sy * 0.36, sz * 0.32), (-sx * 0.04, -sy * 0.17, 0), (0.06, -0.08)),
     ]
     for i, (sz3, at, tilt) in enumerate(ledges):
         rock(f"outcrop-ledge{i}", sz3, seed + 7 * (i + 1), mat, tris=int(tris * 0.13), planes=9,
-             rounding=0.22, fractures=2, sink=0.05, flat=0.4, at=at, tilt=tilt,
-             turn=rng.uniform(0, 6.28))
-    # The turf mound: low and wide, under everything, a little of it standing proud.
-    rock("outcrop-turf", (sx, sy, sz * 0.2), seed + 99, mat, tris=int(tris * 0.18), planes=14,
-         rounding=1.2, fractures=0, sink=0.0, warp=0.2, res=5)
+             rounding=0.22, fractures=2, sink=0.1, flat=0.4, at=at, tilt=tilt,
+             turn=rng.uniform(-0.3, 0.3))
+    # The turf mound: low and wide, under everything, its edge running out into the ground with
+    # no lip.
+    o = rock("outcrop-turf", (sx, sy, sz * 0.2), seed + 99, mat, tris=int(tris * 0.18), planes=14,
+             rounding=1.2, fractures=0, sink=0.0, warp=0.2, res=5)
+    for v in o.data.vertices:
+        r = min(1.0, math.hypot(v.co.x / (sx / 2), v.co.y / (sy / 2)))
+        v.co.z *= smooth((1.0 - r) / 0.45) * 0.85
 
 
 def log_material(size=1024, axis="y", moss=1.0):
@@ -1610,14 +1682,25 @@ def log_material(size=1024, axis="y", moss=1.0):
     geo_n = n.add("ShaderNodeNewGeometry").outputs["Normal"]
     ax = {"x": 0, "y": 1, "z": 2}[axis]
     along = n.math("ABSOLUTE", n.xyz(geo_n)[ax])
-    sc = _scale(n, bark, (30, 30, 16))
-    vor = n.add("ShaderNodeTexVoronoi", {"Vector": sc, "Scale": 1.0, "Randomness": 0.9})
-    edge = n.add("ShaderNodeTexVoronoi", {"Vector": sc, "Scale": 1.0, "Randomness": 0.9},
+    # Spruce bark: small thin scales, a centimetre or two, taller than wide, lifting at their
+    # edges; not cobbles. The cells are pushed about by noise so they don't read as a net.
+    wq = n.add("ShaderNodeTexNoise", {"Vector": _scale(n, bark, (40, 40, 20)), "Scale": 1.0,
+                                      "Detail": 3}).outputs["Color"]
+    sc = _scale(n, bark, (120, 120, 50))
+    sc = n.add("ShaderNodeVectorMath", {"Vector": sc}, operation="ADD")
+    n.set(sc.inputs[1], wq)
+    sc = sc.outputs["Vector"]
+    vor = n.add("ShaderNodeTexVoronoi", {"Vector": sc, "Scale": 1.0, "Randomness": 1.0})
+    edge = n.add("ShaderNodeTexVoronoi", {"Vector": sc, "Scale": 1.0, "Randomness": 1.0},
                  feature="DISTANCE_TO_EDGE").outputs["Distance"]
     cell = n.xyz(vor.outputs["Color"])[0]
-    plate = lib.smoothstep(n, edge, 0.01, 0.06)
-    bark_col = lib.shade(n, srgb("#3e342c"), n.math("ADD", 0.7, n.math("MULTIPLY", cell, 0.5)))
-    bark_col = n.mix(n.math("MULTIPLY", n.math("SUBTRACT", 1, plate), 0.6), bark_col, srgb("#1e1813"))
+    cell2 = n.xyz(vor.outputs["Color"])[1]
+    plate = lib.smoothstep(n, edge, 0.0, 0.12)
+    bark_col = lib.shade(n, srgb("#3a312a"), n.math("ADD", 0.65, n.math("MULTIPLY", cell, 0.55)))
+    bark_col = n.mix(n.math("MULTIPLY", lib.smoothstep(n, cell2, 0.75, 0.9), 0.6), bark_col,
+                     srgb("#4f4a42"))  # greyed, weathered scales
+    bark_col = n.mix(n.math("MULTIPLY", n.math("SUBTRACT", 1, plate), 0.3), bark_col, srgb("#1e1813"))
+    bark_col = lib.shade(n, bark_col, n.math("ADD", 0.75, n.math("MULTIPLY", n.noise(6, detail=4), 0.5)))
     # Bare wood: silvered, split along the grain.
     grain_v = _scale(n, bark, (60, 60, 1.5))
     grain = n.noise(1.0, detail=5, vector=grain_v)
@@ -1632,10 +1715,19 @@ def log_material(size=1024, axis="y", moss=1.0):
     others = [c for i, c in enumerate((x, y, z)) if i != ax]
     rad = n.math("SQRT", n.math("ADD", n.math("MULTIPLY", others[0], others[0]),
                                 n.math("MULTIPLY", others[1], others[1])))
-    rings = n.math("SINE", n.math("MULTIPLY", n.math("ADD", rad, n.math("MULTIPLY", n.noise(8),
-                                                                       0.02)), 160))
+    # Fine growth rings of uneven width (not a target), radial checks, the heart rotted dark.
+    rw = n.math("ADD", rad, n.math("MULTIPLY", n.noise(6, detail=3), 0.012))
+    rw = n.math("ADD", rw, n.math("MULTIPLY", n.noise(0.9, detail=2), 0.03))
+    rings = n.math("SINE", n.math("MULTIPLY", rw, 900))
+    rings = n.math("MULTIPLY", rings, lib.smoothstep(n, n.noise(3, detail=3), 0.3, 0.7))
     end = n.math("MULTIPLY", lib.smoothstep(n, along, 0.8, 0.93), lib.smoothstep(n, _attr(n, "collar").outputs["Fac"], 0.9, 1.0))
-    end_col = n.mix(n.math("MULTIPLY", lib.smoothstep(n, rings, -0.3, 0.6), 0.45), srgb("#2a1f16"), srgb("#4a3a2a"))
+    ang = n.math("ARCTAN2", others[1], others[0])
+    radial = lib.smoothstep(n, n.math("ABSOLUTE", n.math("SUBTRACT", n.noise(
+        1.0, detail=2, vector=n.vec(n.math("MULTIPLY", ang, 3.0), n.math("MULTIPLY", rad, 2.0), 0.0)), 0.5)), 0.02, 0.0)
+    end_col = n.mix(n.math("MULTIPLY", lib.smoothstep(n, rings, -0.2, 0.8), 0.18), srgb("#3a2e22"), srgb("#4a3c2c"))
+    end_col = lib.shade(n, end_col, n.math("ADD", 0.7, n.math("MULTIPLY", n.noise(4, detail=4), 0.5)))
+    end_col = n.mix(n.math("MULTIPLY", lib.smoothstep(n, rad, 0.12, 0.02), 0.7), end_col, srgb("#1d1610"))
+    end_col = n.mix(n.math("MULTIPLY", radial, 0.8), end_col, srgb("#0e0b08"))
     color = n.mix(end, color, end_col)
     # Lichen, then moss on top.
     lich = n.math("MULTIPLY", lib.smoothstep(n, n.noise(9, detail=6, roughness=0.6), 0.6, 0.64),
@@ -1647,18 +1739,19 @@ def log_material(size=1024, axis="y", moss=1.0):
     m = n.math("ADD", m, n.math("MULTIPLY", hollow, 0.6))
     mask = n.math("MULTIPLY", lib.smoothstep(n, m, 0.55, 0.7), moss)
     clump = n.noise(60, detail=5, roughness=0.6)
-    moss_col = n.mix(clump, srgb("#202a12"), srgb("#47552b", 0.85))
+    moss_col = n.mix(clump, srgb("#1c2111"), srgb("#3d4528", 0.85))
     thin = n.math("MULTIPLY", lib.smoothstep(n, m, 0.38, 0.55), moss)
-    color = n.mix(n.math("MULTIPLY", thin, 0.45), color, srgb("#363d22"))
+    color = n.mix(n.math("MULTIPLY", thin, 0.45), color, srgb("#2f3322"))
     color = n.mix(mask, color, moss_col)
     color = lib.shade(n, color, n.math("SUBTRACT", 1, n.math("MULTIPLY", hollow, 0.6)))
     rough = n.lerp(mask, 0.85, 0.95)
-    h = n.lerp(edge_s, n.math("ADD", n.math("MULTIPLY", plate, 0.6),
-                              n.math("MULTIPLY", cell, 0.2)),
+    h = n.lerp(edge_s, n.math("ADD", n.math("MULTIPLY", plate, 0.45),
+                              n.math("MULTIPLY", cell, 0.3)),
                n.math("SUBTRACT", n.math("MULTIPLY", grain, 0.3), n.math("MULTIPLY", split, 0.6)))
     h = n.math("ADD", h, n.math("MULTIPLY", mask, n.math("ADD", 0.5, n.math("MULTIPLY", clump,
                                                                             0.8))))
-    h = n.math("ADD", h, n.math("MULTIPLY", end, n.math("MULTIPLY", rings, 0.2)))
+    h = n.math("ADD", h, n.math("MULTIPLY", end, n.math("SUBTRACT", n.math("MULTIPLY", rings, 0.08),
+                                                         n.math("MULTIPLY", radial, 0.8))))
     n.out(**{"Base Color": color, "Roughness": rough, "Normal": n.bump(h, distance=0.008)})
     return mat
 
@@ -1762,10 +1855,11 @@ def fallen_log(size, seed, tex=1024):
         a = rng.uniform(-1.6, 1.6) + (math.pi / 2)
         d = Vector((math.cos(a), rng.uniform(0.1, 0.4), math.sin(a))).normalized()
         p0 = pts[i] + d * radii[i] * 0.6
-        ln = rng.uniform(0.12, 0.38)
+        # Snapped off short and blunt, not tapering to spikes.
+        ln = rng.uniform(0.07, 0.2)
         rr = rng.uniform(0.025, 0.045)
-        tube(geo, [p0, p0 + d * ln * 0.6, p0 + d * ln], [rr, rr * 0.75, rr * 0.5], 5,
-             shift=rng.uniform(0, 9), tip=True)
+        tube(geo, [p0, p0 + d * ln * 0.6, p0 + d * ln, p0 + d * (ln + 0.004)],
+             [rr * 1.15, rr * 0.9, rr * 0.82, rr * 0.45], 6, shift=rng.uniform(0, 9), tip=True)
     o = geo.obj("log", mat)
     for v in o.data.vertices:
         if v.co.z < 0.03:

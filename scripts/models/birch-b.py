@@ -14,5 +14,5 @@ AO = 0
 
 
 def build():
-    vn.birch(7.0, 4.0, seed=21, bark_size=512, forks=1, lean=0.05, key="birch-b", density=1.0,
-             leaves=0.35)
+    vn.birch(7.0, 4.0, seed=21, bark_size=512, forks=1, lean=0.05, key="birch-b", density=1.25,
+             leaves=0.35, twigs=2.2)
