@@ -26,7 +26,7 @@ import { assetUrl } from "./assets";
  * their own materials, as do models with nothing to merge.
  */
 
-/** The largest an atlas may be on a side; models with more texture than fits are packed smaller. */
+/** The largest an atlas may be on a side, unless asked otherwise; models with more texture than fits are packed smaller. */
 const ATLAS = 2048;
 /** Pixels round each image, filled from its edge, so mipmaps don't bleed in from its neighbours. */
 const GUTTER = 8;
@@ -109,7 +109,10 @@ interface Tile {
 }
 
 /** Shelf-packs tiles into a square atlas, shrinking textured ones until they fit, by `scale`. */
-function pack(tiles: Tile[]): { width: number; height: number; scale: number } | undefined {
+function pack(
+  tiles: Tile[],
+  limit: number,
+): { width: number; height: number; scale: number } | undefined {
   for (let scale = 1; scale >= 1 / 16; scale /= 2) {
     const sized = tiles
       .map((tile) => {
@@ -127,12 +130,12 @@ function pack(tiles: Tile[]): { width: number; height: number; scale: number } |
     for (const tile of sized) {
       const w = tile.w + 2 * GUTTER;
       const h = tile.h + 2 * GUTTER;
-      if (x + w > ATLAS) {
+      if (x + w > limit) {
         x = 0;
         y += shelf;
         shelf = 0;
       }
-      if (w > ATLAS || y + h > ATLAS) {
+      if (w > limit || y + h > limit) {
         fits = false;
         break;
       }
@@ -214,10 +217,10 @@ function mergeable(mesh: Mesh, textured: boolean): boolean {
 
 export interface LoadOptions {
   /**
-   * False keeps a model's parts apart rather than shrink their images to fit the atlas: for big
-   * models seen up close, whose bakes would lose half or more of their resolution.
+   * The largest the atlas may be on a side, 2048 unless given: more for big models seen up close,
+   * whose bakes would otherwise lose most of their resolution, at four times the memory.
    */
-  shrink?: boolean;
+  atlas?: number;
 }
 
 /** One merged part's vertices, as `merged.metadata.parts` lists them: from `start`, `count` of them. */
@@ -331,8 +334,8 @@ async function merge(
   const merging = parts.filter((part) => tiles.has(part.material?.name ?? ""));
   if (merging.length < 2) return;
   const all = [...tiles.values()];
-  const size = pack(all);
-  if (!size || (options.shrink === false && size.scale < 1)) return;
+  const size = pack(all, options.atlas ?? ATLAS);
+  if (!size) return;
 
   const name = path.replace(/^.*\//, "").replace(/\.glb$/, "");
   const albedo = atlasTexture(

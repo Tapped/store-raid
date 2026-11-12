@@ -1263,6 +1263,17 @@ interface Chunk {
 }
 
 /** What the console can ask of the village. */
+/** Models whose parts merge into a 4096 atlas instead of 2048, at four times the memory. */
+const BIG_ATLAS = new Set([
+  "log-farmhouse",
+  "stabbur",
+  "boathouse",
+  "woodshed",
+  "clad-house",
+  "barn",
+  "stave-church",
+]);
+
 export interface VillageView {
   stats(): { model: string; copies: number; chunks: number; missing: boolean }[];
   /**
@@ -1464,9 +1475,10 @@ async function addModels(world: World): Promise<void> {
 
   await Promise.all(
     [...byModel].map(async ([model, copies]) => {
-      // Not shrunk into an atlas: the bakes are seen up close.
+      // The buildings get a bigger atlas than other props: their bakes are seen up close.
       const path = `models/village/${model}.glb`;
-      const container = await loadModel(scene, path, { shrink: false }).catch((err) => {
+      const atlas = BIG_ATLAS.has(model) ? 4096 : 2048;
+      const container = await loadModel(scene, path, { atlas }).catch((err) => {
         console.warn(`Could not load models/village/${model}.glb`, err);
         return undefined;
       });
