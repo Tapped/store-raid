@@ -8,7 +8,6 @@ import { addDust } from "./dust";
 import { FOOTSTEPS } from "./footsteps";
 import { createEngine } from "./graphics";
 import { POSES } from "./hands";
-import { addHarbour } from "./harbour";
 import { attachMouse, input } from "./input";
 import { addInteriorLighting } from "./interiorLight";
 import { ItemView } from "./items";
@@ -16,7 +15,6 @@ import { LocalPlayer } from "./localPlayer";
 import { occludeIn } from "./occlusion";
 import { PlayerView } from "./players";
 import { addPlayground } from "./playground";
-import { addProps } from "./props";
 import { reloadOnNewBuild } from "./reload";
 import { roundLines } from "./round";
 import { createWorld } from "./scene";
@@ -45,13 +43,14 @@ const dressing = world.level.props.length > 0 ? addDressing(world, lighting) : u
 const decals = world.level.props.length > 0 ? addDecals(world) : undefined;
 if (lighting && world.level.props.length > 0) addDust(world, lighting);
 const playground = world.level.roof !== undefined ? addPlayground(world, lighting) : undefined;
-if (!playground) {
-  void addProps(world);
-  void addShelves(world);
-  void addHarbour(world.scene);
-}
+if (!playground) void addShelves(world);
+// What surrounds the level outdoors, as it declares: the harbour, the village's valley
+// (client/src/environment.ts). It brings its own ambience, else the vent hums at the entrance.
+const environment = world.environment;
+if (environment) void environment.draw(world);
 occludeIn(world.level);
-void addAmbience(world);
+if (environment?.ambience) void environment.ambience(world);
+else void addAmbience(world);
 void addScreens(world);
 attachMouse(canvas);
 addEventListener("resize", () => engine.resize());

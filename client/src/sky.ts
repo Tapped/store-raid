@@ -10,13 +10,27 @@ import {
 const WIDTH = 1024;
 const HEIGHT = 512;
 
-/** Colours as they should look, in sRGB, 0–255. */
-const CLOUD_DARK = [56, 62, 74];
-const CLOUD_LIGHT = [158, 164, 175];
-const HAZE = [132, 140, 152];
+/** A sky's colours as they should look, in sRGB, 0–255: its clouds, and the haze at the horizon. */
+export interface SkyColours {
+  cloudDark: readonly [number, number, number];
+  cloudLight: readonly [number, number, number];
+  haze: readonly [number, number, number];
+}
 
-/** Where the sky fades into the distance. The fog uses it too, so the harbour melts into the sky. */
-export const HORIZON = new Color3(HAZE[0] / 255, HAZE[1] / 255, HAZE[2] / 255);
+/** The harbour's: a heavy overcast dusk. */
+export const HARBOUR_SKY: SkyColours = {
+  cloudDark: [56, 62, 74],
+  cloudLight: [158, 164, 175],
+  haze: [132, 140, 152],
+};
+
+/** Where a sky fades into the distance. The fog uses it too, so the land melts into the sky. */
+export function horizonOf(sky: SkyColours): Color3 {
+  return new Color3(sky.haze[0] / 255, sky.haze[1] / 255, sky.haze[2] / 255);
+}
+
+/** The harbour's horizon. */
+export const HORIZON = horizonOf(HARBOUR_SKY);
 
 function hash(x: number, y: number): number {
   const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
@@ -52,7 +66,8 @@ const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
  * A heavy overcast sky around the camera, painted once at startup. Clouds are sampled on a flat
  * plane overhead, which gives them perspective towards the horizon and no seam or pinched pole.
  */
-export function addSky(scene: Scene): void {
+export function addSky(scene: Scene, sky: SkyColours = HARBOUR_SKY): void {
+  const { cloudDark, cloudLight, haze } = sky;
   const texture = new DynamicTexture("sky", { width: WIDTH, height: HEIGHT }, scene, true);
   const context = texture.getContext() as CanvasRenderingContext2D;
   const image = context.createImageData(WIDTH, HEIGHT);
@@ -67,12 +82,12 @@ export function addSky(scene: Scene): void {
       const x = Math.cos(azimuth) * out * scale;
       const z = Math.sin(azimuth) * out * scale;
       const cover = clamp01((clouds(x * 1.5, z * 1.8) - 0.32) / 0.36);
-      const haze = clamp01(1 - up / 0.22);
-      const fade = up <= 0 ? 1 : haze * haze;
+      const misty = clamp01(1 - up / 0.22);
+      const fade = up <= 0 ? 1 : misty * misty;
       const pixel = (row * WIDTH + column) * 4;
       for (let channel = 0; channel < 3; channel++) {
-        const cloud = CLOUD_DARK[channel] + (CLOUD_LIGHT[channel] - CLOUD_DARK[channel]) * cover;
-        image.data[pixel + channel] = cloud + (HAZE[channel] - cloud) * fade;
+        const cloud = cloudDark[channel] + (cloudLight[channel] - cloudDark[channel]) * cover;
+        image.data[pixel + channel] = cloud + (haze[channel] - cloud) * fade;
       }
       image.data[pixel + 3] = 255;
     }

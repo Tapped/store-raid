@@ -69,6 +69,8 @@ async function drawCopies(world: World, model: string, matrices: number[], shado
 /** Replace the plain shelf boxes with stocked shelving, once the models have loaded. */
 export async function addShelves(world: World): Promise<void> {
   const shelves = world.level.boxes.filter((box) => box.kind === "shelf");
+  // With no copies to draw, a model would be drawn once where it was made, at the origin.
+  if (shelves.length === 0) return;
   const bays: number[] = [];
   const boxes: number[] = [];
   const next = random(7);

@@ -252,6 +252,72 @@ const TABLE = {
     },
     about: "Woven PE tarpaulin, tintable: creases, grime, faded",
   },
+  "meadow-grass": {
+    tile: 3,
+    size: 2048,
+    color: [0.36, 0.32, 0.2],
+    // No direction or grid: every hexagon turned its own way hides the tussocks' repeat.
+    variation: {
+      sampling: { kind: "hex", cells: 2.5, rotate: 1, contrast: 0.35 },
+      patch: 9,
+      brightness: 0.16,
+      roughness: 0.1,
+    },
+    about:
+      "Overgrown hay meadow in late autumn: dead grass laid over in tussocks, moss, birch leaves",
+  },
+  "gravel-track": {
+    tile: 3.2,
+    size: 2048,
+    color: [0.33, 0.31, 0.28],
+    // u along the track, v across it: two wheel ruts at v 0.25 and 0.75, grass on the crown at
+    // v 0.5 and the verges at the edges. keepHeight shifts hexagons only along the track, so the
+    // ruts stay where they are while the stones don't repeat.
+    variation: {
+      sampling: { kind: "hex", cells: 2, rotate: 0, keepHeight: true, contrast: 0.3 },
+      patch: 10,
+      brightness: 0.12,
+      roughness: 0.12,
+    },
+    about: "Old farm track, 3.2 m across, u along it: gravel, sandy wheel ruts, grass on the crown",
+  },
+  "forest-floor": {
+    tile: 3,
+    size: 2048,
+    color: [0.24, 0.18, 0.12],
+    variation: {
+      sampling: { kind: "hex", cells: 2.5, rotate: 1, contrast: 0.3 },
+      patch: 8,
+      brightness: 0.15,
+      roughness: 0.1,
+    },
+    about: "Under spruce and birch: needle litter, twigs, cones, moss cushions, roots",
+  },
+  "granite-rock": {
+    tile: 4,
+    size: 2048,
+    color: [0.42, 0.41, 0.38],
+    // Kept upright so water streaks run down and the banding keeps its dip.
+    variation: {
+      sampling: { kind: "hex", cells: 1.6, rotate: 0.06, contrast: 0.3 },
+      patch: 12,
+      brightness: 0.14,
+      roughness: 0.12,
+    },
+    about: "Glacier-smoothed gneiss, v up the slope: banding, joints, lichen, moss in cracks",
+  },
+  "river-stones": {
+    tile: 2.5,
+    size: 2048,
+    color: [0.32, 0.3, 0.27],
+    variation: {
+      sampling: { kind: "hex", cells: 2.5, rotate: 1, contrast: 0.4 },
+      patch: 6,
+      brightness: 0.12,
+      roughness: 0.15,
+    },
+    about: "River bed and bank: rounded wet cobbles and pebbles packed in sand",
+  },
 } satisfies Record<string, SurfaceSpec>;
 
 export type SurfaceName = keyof typeof TABLE;

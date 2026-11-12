@@ -116,6 +116,11 @@ screen.
   playground for now.
 - **Next:** a real truck parked in the harbour, the harbour as a game level with the raid starting
   from the truck, and a proper results screen instead of plain text.
+- **Village:** `?level=village` is a second outdoor environment, an abandoned farm hamlet in a
+  Norwegian valley, run as a game: the truck at the south end of a gravel track, loot in the
+  farmyards, at the boathouse and by the stave church on its knoll, a wadeable river with a
+  footbridge. Levels now declare what surrounds them (`Level.environment`), each with its own sky,
+  fog and light, and their default mode (`Level.mode`). Its buildings are closed for now.
 
 ### 3. The dark building and proximity voice
 

@@ -1,6 +1,6 @@
 import type { Box } from "./collision";
 import { ITEM_KINDS, type ItemKind } from "./constants";
-import type { Level } from "./level";
+import { type Level, levelNamed } from "./level";
 
 /**
  * What a room is for. In the playground, features are tried out: no rounds, nobody dies, the lights
@@ -10,12 +10,12 @@ export const MODES = ["playground", "game"] as const;
 export type Mode = (typeof MODES)[number];
 
 /**
- * The mode asked for, else the level's own: the playground hall is for trying things out, and the
- * harbour for walking around.
+ * The mode asked for, else the level's own (`Level.mode`): the playground hall is for trying things
+ * out, and the harbour for walking around; the rest are games.
  */
 export function modeFor(levelName: string, asked?: unknown): Mode {
   if (MODES.includes(asked as Mode)) return asked as Mode;
-  return levelName === "playground" || levelName === "harbour" ? "playground" : "game";
+  return levelNamed(levelName).mode ?? "game";
 }
 
 /**

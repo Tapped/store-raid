@@ -62,4 +62,4 @@ for model in job["models"]:
             print("MODEL", name, line)
         result[name] = {"error": True}
 
-json.dump(result, open(os.path.join(work, "built.json"), "w"))
+json.dump(result, open(job.get("built", os.path.join(work, "built.json")), "w"))

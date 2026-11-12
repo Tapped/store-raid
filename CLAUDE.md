@@ -39,7 +39,9 @@ client/src/tick.ts         TickView: the large tick, walked in code: leg IK, a t
 client/src/audio.ts        sound on Web Audio, heard from the active camera: OneShots (varied one-shots) and Loop, placed or heard straight
 client/src/occlusion.ts    how many walls' worth lie between two points, and how muffled that makes a sound
 client/src/store.ts        addShelves(): stocked shelving over the shelf collision boxes; storeSurface(): textured walls and floor
+client/src/environment.ts  ENVIRONMENTS: what surrounds a level outdoors, as `Level.environment` names it: sky, fog, light, lobby spot, what draws it
 client/src/harbour.ts      addHarbour(): the harbour around the store, as instanced scenery with no collision
+client/src/village.ts      addVillage(): the valley round the village: ground from `villageGround`, track, river, bridge, models in culled chunks, mountains; its ambience
 client/src/paving.ts       addPavingVariation(): world-space brightness and damp patches on harbour paving
 client/src/variation.ts    addSurfaceVariation(): breaks up tiled textures: hex tiling, shuffled brick courses or tiles, world-space drift and grime
 client/src/surfaces.ts     surface(scene, name, { tint }): the surface library as cached PBR materials: tint, cut-outs, variation
@@ -48,7 +50,7 @@ client/src/surfaceViewer.ts the surface viewer at /surfaces.html: each surface o
 client/src/lamps.ts        addStreetLamps(): glowing lamp faces, and lamp light summed in every PBR shader (not scene lights)
 client/src/scene.ts        world, lights and fog, first-person camera, lobby camera
 client/src/screens.ts     addScreens(): the TVs of `tv` tiles, showing static and droning a loop
-client/src/sky.ts          addSky(): overcast sky dome, painted at startup; HORIZON, the colour fog fades to
+client/src/sky.ts          addSky(): overcast sky dome in an environment's colours, painted at startup; horizonOf(), the colour fog fades to
 client/src/graphics.ts     engine (WebGPU, else WebGL2), one pipeline of TAA with MSAA, contact SSAO, bloom and sharpen, all in half floats (`?quality=high` for finer shadows and SSAO), `surfaceMaterial()` for PBR, `gradePicture()` for the colour look, `drawInstances()` for static copies, camera effects
 client/src/reload.ts       production builds reload when a served .game-build file changes; nothing writes that file locally
 client/src/net.ts          Colyseus client, joinGame(), waitForServer()
@@ -60,10 +62,12 @@ scripts/bot.ts             headless player
 scripts/hands.ts           bots check the hands in the store: phones, a TV and a two-person sofa, and report what worked
 scripts/playground.ts      a bot checks the playground: dimmer, stairs up and down, ladders, railing, plank and the pit
 scripts/generate.ts        draws a generated level from a seed, or checks the rules on many seeds
+scripts/village.ts         checks the village without a server: drawn ground against floors, ways through, a map (`--map`)
+scripts/villageWalk.ts     a bot walks the village from the truck to the church door (or over the bridge and back through the river)
 scripts/harbour.ts         the harbour's ground and what's in the way, from its model, into shared/harbour.json (`pnpm run harbour`)
 scripts/unity-import/      prefabs from a Unity .unitypackage → textured .glb in assets/, through Blender
 scripts/models/            models made in code: one Python script per model, built in Blender (`pnpm run model`)
-scripts/surfaces/          the surface library's baker: periodic noise, one recipe per surface (`pnpm run surface`)
+scripts/surfaces/          the surface library's baker, on the GPU: one WGSL recipe per surface over a noise library (`pnpm run surface`)
 scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`pnpm run image`, see the `image` skill)
 ```
 
@@ -118,7 +122,7 @@ scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`p
 - **Modes** (`shared/modes.ts`, `state.mode`): `?mode=playground` or `?mode=game`, else the
   level's own: the playground level is playground, the store and generated levels are game. Each
   level and mode has its own rooms, so clients and bots always send the mode they resolved with
-  `modeFor()`; the harbour level is playground by default too. The **playground** has no rounds,
+  `modeFor()`, which falls back on the level's own `Level.mode`; the harbour level is playground by default too. The **playground** has no rounds,
   nobody dies (falling respawns), the lights are on the dimmer and players come back where they left. A **game** runs rounds in `state.phase`:
   `lobby` (everyone in the truck, R / X to ready; all ready starts a short countdown), `raid`
   (`RAID_TIME` to dawn; ends when everyone alive stands in the truck and has pressed R / X to leave,
@@ -152,6 +156,20 @@ This is a solo, local project. Start everything with **`pnpm run dev`** (require
   the harbour changes. Lookups in big levels go through a grid (`near()` in `shared/spatial.ts`).
   New models go on show in the playground through `CONCEPTS` in `client/src/playground.ts`. Each level has its own
   rooms; bots join the playground unless `LEVEL` says otherwise.
+- **Environments:** a level outdoors names what surrounds it, `Level.environment` (`"harbour"` for the store
+  and harbour, `"village"`), and `ENVIRONMENTS` in `client/src/environment.ts` gives each its sky, fog
+  colour, outdoor light (tunable under its own group), lobby spot, `draw()` and ambience. Halls have none.
+- **The village** (`?level=village`, a game; `shared/village.ts`): a farm hamlet in a West Norwegian
+  valley at night, pure and seeded. The track runs north from the truck (the dock, z ≈ -120) past
+  farmsteads round yards, a farm over a footbridge and a boathouse, to a stave church on a knoll
+  (y 7, up a ramp between stone walls). The walkable floor, about 100 × 245 m, is ramps in 1 m strips
+  across the valley, rising 2.8 m north, cut by a wadeable river 0.6 m deep whose banks are ramps;
+  scenery boxes close it in, and the valley sides beyond rise freely. `villageGround()` is the
+  ground's height for drawing and placing, equal to the floors wherever players stand: change both
+  together and run `pnpm exec tsx scripts/village.ts`. Models come from `models/village/<name>.glb`
+  (sizes in `VILLAGE_MODELS`, origin mid-base, front +z), drawn as rough stand-ins until they exist;
+  trees far off always are. The ground is the library's `meadow-grass`, `forest-floor`, `granite-rock`
+  and `river-stones`, the track `gravel-track` (u along it, v across), each a plain colour if missing.
 - **Tiles** (`shared/tiles.ts`): the playground is a grid of 4 m cells on storeys 3 m apart,
   written as characters (`F` floor, `T` a TV showing static, `#` solid, `P` pit, `|`/`=` plank bridge, `^>v<` stairs and
   `nesw` ladders, both up towards that side, `.` open air). Storeys below ground are basements,
@@ -275,13 +293,15 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
   model in the game, whose lighting differs. Screen-space AO only adds contact shadows between
   things, so a model's own creases come from its bake. The scripts are in git and the models aren't, so run
   `pnpm run assets:backup` after building.
-- **Surfaces made in code:** `scripts/surfaces/recipes/<name>.ts` is a function of uv giving colour,
-  tint amount, height in mm, AO, roughness and metalness, from the periodic noise in
-  `scripts/surfaces/noise.ts`, so bakes tile. Its tile size and texture size are in
-  `client/src/surfaceTable.ts`. `pnpm run surface <name…|all>` bakes
-  `assets/textures/surfaces/<name>-{base,normal,orm}.webp` on worker threads (`--draft 512` for a quick
-  look) and a contact sheet in `node_modules/.cache/surfaces/<name>/preview.png`: look at it, then at the
-  surface in the surface viewer. Meshes using `surface()` need UVs in meters ÷ `SURFACES[name].tile`,
+- **Surfaces made in code:** `scripts/surfaces/recipes/<name>.wgsl` is a WGSL `sample(u, v, o)` run
+  per texel on the GPU (WebGPU in Node, the `webgpu` package), filling colour, tint amount, height in
+  mm, AO, roughness and metalness from the periodic noise and layers in `scripts/surfaces/lib/`, so
+  bakes tile; how to write one, and the library's functions, are at the top of `lib/recipe.wgsl`. Its
+  tile size and texture size are in `client/src/surfaceTable.ts`. `pnpm run surface <name…|all>` bakes
+  `assets/textures/surfaces/<name>-{base,normal,orm}.webp` and a contact sheet in
+  `node_modules/.cache/surfaces/<name>/preview.png` in a second or two; `--watch` bakes again on every
+  save of the recipe or library and prints compile errors as `file:line:col`, `--draft 512` writes only
+  the preview. Look at the sheet, then at the surface in the surface viewer. Meshes using `surface()` need UVs in meters ÷ `SURFACES[name].tile`,
   as `worldBox(…, SURFACES[name].tile)` makes; `upright` ones are a storey tall, v 0 on the floor.
 - `loadModel(scene, "models/props/crate.glb", placeholder)` shows the placeholder until the file
   exists, so use the final path from day one. Vite answers a missing asset with `200` and its HTML

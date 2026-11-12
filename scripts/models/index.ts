@@ -18,7 +18,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { getBounds, NodeIO } from "@gltf-transform/core";
@@ -104,14 +104,19 @@ function runBlender(script: string, args: string[]) {
 }
 
 console.log(`Building ${wanted.join(", ")} with ${blender}...`);
+// The job and its result are named for this run, so builds running at once don't swap results.
+const run = process.pid;
 const job = {
   models: wanted.map((name) => ({ name, script: `${here}/${name}.py` })),
   items: Object.fromEntries(Object.entries(ITEM_KINDS).map(([k, v]) => [k, v.size])),
   work,
+  built: `${work}/built-${run}.json`,
 };
-writeFileSync(`${work}/job.json`, JSON.stringify(job));
-runBlender(`${here}/build.py`, [`${work}/job.json`]);
-const built: Record<string, Built> = JSON.parse(readFileSync(`${work}/built.json`, "utf8"));
+writeFileSync(`${work}/job-${run}.json`, JSON.stringify(job));
+runBlender(`${here}/build.py`, [`${work}/job-${run}.json`]);
+const built: Record<string, Built> = JSON.parse(readFileSync(job.built, "utf8"));
+rmSync(`${work}/job-${run}.json`, { force: true });
+rmSync(job.built, { force: true });
 
 const io = new NodeIO().registerExtensions([...KHRONOS_EXTENSIONS, EXTTextureWebP]);
 const kb = (bytes: number) => `${Math.round(bytes / 1024)} kB`;

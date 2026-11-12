@@ -16,6 +16,7 @@ import {
 import type { Level } from "../../shared/level";
 import { assetUrl } from "./assets";
 import { addBuilding } from "./building";
+import { ENVIRONMENTS, type Environment } from "./environment";
 import {
   addCameraEffects,
   configureShadows,
@@ -23,14 +24,13 @@ import {
   SHADOW_MAP_SIZE,
   surfaceMaterial,
 } from "./graphics";
-import { addSky, HORIZON } from "./sky";
+import { addSky, HARBOUR_SKY, horizonOf } from "./sky";
 import { storeSurface } from "./store";
 import { addTerrain, SURFACE_TILE as FLOOR_TILE, worldBox } from "./terrain";
 import { tunables } from "./tuning";
 import { addSurfaceVariation } from "./variation";
 
 const WALL_TILE = 3;
-const LOBBY_TARGET = new Vector3(91.5, 3, -45); // on the harbour street between the rows of street lights
 const DUSK_REFLECTION = new Color3(0.7, 0.72, 0.8);
 /** Lights a PBR surface takes at once: the sky and sun, and flashlights. */
 const MAX_LIGHTS = 6;
@@ -45,7 +45,9 @@ export interface World {
   scene: Scene;
   /** The building this page plays in, from `?level=`. */
   level: Level;
-  /** Slowly circles a spot in the harbour while nobody has joined. */
+  /** What surrounds it outdoors, as it declares: its look, and what draws it. */
+  environment: Environment | undefined;
+  /** Slowly circles a spot outdoors, or the middle of a hall, while nobody has joined. */
   lobbyCamera: ArcRotateCamera;
   shadows: ShadowGenerator;
   /** Stand-ins for the shelf models, removed when those have loaded. */
@@ -75,14 +77,21 @@ export function createPlayerCamera(scene: Scene, name: string): FreeCamera {
 /** Static world: lights, ground and the level's boxes from shared/level.ts. */
 export function createWorld(engine: AbstractEngine, level: Level): World {
   const scene = new Scene(engine);
-  scene.clearColor = HORIZON.toColor4().toLinearSpace();
-  addSky(scene);
+  const environment = level.environment ? ENVIRONMENTS[level.environment] : undefined;
+  const sky = environment?.sky ?? HARBOUR_SKY;
+  const fog = environment?.fog
+    ? new Color3(environment.fog[0] / 255, environment.fog[1] / 255, environment.fog[2] / 255)
+    : horizonOf(sky);
+  scene.clearColor = fog.toColor4().toLinearSpace();
+  addSky(scene, sky);
   scene.fogMode = Scene.FOGMODE_EXP2;
-  scene.fogColor = HORIZON;
+  scene.fogColor = fog;
 
-  const lobbyCamera = level.roof
-    ? new ArcRotateCamera("lobby", -Math.PI / 2, 1.2, 9, new Vector3(0, 2, 0), scene)
-    : new ArcRotateCamera("lobby", -Math.PI / 2, 1.45, 7, LOBBY_TARGET, scene);
+  const lobby = environment?.lobby;
+  const lobbyCamera =
+    level.roof || !lobby
+      ? new ArcRotateCamera("lobby", -Math.PI / 2, 1.2, 9, new Vector3(0, 2, 0), scene)
+      : new ArcRotateCamera("lobby", -Math.PI / 2, lobby.beta, lobby.radius, lobby.target, scene);
   addCameraEffects(scene, lobbyCamera);
 
   // Image-based lighting: what PBR surfaces reflect and most of their soft ambient light.
@@ -110,23 +119,29 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
   sun.position = new Vector3(20, 40, -20);
   sun.diffuse = new Color3(0.78, 0.84, 1);
   sun.renderPriority = LIGHT_PRIORITY.scene;
+  if (environment?.colours) {
+    hemi.diffuse = environment.colours.sky;
+    hemi.groundColor = environment.colours.ground;
+    sun.diffuse = environment.colours.sun;
+  }
   const shadows = new ShadowGenerator(SHADOW_MAP_SIZE, sun);
   configureShadows(shadows);
-  // Overcast dusk outdoors: how much light comes from the sky, the sun and the reflections. Halls
-  // light themselves: see addPlayground.
+  // Outdoors: how much light comes from the sky, the sun and the reflections, as the environment
+  // has it (the harbour's when it has none). Halls light themselves: see addPlayground.
   if (!level.roof) {
+    const defaults = (environment ?? ENVIRONMENTS.harbour).light;
     const outdoors = tunables(
-      "Rendering/Outdoor light",
+      defaults.group,
       {
-        hemi: { value: 0.18, min: 0, max: 2, hint: "Light from the whole sky" },
-        sun: { value: 0.8, min: 0, max: 3, hint: "The one light that casts shadows" },
+        hemi: { value: defaults.hemi, min: 0, max: 2, hint: "Light from the whole sky" },
+        sun: { value: defaults.sun, min: 0, max: 3, hint: "The one light that casts shadows" },
         environment: {
-          value: 0.28,
+          value: defaults.environment,
           min: 0,
           max: 2,
           hint: "What surfaces reflect, and soft ambient",
         },
-        fog: { value: 0.003, min: 0, max: 0.05, step: 0.0001 },
+        fog: { value: defaults.fog, min: 0, max: 0.05, step: 0.0001 },
       },
       (values) => light(values),
     );
@@ -204,5 +219,5 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
     if (box.kind === "shelf") plainShelves.push(mesh);
   }
 
-  return { scene, level, lobbyCamera, shadows, plainShelves };
+  return { scene, level, environment, lobbyCamera, shadows, plainShelves };
 }

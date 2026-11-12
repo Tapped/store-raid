@@ -379,8 +379,10 @@ export function addDressing(world: World, lighting: InteriorLighting | undefined
             { tint: model !== "exit-sign" },
           );
         }
+        // Under the glTF root, which flips x: its world matrix must be in place before the bounds
+        // are worked out, or culling looks for the chunk mirrored across the building.
+        mesh.computeWorldMatrix(true);
         mesh.thinInstanceRefreshBoundingInfo(false);
-        mesh.doNotSyncBoundingInfo = true;
         mesh.freezeWorldMatrix();
         inChunk(key.replace(":unlit", ""), mesh);
       }

@@ -3,7 +3,9 @@ import { ARENA_SIZE, type ItemKind } from "./constants";
 import { furnish } from "./furnish";
 import { type GenerateOptions, generate } from "./generate";
 import HARBOUR_TERRAIN from "./harbour.json";
+import type { Mode } from "./modes";
 import { CELL, composeTiles, type Screen, type Side, STOREY, type TileGrid } from "./tiles";
+import { VILLAGE_SEED, village } from "./village";
 
 const HALF = ARENA_SIZE / 2;
 const WALL = 1;
@@ -164,9 +166,19 @@ export interface LightSpawn {
   room: number;
 }
 
+/**
+ * What surrounds a level outdoors, which the client draws with its own sky, fog and light
+ * (client/src/environment.ts): the harbour round the store, or the valley round the village.
+ */
+export type Environment = "harbour" | "village";
+
 /** One building: what the server simulates and the client draws for it. */
 export interface Level {
   name: string;
+  /** What it runs as unless a room asks otherwise (shared/modes.ts): a game if it doesn't say. */
+  mode?: Mode;
+  /** What surrounds it, drawn by the client; nothing for a hall with a roof. */
+  environment?: Environment;
   /** Width and length of its floor, centred on the origin. */
   size: number;
   boxes: LevelBox[];
@@ -260,6 +272,7 @@ const STORE_ITEMS: ItemSpawn[] = [
 /** The megastore: shelving in rows, open to the night sky, with the loading dock to the north. */
 const STORE: Level = {
   name: "store",
+  environment: "harbour",
   size: ARENA_SIZE,
   boxes: STORE_BOXES,
   floors: [
@@ -312,6 +325,7 @@ const PLAYGROUND_TILES = composeTiles(PLAYGROUND_GRID);
 
 const PLAYGROUND: Level = {
   name: "playground",
+  mode: "playground",
   size: 2 * (HALL_X + WALL),
   boxes: [
     ...[
@@ -360,6 +374,8 @@ const PLAYGROUND: Level = {
 const HARBOUR: Level = {
   ...STORE,
   name: "harbour",
+  // For walking round, for now.
+  mode: "playground",
   boxes: [
     ...STORE_BOXES,
     ...HARBOUR_TERRAIN.boxes.map(([minX, minZ, maxX, maxZ, y, height]) => ({
@@ -446,6 +462,36 @@ export function generatedLevel(seed: number): Level & { dropped: number } {
   };
 }
 
+/**
+ * The village (shared/village.ts): a farm hamlet in a valley, walked on its own ground. The truck
+ * stops at the south end of the track, and the stave church stands on a knoll at the north end.
+ */
+function villageLevel(): Level {
+  const layout = village(VILLAGE_SEED);
+  return {
+    name: "village",
+    environment: "village",
+    size: 300,
+    boxes: layout.boxes,
+    floors: layout.floors,
+    ladders: [],
+    // Nowhere to fall: the river is shallow enough to wade.
+    killY: -6,
+    dimmer: undefined,
+    dock: layout.dock,
+    // The truck, where the way out is.
+    entrance: { x: (layout.dock.minX + layout.dock.maxX) / 2, y: 2, z: layout.dock.maxZ },
+    screens: [],
+    items: layout.items,
+    spawnPoint: (index) => layout.spawns[index % layout.spawns.length],
+    roof: undefined,
+    grid: undefined,
+    rooms: [],
+    props: [],
+    lights: [],
+  };
+}
+
 /** Every level, by the name a room and `?level=` use. */
 export const LEVELS = { store: STORE, playground: PLAYGROUND, harbour: HARBOUR } satisfies Record<
   string,
@@ -454,10 +500,15 @@ export const LEVELS = { store: STORE, playground: PLAYGROUND, harbour: HARBOUR }
 export type LevelName = keyof typeof LEVELS;
 
 const generatedLevels = new Map<number, Level>();
+let villageBuilt: Level | undefined;
 
 /** The level of that name, `generated-<seed>` for a generated one, else the playground. */
 export function levelNamed(name: unknown): Level {
   if (Object.hasOwn(LEVELS, String(name))) return LEVELS[name as LevelName];
+  if (name === "village") {
+    villageBuilt ??= villageLevel();
+    return villageBuilt;
+  }
   const seed = /^generated-([0-9]+)$/.exec(String(name))?.[1];
   if (seed === undefined) return PLAYGROUND;
   let level = generatedLevels.get(Number(seed));

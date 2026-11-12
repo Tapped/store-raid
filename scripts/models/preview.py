@@ -78,6 +78,8 @@ camera.data.clip_end = radius * 100
 print("MODEL preview renders on", lib.cycles(scene))
 scene.cycles.samples = 32
 scene.cycles.use_denoising = True
+# Alpha-tested foliage stacks many cards: with the default 8 bounces the deepest turn black.
+scene.cycles.transparent_max_bounces = 64
 scene.render.resolution_x = scene.render.resolution_y = 640
 scene.render.film_transparent = True
 scene.render.image_settings.file_format = "PNG"
