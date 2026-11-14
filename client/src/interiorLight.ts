@@ -2,6 +2,8 @@ import {
   type AbstractMesh,
   Color3,
   Constants,
+  type DirectionalLight,
+  type HemisphericLight,
   MaterialDefines,
   MaterialPluginBase,
   Matrix,
@@ -153,7 +155,43 @@ const shared: {
   dims: [number, number, number];
   size: number;
   level: number;
+  /** For a building that stands outdoors: its footprint and roof, and the sky's lights. */
+  sky?: {
+    box: [number, number, number, number];
+    roof: number;
+    hemi: HemisphericLight | null;
+    sun: DirectionalLight | null;
+  };
 } = { origin: [0, 0, 0], dims: [1, 1, 1], size: VOXEL, level: 1 };
+
+/**
+ * The sky's light, for a building that stands outdoors (a level with an environment): how far a
+ * point is outside the building's footprint or over its roof decides how much of the sky and sun it
+ * takes, and whether it keeps its sky reflections. Inside, only the fittings light it. The scene's
+ * own sky light and sun stay off, so this has no shadows.
+ */
+const GLSL_SKY = `
+    float ilOut = 0.0;
+    if (ilSkyBox.z > ilSkyBox.x) {
+      vec3 ilAt = vPositionW + ilNormal * ilParams.z;
+      vec2 ilBeyond = max(ilSkyBox.xy - ilAt.xz, ilAt.xz - ilSkyBox.zw);
+      ilOut = smoothstep(-0.2, 0.3, max(max(ilBeyond.x, ilBeyond.y), ilAt.y - ilSkyUp.w));
+      vec3 ilSky = mix(ilSkyDown.rgb, ilSkyUp.rgb, 0.5 + 0.5 * normalW.y)
+        + ilSunColor.rgb * max(dot(normalW, ilSunDir.xyz), 0.0);
+      finalDiffuse += ilOut * ilSky * surfaceAlbedo * aoOut.ambientOcclusionColor;
+    }
+`;
+const WGSL_SKY = `
+    var ilOut = 0.0;
+    if (uniforms.ilSkyBox.z > uniforms.ilSkyBox.x) {
+      let ilAt = fragmentInputs.vPositionW + ilNormal * uniforms.ilParams.z;
+      let ilBeyond = max(uniforms.ilSkyBox.xy - ilAt.xz, ilAt.xz - uniforms.ilSkyBox.zw);
+      ilOut = smoothstep(-0.2, 0.3, max(max(ilBeyond.x, ilBeyond.y), ilAt.y - uniforms.ilSkyUp.w));
+      let ilSky = mix(uniforms.ilSkyDown.rgb, uniforms.ilSkyUp.rgb, 0.5 + 0.5 * normalW.y)
+        + uniforms.ilSunColor.rgb * max(dot(normalW, uniforms.ilSunDir.xyz), 0.0);
+      finalDiffuse += ilOut * ilSky * surfaceAlbedo * aoOut.ambientOcclusionColor;
+    }
+`;
 
 const GLSL_DEFINITIONS = `
   uniform highp sampler3D ilVolumeA;
@@ -242,10 +280,11 @@ const GLSL_LIGHT = `
       float ilD = min(ilA2 / (3.14159 * ilDenom * ilDenom), 40.0);
       finalDiffuse += min(ilD * 0.25 * ilNdotL * ilOneWay * ilShade.x * ilLight * specularEnvironmentR0, vec3(40.0));
     }
+    ${GLSL_SKY}
     #ifdef REFLECTION
     float ilLit = clamp(dot(ilLight, vec3(0.2126, 0.7152, 0.0722)) * ilShade.y, 0.0, 1.0);
-    finalIrradiance *= ilLit * ilShade.z;
-    finalRadianceScaled *= max(ilLit, ilShade.w);
+    finalIrradiance *= mix(ilLit * ilShade.z, 1.0, ilOut);
+    finalRadianceScaled *= mix(max(ilLit, ilShade.w), 1.0, ilOut);
     #endif
   }
 `;
@@ -336,10 +375,11 @@ const WGSL_LIGHT = `
       let ilD = min(ilA2 / (3.14159 * ilDenom * ilDenom), 40.0);
       finalDiffuse += min(ilD * 0.25 * ilNdotL * ilOneWay * uniforms.ilShade.x * ilLight * specularEnvironmentR0, vec3f(40.0));
     }
+    ${WGSL_SKY}
     #ifdef REFLECTION
     let ilLit = clamp(dot(ilLight, vec3f(0.2126, 0.7152, 0.0722)) * uniforms.ilShade.y, 0.0, 1.0);
-    finalIrradiance *= ilLit * uniforms.ilShade.z;
-    finalRadianceScaled *= max(ilLit, uniforms.ilShade.w);
+    finalIrradiance *= mix(ilLit * uniforms.ilShade.z, 1.0, ilOut);
+    finalRadianceScaled *= mix(max(ilLit, uniforms.ilShade.w), 1.0, ilOut);
     #endif
   }
 `;
@@ -383,7 +423,18 @@ class InteriorLightPlugin extends MaterialPluginBase {
   }
 
   override getUniforms(shaderLanguage: ShaderLanguage = ShaderLanguage.GLSL) {
-    const names = ["ilOrigin", "ilDims", "ilParams", "ilShade", "ilMinimum"];
+    const names = [
+      "ilOrigin",
+      "ilDims",
+      "ilParams",
+      "ilShade",
+      "ilMinimum",
+      "ilSkyBox",
+      "ilSkyUp",
+      "ilSkyDown",
+      "ilSunColor",
+      "ilSunDir",
+    ];
     return {
       ubo: names.map((name) => ({ name, size: 4, type: "vec4" })),
       fragment: names
@@ -418,6 +469,22 @@ class InteriorLightPlugin extends MaterialPluginBase {
     // A little cold, as moonlight from nowhere.
     const low = LOOK.minimum;
     ubo.updateFloat4("ilMinimum", low * 0.8, low * 0.9, low * 1.15, 0);
+    const sky = shared.sky;
+    if (sky) {
+      const { hemi, sun } = sky;
+      const up = hemi?.diffuse.scale(hemi.intensity) ?? Color3.Black();
+      const down = hemi?.groundColor.scale(hemi.intensity) ?? Color3.Black();
+      const shine = sun?.diffuse.scale(sun.intensity) ?? Color3.Black();
+      ubo.updateFloat4("ilSkyBox", ...sky.box);
+      ubo.updateFloat4("ilSkyUp", up.r, up.g, up.b, sky.roof);
+      ubo.updateFloat4("ilSkyDown", down.r, down.g, down.b, 0);
+      ubo.updateFloat4("ilSunColor", shine.r, shine.g, shine.b, 0);
+      const d = sun?.direction;
+      ubo.updateFloat4("ilSunDir", -(d?.x ?? 0), -(d?.y ?? -1), -(d?.z ?? 0), 0);
+    } else {
+      // An empty box: nowhere is outside.
+      ubo.updateFloat4("ilSkyBox", 0, 0, 0, 0);
+    }
     ubo.setTexture("ilVolumeA", shared.a ?? null);
     ubo.setTexture("ilVolumeB", shared.b ?? null);
     ubo.setTexture("ilLights", shared.lights ?? null);
@@ -914,8 +981,15 @@ export function addInteriorLighting(world: World): InteriorLighting | undefined 
   if (!ENABLED || level.lights.length === 0) return undefined;
 
   // The even light this replaces: the sky light and the sun, and the sun's shadow map with it.
-  scene.getLightByName("hemi")?.setEnabled(false);
-  scene.getLightByName("sun")?.setEnabled(false);
+  const hemi = scene.getLightByName("hemi") as HemisphericLight | null;
+  const sun = scene.getLightByName("sun") as DirectionalLight | null;
+  hemi?.setEnabled(false);
+  sun?.setEnabled(false);
+  // Outdoors, what they lit is lit in the shader instead, outside the building only.
+  if (level.environment) {
+    const { minX, minZ, maxX, maxZ, maxY } = boundsOf(level);
+    shared.sky = { box: [minX, minZ, maxX, maxZ], roof: maxY, hemi, sun };
+  }
 
   const fittings = fittingsOf(level);
   const rows = Math.ceil(fittings.length / ROW);

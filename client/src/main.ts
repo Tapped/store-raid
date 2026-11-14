@@ -20,6 +20,7 @@ import { roundLines } from "./round";
 import { createWorld } from "./scene";
 import { addScreens } from "./screens";
 import { addShelves } from "./store";
+import { addTruck } from "./truck";
 import { describeChanges } from "./tuning";
 import { toggleTuning } from "./tuningPanel";
 
@@ -48,6 +49,7 @@ if (!playground) void addShelves(world);
 // (client/src/environment.ts). It brings its own ambience, else the vent hums at the entrance.
 const environment = world.environment;
 if (environment) void environment.draw(world);
+void addTruck(world);
 occludeIn(world.level);
 if (environment?.ambience) void environment.ambience(world);
 else void addAmbience(world);

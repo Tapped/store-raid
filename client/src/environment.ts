@@ -1,4 +1,5 @@
 import { Color3, Vector3 } from "@babylonjs/core";
+import { HARBOUR_SITE } from "../../shared/harbourSite";
 import type { Environment as EnvironmentName } from "../../shared/level";
 import { roadX } from "../../shared/village";
 import { addHarbour } from "./harbour";
@@ -41,7 +42,8 @@ export interface Environment {
 }
 
 export const ENVIRONMENTS: Record<EnvironmentName, Environment> = {
-  // The store's harbour: an overcast dusk, street lights, and the store's crates by its dock.
+  // The harbour: an overcast dusk and street lights, round the warehouse (or the old store, with
+  // its crates by its dock).
   harbour: {
     sky: HARBOUR_SKY,
     light: {
@@ -53,7 +55,11 @@ export const ENVIRONMENTS: Record<EnvironmentName, Environment> = {
     },
     // On the harbour street between the rows of street lights.
     lobby: { target: new Vector3(91.5, 3, -45), beta: 1.45, radius: 7 },
-    draw: (world) => Promise.all([addProps(world), addHarbour(world.scene)]),
+    draw: (world) =>
+      Promise.all([
+        world.level.name === "store" ? addProps(world) : undefined,
+        addHarbour(world.scene, world.level.grid ? HARBOUR_SITE : undefined),
+      ]),
   },
   // A deep valley on an overcast autumn night: no lamps for miles, a little moonlight through the
   // cloud, and mist that swallows the valley sides.

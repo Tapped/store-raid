@@ -31,6 +31,9 @@ export const DOOR_WIDTH = 1.4;
 export const DOOR_HEIGHT = 2.2;
 export const ARCH_WIDTH = 3;
 export const ARCH_HEIGHT = 2.4;
+/** A loading door in an outer wall, its shutter rolled up: the way in from outside. */
+export const GATE_WIDTH = 3.4;
+export const GATE_HEIGHT = 2.4;
 /** Stairs block in this many slices, each as high as the ramp at its lower end. */
 const STAIR_SLICES = 8;
 /** A ladder's width, the wall behind it, and how far out from that wall it can be climbed. */
@@ -199,17 +202,18 @@ export function fitsAbove(lower: Tile | undefined, upper: Tile | undefined): boo
  * What's on the edge between two cells on a storey: nothing, a wall, a wall with a doorway, or a
  * wall with an arch, a wider and higher opening.
  */
-export type Edge = "none" | "wall" | "door" | "arch";
+export type Edge = "none" | "wall" | "door" | "arch" | "gate";
 
 /** Whether an edge can be walked through: a doorway or an arch. */
 export function isOpening(edge: Edge): boolean {
-  return edge === "door" || edge === "arch";
+  return edge === "door" || edge === "arch" || edge === "gate";
 }
 
 /** How wide and high the opening in an edge is, or undefined for a plain wall or none. */
 export function openingOf(edge: Edge): { width: number; height: number } | undefined {
   if (edge === "door") return { width: DOOR_WIDTH, height: DOOR_HEIGHT };
   if (edge === "arch") return { width: ARCH_WIDTH, height: ARCH_HEIGHT };
+  if (edge === "gate") return { width: GATE_WIDTH, height: GATE_HEIGHT };
   return undefined;
 }
 
@@ -220,7 +224,7 @@ export function openingOf(edge: Edge): { width: number; height: number } | undef
  *
  * A storey is written one character per cell, or with its walls drawn in between, every cell
  * surrounded by `+` corners and edges that are `-` or `|` for a wall, `d` for a doorway, `a` for an
- * arch, or a space for nothing. Walls round the outside of such a storey enclose it.
+ * arch, `g` for a loading door, or a space for nothing. Walls round the outside of such a storey enclose it.
  */
 export interface TileGrid {
   x: number;
@@ -270,9 +274,11 @@ export function parseTiles(grid: TileGrid): ParsedGrid {
                 ? "door"
                 : value === "a"
                   ? "arch"
-                  : value === "-" || value === "|"
-                    ? "wall"
-                    : "none";
+                  : value === "g"
+                    ? "gate"
+                    : value === "-" || value === "|"
+                      ? "wall"
+                      : "none";
             if (edge !== "none") edges.set(edgeKey(storey, col, row, side), edge);
           };
           const above = lines[2 * (rows - 1 - row)];

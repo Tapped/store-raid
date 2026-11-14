@@ -120,11 +120,19 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
   scene.fogMode = Scene.FOGMODE_EXP2;
   scene.fogColor = fog;
 
-  const lobby = environment?.lobby;
-  const lobbyCamera =
-    level.roof || !lobby
-      ? new ArcRotateCamera("lobby", -Math.PI / 2, 1.2, 9, new Vector3(0, 2, 0), scene)
-      : new ArcRotateCamera("lobby", -Math.PI / 2, lobby.beta, lobby.radius, lobby.target, scene);
+  // Round the truck where there is one, else the environment's spot, else the middle of the hall.
+  const lobby = level.truck
+    ? {
+        target: new Vector3(level.truck.place.x, level.truck.place.y + 2.2, level.truck.place.z),
+        beta: 1.4,
+        radius: 8.5,
+      }
+    : level.roof
+      ? undefined
+      : environment?.lobby;
+  const lobbyCamera = lobby
+    ? new ArcRotateCamera("lobby", -Math.PI / 2, lobby.beta, lobby.radius, lobby.target, scene)
+    : new ArcRotateCamera("lobby", -Math.PI / 2, 1.2, 9, new Vector3(0, 2, 0), scene);
   addCameraEffects(scene, lobbyCamera);
 
   // Image-based lighting: what PBR surfaces reflect and most of their soft ambient light.
@@ -162,8 +170,9 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
   const shadows = new ShadowGenerator(SHADOW_MAP_SIZE, sun);
   configureShadows(shadows);
   // Outdoors: how much light comes from the sky, the sun and the reflections, as the environment
-  // has it (the harbour's when it has none). Halls light themselves: see addPlayground.
-  if (!level.roof) {
+  // has it (the harbour's when it has none). Halls light themselves: see addPlayground. A building
+  // that stands outdoors takes both: the sky outside it, its fittings inside (interiorLight.ts).
+  if (!level.roof || environment) {
     const defaults = (environment ?? ENVIRONMENTS.harbour).light;
     const outdoors = tunables(
       defaults.group,

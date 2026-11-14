@@ -10,14 +10,18 @@
  * reaches from above a step to below a head is in the way. Cells of the same height are joined
  * into as few rectangles as it can, as floors and boxes. Run it again after the harbour changes.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { NodeIO } from "@gltf-transform/core";
 import { EXTTextureWebP, KHRONOS_EXTENSIONS } from "@gltf-transform/extensions";
 import sharp from "sharp";
 import { PLAYER_HEIGHT, STEP_UP } from "../shared/constants";
+import { HARBOUR_SITE } from "../shared/harbourSite";
 
-const ASSETS = new URL("../../assets/models/level/", import.meta.url);
+// Next to the main checkout, which a worktree is one folder further from.
+const ASSETS = ["../../assets/models/level/", "../../../assets/models/level/"]
+  .map((path) => new URL(path, import.meta.url))
+  .find((url) => existsSync(url)) as URL;
 const OUT = new URL("../shared/harbour.json", import.meta.url);
 
 /** The grid's cell size, in meters. */
@@ -32,8 +36,13 @@ const FLOOR_STEP = 0.05;
 const TOP_STEP = 0.5;
 /** Boxes stop this far above the ground at most: higher than anyone jumps or throws. */
 const MAX_TOP = 4;
-/** The store, its dock and a margin, which the store level's own floor and walls cover. */
-const STORE = { minX: -21, maxX: 21, minZ: -21, maxZ: 37 };
+/** The warehouse, whose own floors and walls the level has (shared/level.ts). */
+const STORE = {
+  minX: HARBOUR_SITE.x,
+  maxX: HARBOUR_SITE.x + HARBOUR_SITE.width,
+  minZ: HARBOUR_SITE.z,
+  maxZ: HARBOUR_SITE.z + HARBOUR_SITE.depth,
+};
 
 const W = Math.round((AREA.maxX - AREA.minX) / CELL);
 const H = Math.round((AREA.maxZ - AREA.minZ) / CELL);

@@ -3,8 +3,10 @@ import { ARENA_SIZE, type ItemKind } from "./constants";
 import { furnish } from "./furnish";
 import { type GenerateOptions, generate } from "./generate";
 import HARBOUR_TERRAIN from "./harbour.json";
+import { HARBOUR_SITE, HARBOUR_TRUCK } from "./harbourSite";
 import type { Mode } from "./modes";
 import { CELL, composeTiles, type Screen, type Side, STOREY, type TileGrid } from "./tiles";
+import { type ParkedTruck, parkTruck } from "./truck";
 import { VILLAGE_SEED, village } from "./village";
 
 const HALF = ARENA_SIZE / 2;
@@ -190,6 +192,8 @@ export interface Level {
   dimmer: { x: number; y: number; z: number; turn: number } | undefined;
   /** Where finished items go: an item whose centre is in here counts as delivered. */
   dock: Box | undefined;
+  /** The crew's truck, where it's parked outside: its cargo space is the dock. */
+  truck?: ParkedTruck;
   /**
    * The way in and out, in the outer wall, where a vent above it hums: the level's ambience is
    * loudest there (client/src/ambience.ts).
@@ -366,46 +370,6 @@ const PLAYGROUND: Level = {
   lights: [],
 };
 
-// The harbour: the store where it stands, and the harbour around it to walk on, out of the dock
-// and up onto the quay, along the street between the warehouses and out to the water. The harbour's
-// model draws it (client/src/harbour.ts); its ground and what's in the way come from that model,
-// through scripts/harbour.ts, into shared/harbour.json. The store's lot is half a meter below the
-// quay, a step to jump. Falling in the water is a fall like any other.
-const HARBOUR: Level = {
-  ...STORE,
-  name: "harbour",
-  // For walking round, for now.
-  mode: "playground",
-  boxes: [
-    ...STORE_BOXES,
-    ...HARBOUR_TERRAIN.boxes.map(([minX, minZ, maxX, maxZ, y, height]) => ({
-      minX,
-      minZ,
-      maxX,
-      maxZ,
-      y,
-      height,
-      kind: "scenery" as const,
-    })),
-  ],
-  floors: [
-    ...STORE.floors,
-    ...HARBOUR_TERRAIN.floors.map(([minX, minZ, maxX, maxZ, y]) => ({
-      minX,
-      minZ,
-      maxX,
-      maxZ,
-      y,
-      thickness: 0.3,
-      kind: "ground" as const,
-    })),
-  ],
-  // The water is at -3.4.
-  killY: -3,
-  // On the street between the warehouses, by the lamps, in twos.
-  spawnPoint: (index) => ({ x: 90.5 + (index % 2) * 2, y: 0.7, z: -44 - (index % 8) }),
-};
-
 /**
  * How big generated levels are, in cells and storeys: a warehouse 56 m by 48 m, on a basement, the
  * ground and two storeys above.
@@ -421,13 +385,28 @@ export const GENERATED_SIZE: Omit<GenerateOptions, "seed"> = {
  * A level generated from a seed: the layout and tiles (shared/generate.ts), then what stands in
  * its rooms, the lights and the loot (shared/furnish.ts), under a roof. Players come in on the
  * south side, in the loading bay, where the dock and the dimmer are.
+ *
+ * It stands round the origin unless `site` says where its south-west corner is. With a `gate`, the
+ * loading door in the outer wall is open, for a building with somewhere outside to come in from:
+ * the same building otherwise.
  */
-export function generatedLevel(seed: number): Level & { dropped: number } {
+export function generatedLevel(
+  seed: number,
+  site?: { x: number; z: number; gate?: boolean },
+): Level & { dropped: number } {
   const generated = generate({ ...GENERATED_SIZE, seed });
   const { cols, rows, storeys, basements } = GENERATED_SIZE;
-  const x = (-cols * CELL) / 2;
-  const z = (-rows * CELL) / 2;
+  const x = site?.x ?? (-cols * CELL) / 2;
+  const z = site?.z ?? (-rows * CELL) / 2;
   const grid = { ...generated.grid, x, z };
+  if (site?.gate) {
+    // The edge south of the entrance's cell: the last line of the ground storey, as drawn.
+    const ground = [...grid.storeys[basements]];
+    const line = ground[ground.length - 1];
+    const at = 2 * generated.entrance.col + 1;
+    ground[ground.length - 1] = `${line.slice(0, at)}g${line.slice(at + 1)}`;
+    grid.storeys = grid.storeys.map((storey, index) => (index === basements ? ground : storey));
+  }
   const tiles = composeTiles(grid);
   const entrance = {
     x: x + (generated.entrance.col + 0.5) * CELL,
@@ -492,29 +471,84 @@ function villageLevel(): Level {
   };
 }
 
+/** The warehouse that stands in the harbour unless a seed is asked for: `harbour-<seed>`. */
+export const HARBOUR_SEED = 1;
+
+/**
+ * The harbour: a generated warehouse on its lot in the harbour, its loading door open, and the
+ * crew's truck backed up to it. The harbour's model draws what's round it (client/src/harbour.ts);
+ * its ground and what's in the way come from that model, through scripts/harbour.ts, into
+ * shared/harbour.json. The lot is half a meter below the quay, a step to jump, and falling in the
+ * water is a fall like any other.
+ */
+export function harbourLevel(seed = HARBOUR_SEED): Level {
+  const building = generatedLevel(seed, { x: HARBOUR_SITE.x, z: HARBOUR_SITE.z, gate: true });
+  const truck = parkTruck(HARBOUR_TRUCK);
+  return {
+    ...building,
+    name: seed === HARBOUR_SEED ? "harbour" : `harbour-${seed}`,
+    environment: "harbour",
+    boxes: [
+      ...building.boxes,
+      ...truck.boxes,
+      ...HARBOUR_TERRAIN.boxes.map(([minX, minZ, maxX, maxZ, y, height]) => ({
+        minX,
+        minZ,
+        maxX,
+        maxZ,
+        y,
+        height,
+        kind: "scenery" as const,
+      })),
+    ],
+    floors: [
+      ...building.floors,
+      ...truck.floors,
+      ...HARBOUR_TERRAIN.floors.map(([minX, minZ, maxX, maxZ, y]) => ({
+        minX,
+        minZ,
+        maxX,
+        maxZ,
+        y,
+        thickness: 0.3,
+        kind: "ground" as const,
+      })),
+    ],
+    // No dimmer: a raid is as dark as it is.
+    dimmer: undefined,
+    dock: truck.dock,
+    truck,
+    spawnPoint: truck.spawn,
+  };
+}
+
 /** Every level, by the name a room and `?level=` use. */
-export const LEVELS = { store: STORE, playground: PLAYGROUND, harbour: HARBOUR } satisfies Record<
-  string,
-  Level
->;
+export const LEVELS = { store: STORE, playground: PLAYGROUND } satisfies Record<string, Level>;
 export type LevelName = keyof typeof LEVELS;
 
-const generatedLevels = new Map<number, Level>();
+const generatedLevels = new Map<string, Level>();
 let villageBuilt: Level | undefined;
 
-/** The level of that name, `generated-<seed>` for a generated one, else the playground. */
+/**
+ * The level of that name: `generated-<seed>` for a generated building on its own, `harbour` or
+ * `harbour-<seed>` for one in the harbour, else the playground.
+ */
 export function levelNamed(name: unknown): Level {
   if (Object.hasOwn(LEVELS, String(name))) return LEVELS[name as LevelName];
   if (name === "village") {
     villageBuilt ??= villageLevel();
     return villageBuilt;
   }
-  const seed = /^generated-([0-9]+)$/.exec(String(name))?.[1];
-  if (seed === undefined) return PLAYGROUND;
-  let level = generatedLevels.get(Number(seed));
+  const [, place, seed] = /^(generated|harbour)(?:-([0-9]+))?$/.exec(String(name)) ?? [];
+  if (!place || (place === "generated" && seed === undefined)) return PLAYGROUND;
+  const key = `${place}-${seed ?? HARBOUR_SEED}`;
+  let level = generatedLevels.get(key);
   if (!level) {
-    level = generatedLevel(Number(seed));
-    generatedLevels.set(Number(seed), level);
+    level =
+      place === "harbour"
+        ? harbourLevel(seed === undefined ? HARBOUR_SEED : Number(seed))
+        : generatedLevel(Number(seed));
+    generatedLevels.set(key, level);
   }
   return level;
 }

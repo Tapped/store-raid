@@ -34,11 +34,33 @@ function underGltfRoot(matrices: number[]): Float32Array {
   return out;
 }
 
+/** The copies that don't lie within a building's footprint, a meter in from its walls. */
+function outside(
+  matrices: number[],
+  site: { x: number; z: number; width: number; depth: number },
+): number[] {
+  const kept: number[] = [];
+  for (let i = 0; i < matrices.length; i += 16) {
+    const [x, z] = [matrices[i + 12], matrices[i + 14]];
+    const within =
+      x > site.x + 1 &&
+      x < site.x + site.width - 1 &&
+      z > site.z + 1 &&
+      z < site.z + site.depth - 1;
+    if (!within) kept.push(...matrices.slice(i, i + 16));
+  }
+  return kept;
+}
+
 /**
  * The harbour around the store, as scenery with no collision or shadows. Each model is one mesh
  * drawn many times, so thousands of copies stay cheap. If the files are missing, it's left out.
+ * With a `site`, the paving under the building that stands there is left out too.
  */
-export async function addHarbour(scene: Scene): Promise<void> {
+export async function addHarbour(
+  scene: Scene,
+  site?: { x: number; z: number; width: number; depth: number },
+): Promise<void> {
   const response = await fetch(assetUrl(LAYOUT));
   if (!response.headers.get("content-type")?.includes("json")) return;
   const layout = (await response.json()) as Layout;
@@ -56,7 +78,9 @@ export async function addHarbour(scene: Scene): Promise<void> {
       mesh.setEnabled(false);
       continue;
     }
-    drawInstances(mesh, underGltfRoot(matrices));
+    // Paving under a building would lie as a lid over its stairwells and pits.
+    const kept = model === "SM_Ground" && site ? outside(matrices, site) : matrices;
+    drawInstances(mesh, underGltfRoot(kept));
     mesh.isPickable = false;
   }
   const streetLights = layout.placements.SM_StreetLight;

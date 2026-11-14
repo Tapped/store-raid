@@ -286,6 +286,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
 
   /** Where the index-th player stands in the truck at the start of a round: in rows across it. */
   private truckSpot(index: number): { x: number; y: number; z: number } {
+    // A real truck has its own places, between its benches.
+    if (this.level.truck) return this.level.truck.spawn(index);
     const dock = this.level.dock;
     if (!dock) return { y: 0, ...this.level.spawnPoint(index) };
     const across = (min: number, max: number) =>

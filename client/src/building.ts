@@ -11,6 +11,7 @@ import {
   ARCH_HEIGHT,
   CELL,
   DOOR_HEIGHT,
+  GATE_HEIGHT,
   GROUND,
   LADDER_WALL,
   LADDER_WIDTH,
@@ -313,7 +314,7 @@ interface Plan {
 
 interface Opening {
   storey: number;
-  kind: "door" | "arch";
+  kind: "door" | "arch" | "gate";
   minX: number;
   maxX: number;
   minZ: number;
@@ -578,7 +579,7 @@ class Context {
             if (!outer && (side === "s" || side === "w")) continue;
             const edge = parsed.edge(s, col, row, side);
             const opening = openingOf(edge);
-            if (!opening || (edge !== "door" && edge !== "arch")) continue;
+            if (!opening || edge === "none" || edge === "wall") continue;
             const cell = this.cellBox(col, row);
             const alongX = side === "n" || side === "s";
             const line = { n: cell.maxZ, s: cell.minZ, e: cell.maxX, w: cell.minX }[side];
@@ -704,6 +705,7 @@ export function addBuilding(scene: Scene, level: Level, shadows?: ShadowGenerato
   lanes(ctx, parts);
   thresholds(ctx, parts);
   loadingDoor(ctx, parts);
+  shell(ctx, parts);
   const meshes = parts.build(scene, "building");
   if (shadows && level.lights.length === 0) {
     for (const mesh of meshes) shadows.addShadowCaster(mesh);
@@ -1941,7 +1943,7 @@ function planks(ctx: Context, parts: PartBuilder) {
 /** Arches get steel angles on their corners and a steel plate over them, on both sides. */
 function openingTrims(ctx: Context, parts: PartBuilder) {
   for (const o of ctx.openings) {
-    if (o.kind !== "arch") continue;
+    if (o.kind === "door") continue;
     parts.chunk = `s${o.storey}`;
     parts.paint = linear(ctx.livery.accent);
     parts.wear = steelWear(ctx, o.y0, 0.6);
@@ -2044,7 +2046,7 @@ function lanes(ctx: Context, parts: PartBuilder) {
         }[side];
         const [l0, l1] = side === "n" || side === "e" ? [line - WIDTH, line] : [line, line + WIDTH];
         // Not across the dock, which is hatched.
-        const dock = room.storey === 0 ? ctx.level.dock : undefined;
+        const dock = room.storey === 0 && !ctx.level.truck ? ctx.level.dock : undefined;
         const [d0, d1, e0, e1] = dock
           ? alongX
             ? [dock.minZ, dock.maxZ, dock.minX, dock.maxX]
@@ -2066,8 +2068,8 @@ function lanes(ctx: Context, parts: PartBuilder) {
       }
     }
   }
-  // The dock: hatched where finished loot goes.
-  const dock = ctx.level.dock;
+  // The dock: hatched where finished loot goes, unless that's a truck outside.
+  const dock = ctx.level.truck ? undefined : ctx.level.dock;
   if (dock) {
     parts.chunk = "s0";
     parts.paint = undefined;
@@ -2111,15 +2113,18 @@ function loadingDoor(ctx: Context, parts: PartBuilder) {
   const width = 3.8;
   const height = 2.45;
   const ceiling = ctx.plan(0).ceiling;
+  // Open, where the wall has a gate: the curtain is rolled up, leaving its last slats and the rail.
+  const open = ctx.openings.some((o) => o.kind === "gate");
+  const bottom = open ? GATE_HEIGHT : 0;
   parts.chunk = "s0";
   parts.wear = steelWear(ctx, 0, 0.6);
   // The curtain of slats.
   parts.paint = linear(vary(rgb(0.36, 0.4, 0.42), ctx.seed + 41, 0.06));
   const slat = 0.1;
   const vs: number[] = [];
-  for (let y = 0.06; y <= height; y += slat / 4) vs.push(round(y));
+  for (let y = bottom + 0.06; y <= Math.max(height, bottom + 0.3); y += slat / 4) vs.push(round(y));
   parts.sheet("painted-steel", cuts(x - width / 2, x + width / 2, 0.5), vs, (a, y) => {
-    const phase = ((y - 0.06) / slat) * Math.PI * 2;
+    const phase = ((y - bottom - 0.06) / slat) * Math.PI * 2;
     const d = 0.035 + 0.012 * Math.sin(phase);
     const slope = 0.012 * Math.cos(phase) * ((Math.PI * 2) / slat);
     const len = Math.hypot(1, slope);
@@ -2132,13 +2137,17 @@ function loadingDoor(ctx: Context, parts: PartBuilder) {
   parts.paint = linear(ctx.livery.steel);
   parts.box(
     "painted-steel",
-    [x - width / 2, 0.02, face],
-    [x + width / 2, 0.08, face + 0.07],
+    [x - width / 2, bottom + 0.02, face],
+    [x + width / 2, bottom + 0.08, face + 0.07],
     0.005,
   );
-  parts.box("rubber", [x - width / 2, 0, face + 0.01], [x + width / 2, 0.02, face + 0.06], 0.004, [
-    "-y",
-  ]);
+  parts.box(
+    "rubber",
+    [x - width / 2, bottom, face + 0.01],
+    [x + width / 2, bottom + 0.02, face + 0.06],
+    0.004,
+    ["-y"],
+  );
   // Guide channels up both sides, hazard-striped where trucks and trolleys hit them.
   for (const s of [-1, 1]) {
     const g0 = x + s * (width / 2 + 0.02);
@@ -2170,6 +2179,70 @@ function loadingDoor(ctx: Context, parts: PartBuilder) {
   );
 }
 
+/**
+ * The outside of a building that stands outdoors: a blockwork plinth under profiled cladding in the
+ * livery, up to a parapet, with the loading door left open, and the top of the roof. Everything
+ * else is drawn from inside, where the walls face.
+ */
+function shell(ctx: Context, parts: PartBuilder) {
+  const { level, parsed } = ctx;
+  const grid = level.grid;
+  if (!level.environment || !grid) return;
+  const x0 = grid.x - WALL / 2;
+  const x1 = grid.x + parsed.cols * CELL + WALL / 2;
+  const z0 = grid.z - WALL / 2;
+  const z1 = grid.z + parsed.rows * CELL + WALL / 2;
+  const roof = level.roof ?? (ctx.top + 1) * STOREY;
+  const foot = -0.5;
+  const plinth = 1.1;
+  const top = roof + 0.5;
+  const skin = 0.05;
+  const gate = ctx.openings.find((o) => o.kind === "gate");
+  parts.chunk = "shell";
+  parts.uvs = undefined;
+  // One side: `sign` is which way it faces along its axis, `a0` to `a1` its length.
+  const side = (axis: "x" | "z", coord: number, sign: number, a0: number, a1: number) => {
+    const [c0, c1] = [Math.min(coord, coord + sign * skin), Math.max(coord, coord + sign * skin)];
+    const piece = (
+      name: "concrete-block" | "corrugated",
+      b0: number,
+      b1: number,
+      y0: number,
+      y1: number,
+    ) => {
+      if (b1 - b0 < 0.01 || y1 - y0 < 0.01) return;
+      if (axis === "z") parts.box(name, [b0, y0, c0], [b1, y1, c1], 0.004);
+      else parts.box(name, [c0, y0, b0], [c1, y1, b1], 0.004);
+    };
+    // The loading door is in a side that faces south.
+    const hole = gate && axis === "z" && sign < 0 ? gate : undefined;
+    const spans: [number, number, number][] = hole
+      ? [
+          [a0, hole.minX, foot],
+          [hole.minX, hole.maxX, hole.y1],
+          [hole.maxX, a1, foot],
+        ]
+      : [[a0, a1, foot]];
+    for (const [b0, b1, from] of spans) {
+      parts.paint = undefined;
+      parts.wear = (x, y, z) => 0.55 + 0.4 * mottle(x, y, z, ctx.seed + 71);
+      piece("concrete-block", b0, b1, from, Math.max(from, plinth));
+      parts.paint = linear(ctx.livery.cladding);
+      parts.wear = (x, y, z) => 0.6 + 0.4 * mottle(x, y, z, ctx.seed + 72);
+      piece("corrugated", b0, b1, Math.max(from, plinth), top);
+    }
+  };
+  side("z", z0, -1, x0 - skin, x1 + skin);
+  side("z", z1, 1, x0 - skin, x1 + skin);
+  side("x", x0, -1, z0, z1);
+  side("x", x1, 1, z0, z1);
+  // The roof, seen from the quay at most.
+  parts.paint = linear(ctx.livery.steel);
+  parts.wear = (x, y, z) => 0.5 + 0.4 * mottle(x, y, z, ctx.seed + 73);
+  parts.box("painted-steel", [x0, roof + 0.02, z0], [x1, roof + 0.12, z1], 0.004, ["-y"]);
+  parts.paint = undefined;
+}
+
 /** The bottom of the pits: too deep to see, so plain black. */
 function pitBottom(scene: Scene, level: Level) {
   const bottoms = level.boxes.filter((box) => box.kind === "pit");
@@ -2180,7 +2253,13 @@ function pitBottom(scene: Scene, level: Level) {
     { width: level.size, height: level.size },
     scene,
   );
-  bottom.position.y = deepest;
+  const grid = level.grid;
+  const parsed = grid ? parseTiles(grid) : undefined;
+  bottom.position.set(
+    grid && parsed ? grid.x + (parsed.cols * CELL) / 2 : 0,
+    deepest,
+    grid && parsed ? grid.z + (parsed.rows * CELL) / 2 : 0,
+  );
   const black = new StandardMaterial("pit-bottom", scene);
   black.disableLighting = true;
   black.emissiveColor = Color3.Black();

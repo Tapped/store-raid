@@ -119,12 +119,14 @@ export function addPlayground(world: World, lighting?: InteriorLighting): Playgr
     shown = brightness;
     // Squared, so the dim end, where the testing happens, gets most of the dimmer's travel.
     const scale = brightness * brightness;
-    scene.fogDensity = hall.fog;
+    // A building that stands outdoors keeps the outdoors' fog and reflections (scene.ts).
+    const outdoors = world.environment !== undefined;
+    if (!outdoors) scene.fogDensity = hall.fog;
     showDimmer(brightness);
     if (lighting) {
       // The fittings light it, and where it's dark the sky's reflections go too.
       lighting.setLevel(brightness);
-      scene.environmentIntensity = hall.environment;
+      if (!outdoors) scene.environmentIntensity = hall.environment;
       return;
     }
     if (hemi) hemi.intensity = hall.hemi * scale;
