@@ -35,9 +35,11 @@ import {
   START_TIME,
 } from "../../../shared/modes";
 import { stepMover } from "../../../shared/movement";
+import { MAX_HEALTH, PITCH_SCALE } from "../../../shared/ticks";
 import { HATCH_TIME, terrainOf } from "../../../shared/truck";
 import { load, save } from "../persist";
 import { PhysicsWorld } from "../physics";
+import { Ticks } from "../ticks";
 import { GameState, Item, Mechanics, MoveInput, Player } from "./schema";
 
 /**
@@ -104,6 +106,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       moveX: [-MOVE_SCALE, MOVE_SCALE],
       moveZ: [-MOVE_SCALE, MOVE_SCALE],
       yaw: [-Math.round(Math.PI * YAW_SCALE), Math.round(Math.PI * YAW_SCALE)],
+      pitch: [-127, 127],
     },
   });
 
@@ -118,6 +121,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
 
   private level!: Level;
   private physics!: PhysicsWorld;
+  private ticks!: Ticks;
   private readonly playerBodies = new Map<string, HP_BodyId>();
   private readonly itemBodies = new Map<string, HP_BodyId>();
   /** Items off the ground: enough people have hold of them. */
@@ -133,9 +137,11 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   messages = {
     // Movement arrives through the input buffer above. Register handlers here only for things
     // that aren't per-tick inputs (chat, emotes, abilities, …).
-    /** Grab what's in front, with the right hand if it's free, else the left. */
-    /** A dimmer in front of the player gets held instead, until `release`. */
-    /** A free seat in the truck in front of them, with nothing else to take, sits them down. */
+    /**
+     * Grab what's in front, with the right hand if it's free, else the left. A dimmer in front of
+     * the player gets held instead, until `release`; a latched tick in reach gets pulled off; a
+     * free seat in the truck in front of them, with nothing else to take, sits them down.
+     */
     grab: (client: Client) => {
       const player = this.playing(client.sessionId);
       if (!player || player.seat >= 0) return;
@@ -149,6 +155,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
         this.dimming.add(client.sessionId);
         return;
       }
+      // A tick on them, or on someone in front of them, comes first.
+      if (this.ticks.pull(client.sessionId, player)) return;
       const hand = grabbingHand(player);
       if (hand && this.grab(player, hand)) return;
       this.sitDown(player);
@@ -216,6 +224,11 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     });
     // A game begins in the lobby, shut in the truck; the playground's truck stands open.
     this.setHatch(this.state.mode === "game" ? 0 : 1);
+    this.ticks = new Ticks(this.state, this.level, (sessionId, player) =>
+      this.drained(sessionId, player),
+    );
+    // A game's ticks arrive with the raid; the playground's are always about.
+    if (this.state.mode === "playground") this.ticks.reset();
     for (const [i, { kind, x, y, z }] of this.level.items.entries()) {
       const id = `item${i}`;
       this.state.items.set(
@@ -258,6 +271,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
         stamina: 1,
         winded: false,
         yaw: 0,
+        pitch: 0,
+        health: MAX_HEALTH,
         left: "",
         right: "",
         role,
@@ -410,6 +425,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     player.vz = 0;
     player.stamina = 1;
     player.winded = false;
+    player.health = MAX_HEALTH;
     this.playerBodies.set(sessionId, this.physics.addPlayer(player.x, player.y, player.z));
   }
 
@@ -445,6 +461,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       if (body) this.putBack(id, body);
       item.on = false;
     }
+    this.ticks.reset();
     this.state.timeLeft = 0;
   }
 
@@ -644,6 +661,17 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     console.log(`${player.name} fell`);
   }
 
+  /**
+   * A tick took the last of their health. In a raid, that's them out until the next round; anywhere
+   * else nobody dies, so they get it back and the tick lets go.
+   */
+  private drained(sessionId: string, player: Player) {
+    if (this.state.mode === "game" && this.state.phase === "raid") {
+      this.setRole(sessionId, player, "dead");
+      console.log(`${player.name} was drained by a tick`);
+    } else player.health = MAX_HEALTH;
+  }
+
   /** An item that fell out of the level goes back where it started. */
   private putBack(id: string, body: HP_BodyId) {
     const spawn = this.level.items[Number(id.slice("item".length))];
@@ -792,6 +820,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
         const terrain = terrainOf(this.level, this.state.hatch >= 1);
         stepMover(player, input, ctx.dt, terrain, this.state.mechanics, canClimb(player));
         player.yaw = input.yaw / YAW_SCALE;
+        player.pitch = input.pitch / PITCH_SCALE;
       }
       if (player.role === "playing" && player.y < this.level.killY) this.fell(sessionId, player);
     }
@@ -857,6 +886,11 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     }
     this.state.loot = loot;
 
+    // Ticks are about in the playground, and during a raid, more eager the nearer dawn is.
+    if (this.state.mode === "playground") this.ticks.step(ctx.dt, 0);
+    else if (this.state.phase === "raid") {
+      this.ticks.step(ctx.dt, 1 - this.state.timeLeft / RAID_SECONDS);
+    }
     if (this.state.mode === "game") this.runRound(ctx.dt);
   }
 }

@@ -10,6 +10,8 @@ export const MoveInput = schema({
   moveZ: t.int8(),
   /** Where the player looks, in YAW_SCALE units. Movement ignores it; carrying and others' views use it. */
   yaw: t.int16(),
+  /** How far up they look, in PITCH_SCALE units, below 0 for down: where their flashlight points. */
+  pitch: t.int8(),
   /** Whether the run button is held: full input then goes RUN_SPEED instead of PLAYER_SPEED. */
   run: t.boolean(),
   /** Whether jump is held: it jumps whenever the player stands on the ground. */
@@ -33,6 +35,10 @@ export const Player = schema({
   winded: t.boolean(),
   /** Where the player looks around y, in radians. */
   yaw: t.number(),
+  /** How far up they look, in radians, below 0 for down. */
+  pitch: t.number(),
+  /** What's left of MAX_HEALTH (shared/ticks.ts): at 0 in a raid, they die. */
+  health: t.number(),
   /** Id of the item in each hand, or "". A two-handed item is in both. */
   left: t.string(),
   right: t.string(),
@@ -59,6 +65,20 @@ export const Item = schema({
   qw: t.number(),
 });
 export type Item = SchemaType<typeof Item>;
+
+/** A large tick: see shared/ticks.ts. Moved by the server (server/src/ticks.ts). */
+export const Tick = schema({
+  x: t.number(),
+  /** The height of its feet; of its middle while it's latched on. */
+  y: t.number(),
+  z: t.number(),
+  yaw: t.number(),
+  /** What it's doing, a `TickState`. */
+  state: t.string(),
+  /** The session id of the player it's latched onto, or "". */
+  victim: t.string(),
+});
+export type Tick = SchemaType<typeof Tick>;
 
 /** The room's mechanics, from shared/mechanics.ts: every player in it moves by these. */
 export const Mechanics = schema({
@@ -90,6 +110,7 @@ export const GameState = schema({
   cleared: t.boolean(),
   players: t.map(Player),
   items: t.map(Item),
+  ticks: t.map(Tick),
   /** How bright the lights are, from 0 (off) to 1, as the dimmer leaves them. */
   light: t.number(),
   /** The truck's hatch, from 0 (up, shut) to 1 (down, the ramp): only at 1 can it be walked on. */
