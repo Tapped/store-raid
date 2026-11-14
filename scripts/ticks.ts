@@ -81,7 +81,6 @@ lookAt(-0.5, 0, 11);
 await until(() => false, 0.2);
 room.send("grab");
 check("it picks up a flashlight", await until(() => self().right !== "", 2));
-room.send("light");
 const [id, perch] = ticks.reduce((a, b) =>
   Math.hypot(a[1].x + 0.5, a[1].z - 12) < Math.hypot(b[1].x + 0.5, b[1].z - 12) ? a : b,
 );
@@ -91,6 +90,8 @@ await walkTo(aisle, 12.5);
 await walkTo(aisle, perch.z + 4.5);
 const there = () => room.state.ticks.get(id) ?? perch;
 check("it still waits, out of reach", there().state === "perched");
+// Only now the light, or walking up with it would have found the tick already.
+room.send("light");
 lookAt(perch.x, perch.y + 0.2, perch.z);
 check("a beam on it makes it wary", await until(() => there().state === "wary", 2));
 room.send("light");
