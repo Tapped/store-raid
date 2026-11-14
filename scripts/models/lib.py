@@ -18,6 +18,8 @@ Optional constants in a model script:
   ORIGIN = "bottom"      "bottom" (centre of the base), "center", or "model" (where the script built
                          it); items default to "center"
   TRIS = 3000            triangle budget, warned about when over
+  ATLAS = 4096           scenery only (props and village models): the most pixels on a side of the
+                         atlases its parts are merged over, default 2048; 0 leaves its parts apart
   SMOOTH_ANGLE = 35      faces meeting at less than this many degrees are shaded smooth
   AO = 512               baked ambient occlusion texture size; 0 bakes none
   AO_DISTANCE = 0.3      meters a crease can be across and still darken

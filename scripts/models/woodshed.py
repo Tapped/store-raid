@@ -11,6 +11,7 @@ from mathutils import Matrix
 import village_logs as v
 
 OUT = "models/village/woodshed.glb"
+ATLAS = 4096  # its bakes are seen up close: the default 2048 would lose most of them
 ORIGIN = "bottom"
 TRIS = 8100  # about 8k: most of it is the split birch, piece by piece
 SMOOTH_ANGLE = 50

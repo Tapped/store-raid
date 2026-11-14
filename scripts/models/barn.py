@@ -13,6 +13,7 @@ import village_boards as vb
 from village_boards import UP, Wall, box_walls, flat, gable
 
 OUT = "models/village/barn.glb"
+ATLAS = 4096  # its bakes are seen up close: the default 2048 would lose most of them
 ORIGIN = "bottom"
 TRIS = 40000
 AO = 0  # occlusion is ray-cast per face corner instead (village_boards.Builder)

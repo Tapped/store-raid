@@ -9,6 +9,8 @@ the roadmap for the game, a night raid on a harbour warehouse.
 - **Server:** Colyseus 0.18, authoritative, fixed 30 Hz tick (`server/`)
 - **Shared:** simulation code both sides run: constants, level, collision, movement (`shared/`)
 - Node ≥ 22. Lint/format: Biome. Physics: Havok, on the server only.
+- **WebGPU only:** the game only has to run on WebGPU. `graphics.ts` still falls back to WebGL2, but
+  new work needn't support or be tested on it.
 
 ## Layout
 
@@ -25,7 +27,8 @@ client/src/players.ts      PlayerView: animated character (capsule if the model 
 client/src/items.ts        ItemView: a phone, flashlight, TV, box or sofa, drawn where the server says: models/props/<kind>.glb, else boxes
 client/src/props.ts        addProps(): scenery models, drawn only, with no collision
 client/src/dressing.ts     addDressing(): a generated level's props, thin instances chunked by room, lamps glowing with their fittings, placeholders for missing models
-client/src/propAtlas.ts    loadModel(): a prop .glb with its parts merged into one mesh over texture atlases, so it's one draw call
+client/src/propAtlas.ts    loadModel(): a prop .glb with its parts merged into one mesh over texture atlases, so it's one draw call: as built, else merged at load
+client/src/ktx2.ts         KTX2 textures decoded to BC7 in workers of our own, from the npm package instead of Babylon's CDN
 client/src/visibility.ts   roomVisibility(): which rooms can be seen from a camera, through doorways and openings, to leave the rest undrawn
 client/src/decals.ts       addDecals(): lane lines, bay numbers, keep-clear boxes, stains, posters and signs, from one atlas drawn at load
 client/src/dust.ts         addDust(): motes round the camera that catch the room's light and flashlight beams
@@ -305,12 +308,20 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
   `scripts/models/lib.py`, whose docstring has the conventions (front faces Blender's -y, meters,
   `ITEM`, `OUT`, `ORIGIN`, `TRIS`, `AO`). `pnpm run model <name>` runs it in Blender in the
   background, bakes its `procedural()` materials into textures and its ambient occlusion onto a
-  second UV set (Cycles, on the GPU if there is one), writes the `.glb` to `assets/` with WebP
+  second UV set (Cycles, on the GPU if there is one), writes the `.glb` to `assets/` with KTX2
   textures, checks it against `ITEM_KINDS` and its triangle budget, and renders
   `node_modules/.cache/models/<name>/preview.png` from four sides. Look at the preview, then at the
   model in the game, whose lighting differs. Screen-space AO only adds contact shadows between
   things, so a model's own creases come from its bake. The scripts are in git and the models aren't, so run
   `pnpm run assets:backup` after building.
+- **Video memory:** a texture unpacked on the GPU takes 4 bytes a pixel plus a third for mipmaps, 85 MB
+  at 4096, whatever its file weighs. So models' textures are KTX2 (UASTC, `scripts/models/ktx.ts`),
+  which the game turns into BC7 as it loads (`client/src/ktx2.ts`) and the GPU keeps at a quarter of
+  that. Scenery (a prop of `shared/props.ts` or a village model) also has its parts merged over
+  atlases when it's built (`scripts/models/atlas.ts`; `ATLAS = 4096` in the script for more than
+  2048 on a side), so it's one draw call. `pnpm run model --repack <name>` does both again from the
+  last build's cache, without Blender. Models not built this way (the Unity imports) are merged as
+  they load, unpacked.
 - **Surfaces made in code:** `scripts/surfaces/recipes/<name>.wgsl` is a WGSL `sample(u, v, o)` run
   per texel on the GPU (WebGPU in Node, the `webgpu` package), filling colour, tint amount, height in
   mm, AO, roughness and metalness from the periodic noise and layers in `scripts/surfaces/lib/`, so

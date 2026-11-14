@@ -13,6 +13,7 @@ import {
   VertexData,
 } from "@babylonjs/core";
 import { assetUrl } from "./assets";
+import "./ktx2";
 
 /**
  * Models with fewer materials, for props drawn by the hundred: each draw call costs about the same
@@ -24,9 +25,14 @@ import { assetUrl } from "./assets";
  * part gets a small square of its colour. The shared ambient occlusion bake stays as it is, on the
  * second set of coordinates. Glowing parts, see-through parts and parts whose textures repeat keep
  * their own materials, as do models with nothing to merge.
+ *
+ * Models built by `pnpm run model` come packed like this already (scripts/models/atlas.ts), their
+ * atlases compressed, and are taken as they are. The merge here is for the rest, like the ones
+ * imported from Unity: its atlases are drawn at load, so they lie unpacked in video memory, at four
+ * times the size.
  */
 
-/** The largest an atlas may be on a side, unless asked otherwise; models with more texture than fits are packed smaller. */
+/** The largest an atlas may be on a side; models with more texture than fits are packed smaller. */
 const ATLAS = 2048;
 /** Pixels round each image, filled from its edge, so mipmaps don't bleed in from its neighbours. */
 const GUTTER = 8;
@@ -193,6 +199,11 @@ function atlasTexture(
   const context = texture.getContext() as unknown as CanvasRenderingContext2D;
   draw(context);
   texture.update(false, false, true);
+  // The picture is on the GPU now. The canvas it was drawn on would stay for as long as the texture
+  // does, and the browser keeps canvases in video memory too: 64 MB each at 4096. Emptying it lets
+  // that go.
+  context.canvas.width = 0;
+  context.canvas.height = 0;
   texture.gammaSpace = sRGB;
   texture.wrapU = Texture.CLAMP_ADDRESSMODE;
   texture.wrapV = Texture.CLAMP_ADDRESSMODE;
@@ -215,14 +226,6 @@ function mergeable(mesh: Mesh, textured: boolean): boolean {
   return true;
 }
 
-export interface LoadOptions {
-  /**
-   * The largest the atlas may be on a side, 2048 unless given: more for big models seen up close,
-   * whose bakes would otherwise lose most of their resolution, at four times the memory.
-   */
-  atlas?: number;
-}
-
 /** One merged part's vertices, as `merged.metadata.parts` lists them: from `start`, `count` of them. */
 export interface MergedPart {
   material: string;
@@ -234,11 +237,7 @@ export interface MergedPart {
  * Loads a model with its parts merged where they can be (see the module's comment), or undefined
  * if the file isn't there. Parts are left under the glTF root, as the loader made them.
  */
-export async function loadModel(
-  scene: Scene,
-  path: string,
-  options: LoadOptions = {},
-): Promise<AssetContainer | undefined> {
+export async function loadModel(scene: Scene, path: string): Promise<AssetContainer | undefined> {
   let buffer: ArrayBuffer;
   try {
     const response = await fetch(assetUrl(path));
@@ -254,10 +253,19 @@ export async function loadModel(
     pluginExtension: ".glb",
     name: path,
   });
-  try {
-    await merge(scene, container, buffer, path, options);
-  } catch (err) {
-    console.warn(`Could not merge ${path}; drawing it as it is`, err);
+  // A model packed when it was built says so on its merged mesh, in the node's extras.
+  const packed = container.meshes.find((mesh) => mesh.metadata?.gltf?.extras?.parts);
+  if (packed) {
+    packed.metadata = { ...packed.metadata, parts: packed.metadata.gltf.extras.parts };
+    for (const texture of packed.material?.getActiveTextures() ?? []) {
+      texture.anisotropicFilteringLevel = 8;
+    }
+  } else {
+    try {
+      await merge(scene, container, buffer, path);
+    } catch (err) {
+      console.warn(`Could not merge ${path}; drawing it as it is`, err);
+    }
   }
   // A glTF root mirrors x, which turns front faces into back faces, so two-sided lighting would turn
   // every normal inwards: the interior light then reads the dark inside of the prop's own box.
@@ -267,13 +275,7 @@ export async function loadModel(
   return container;
 }
 
-async function merge(
-  scene: Scene,
-  container: AssetContainer,
-  buffer: ArrayBuffer,
-  path: string,
-  options: LoadOptions,
-) {
+async function merge(scene: Scene, container: AssetContainer, buffer: ArrayBuffer, path: string) {
   const gltf = readGlb(buffer);
   if (!gltf) return;
   const materials = new Map((gltf.json.materials ?? []).map((m) => [m.name ?? "", m]));
@@ -334,7 +336,7 @@ async function merge(
   const merging = parts.filter((part) => tiles.has(part.material?.name ?? ""));
   if (merging.length < 2) return;
   const all = [...tiles.values()];
-  const size = pack(all, options.atlas ?? ATLAS);
+  const size = pack(all, ATLAS);
   if (!size) return;
 
   const name = path.replace(/^.*\//, "").replace(/\.glb$/, "");
@@ -440,6 +442,11 @@ async function merge(
   const template = (merging.find((part) => tiles.get(part.material?.name ?? "")?.base)?.material ??
     merging[0].material) as PBRMaterial;
   const material = template.clone(`${name}-merged`) as PBRMaterial;
+  // Cloning copied the part's textures too, and each copy holds the part's images on the GPU after
+  // the part itself is gone: the atlases replace them all.
+  for (const texture of material.getActiveTextures()) texture.dispose();
+  material.ambientTexture = null;
+  material.emissiveTexture = null;
   material.albedoColor.set(1, 1, 1);
   material.albedoTexture = albedo;
   material.metallicTexture = surface;

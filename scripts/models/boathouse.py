@@ -13,6 +13,7 @@ from mathutils import Matrix, Vector
 import village_logs as v
 
 OUT = "models/village/boathouse.glb"
+ATLAS = 4096  # its bakes are seen up close: the default 2048 would lose most of them
 ORIGIN = "bottom"
 TRIS = 30000
 SMOOTH_ANGLE = 50

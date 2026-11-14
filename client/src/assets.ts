@@ -6,6 +6,7 @@ import {
   LoadAssetContainerAsync,
   type Scene,
 } from "@babylonjs/core";
+import "./ktx2";
 
 /**
  * URL of a shared asset, served at /assets/ for every build, so the path is always absolute:

@@ -175,6 +175,9 @@ importers:
       '@babylonjs/havok':
         specifier: ^1.3.14
         version: 1.3.14
+      '@babylonjs/ktx2decoder':
+        specifier: ^9.36.0
+        version: 9.36.0(@babylonjs/core@9.33.1(patch_hash=327756a1d4466372014bbd5c9f8126b24075ef2eef39df0e7df76762dbacbc40))
       '@babylonjs/loaders':
         specifier: ^9.32.0
         version: 9.33.1(@babylonjs/core@9.33.1(patch_hash=327756a1d4466372014bbd5c9f8126b24075ef2eef39df0e7df76762dbacbc40))(babylonjs-gltf2interface@9.33.1)
@@ -209,6 +212,12 @@ importers:
       concurrently:
         specifier: ^10.0.6
         version: 10.0.6
+      ktx-parse:
+        specifier: 1.1.0
+        version: 1.1.0
+      ktx2-encoder:
+        specifier: 0.6.0
+        version: 0.6.0
       sharp:
         specifier: ^0.35.5
         version: 0.35.5(@types/node@26.6.6)
@@ -232,6 +241,11 @@ packages:
 
   '@babylonjs/havok@1.3.14':
     resolution: {integrity: sha512-+j2FDwLtkh5Gb//KizE8Ks3GIB/3vH8Yx9cQsMvZQpsKkH5gn089wIlJ9Yt8dJxbwBmWKGpMTIXxZE7YdOHUnQ==}
+
+  '@babylonjs/ktx2decoder@9.36.0':
+    resolution: {integrity: sha512-saJbnlgi9LNRrEWBgsjvXtJeOTbCL/jRKOnyxHN0HwXPdGa0JFjzPLJeQZZfny/bgw4IZZfY4Dnx4tSMqQ8niQ==}
+    peerDependencies:
+      '@babylonjs/core': ^9.0.0
 
   '@babylonjs/loaders@9.33.1':
     resolution: {integrity: sha512-FE3scCE1CaBg8e6a62CJCQA+X/sD13ILihy60PyOjapy0HSbGY3VZ1NQybnB+jiOUNM7+UVygBQKQEpCwHsrqw==}
@@ -1077,6 +1091,9 @@ packages:
   ktx-parse@1.1.0:
     resolution: {integrity: sha512-mKp3y+FaYgR7mXWAbyyzpa/r1zDWeaunH+INJO4fou3hb45XuNSwar+7llrRyvpMWafxSIi99RNFJ05MHedaJQ==}
 
+  ktx2-encoder@0.6.0:
+    resolution: {integrity: sha512-gEWkw2YUlhKO4hXhqVLQQWJ+fGJObsXIwz0pGjJMclnQ4MQU3SAtN1MzutjFxO3ejWvxHyvFk5kr8+RtLmHiTA==}
+
   lightningcss-android-arm64@1.33.0:
     resolution: {integrity: sha512-gEpRTalKdosp4Bb8qWtc2iOgE5SeIHlpS1up9bFq2wAyYhl1UdTObYiHe98zEM9SQvSoqQZ1IQD0JNpg3Ml5pg==}
     engines: {node: '>= 12.0.0'}
@@ -1467,6 +1484,10 @@ snapshots:
   '@babylonjs/havok@1.3.14':
     dependencies:
       '@types/emscripten': 1.41.6
+
+  '@babylonjs/ktx2decoder@9.36.0(@babylonjs/core@9.33.1(patch_hash=327756a1d4466372014bbd5c9f8126b24075ef2eef39df0e7df76762dbacbc40))':
+    dependencies:
+      '@babylonjs/core': 9.33.1(patch_hash=327756a1d4466372014bbd5c9f8126b24075ef2eef39df0e7df76762dbacbc40)
 
   '@babylonjs/loaders@9.33.1(@babylonjs/core@9.33.1(patch_hash=327756a1d4466372014bbd5c9f8126b24075ef2eef39df0e7df76762dbacbc40))(babylonjs-gltf2interface@9.33.1)':
     dependencies:
@@ -2119,6 +2140,10 @@ snapshots:
   is-promise@4.0.0: {}
 
   ktx-parse@1.1.0: {}
+
+  ktx2-encoder@0.6.0:
+    dependencies:
+      ktx-parse: 1.1.0
 
   lightningcss-android-arm64@1.33.0:
     optional: true

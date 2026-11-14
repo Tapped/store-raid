@@ -30,7 +30,13 @@ export async function createEngine(canvas: HTMLCanvasElement): Promise<AbstractE
   const forceWebGL = new URLSearchParams(location.search).get("engine") === "webgl";
   if (!forceWebGL && (await WebGPUEngine.IsSupportedAsync)) {
     try {
-      const engine = new WebGPUEngine(canvas, { antialias: true, adaptToDeviceRatio: true });
+      const engine = new WebGPUEngine(canvas, {
+        antialias: true,
+        adaptToDeviceRatio: true,
+        // Models' textures are KTX2 (ktx2.ts), which stay compressed on the GPU only as BC7: a
+        // device has to be asked for that, or they're unpacked to four times the video memory.
+        deviceDescriptor: { requiredFeatures: ["texture-compression-bc"] },
+      });
       await engine.initAsync();
       return engine;
     } catch (err) {
