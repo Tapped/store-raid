@@ -120,16 +120,20 @@ export function createWorld(engine: AbstractEngine, level: Level): World {
   scene.fogMode = Scene.FOGMODE_EXP2;
   scene.fogColor = fog;
 
-  // Round the truck where there is one, else the environment's spot, else the middle of the hall.
-  const lobby = level.truck
-    ? {
-        target: new Vector3(level.truck.place.x, level.truck.place.y + 2.2, level.truck.place.z),
-        beta: 1.4,
-        radius: 8.5,
-      }
-    : level.roof
-      ? undefined
-      : environment?.lobby;
+  // Over the yard where there is one, round the truck where there's only that, else the
+  // environment's spot, else the middle of the hall.
+  const over = level.yard?.overview;
+  const lobby = over
+    ? { target: new Vector3(over.x, over.y, over.z), beta: 1.22, radius: 13 }
+    : level.truck
+      ? {
+          target: new Vector3(level.truck.place.x, level.truck.place.y + 2.2, level.truck.place.z),
+          beta: 1.4,
+          radius: 8.5,
+        }
+      : level.roof
+        ? undefined
+        : environment?.lobby;
   const lobbyCamera = lobby
     ? new ArcRotateCamera("lobby", -Math.PI / 2, lobby.beta, lobby.radius, lobby.target, scene)
     : new ArcRotateCamera("lobby", -Math.PI / 2, 1.2, 9, new Vector3(0, 2, 0), scene);

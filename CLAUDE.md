@@ -21,6 +21,7 @@ client/src/localPlayer.ts  LocalPlayer: the player at this screen: device + firs
 client/src/round.ts        roundLines(): the overlay at the top in a game: the phase, the clock, loot and quota, who we watch
 client/src/results.ts      showResults(): the results screen of a round: cleared or failed, the haul against the quota, the crew's fates
 client/src/truck.ts        addTruck(): the crew's truck where a level parks it, a box stand-in until its model loads, its ceiling lamp, and its hatch on a hinge
+client/src/yard.ts         addYard(): the ramps of a level's yard, as concrete wedges
 client/src/tired.ts        TiredEffect: the screen closes in, drains of colour and heaves with breaths as stamina runs out
 client/src/tuning.ts       the registry of tunables: tunables() turns a module's constants into live settings; addSetting()
 client/src/tuningPanel.ts  the tuning panel, `__game.tune()`: every registered setting as a slider or checkbox
@@ -76,7 +77,7 @@ scripts/village.ts         checks the village without a server: drawn ground aga
 scripts/villageWalk.ts     a bot walks the village from the truck to the church door (or over the bridge and back through the river)
 scripts/harbour.ts         the harbour's ground and what's in the way, from its model, into shared/harbour.json (`pnpm run harbour`)
 scripts/hatch.ts           a bot checks the truck's hatch in a game in the harbour: shut in the lobby, down for the raid, both control boxes
-scripts/harbourCheck.ts    checks the harbour level without a server: the warehouse's rules, and the walk from the truck in through the loading door and back
+scripts/harbourCheck.ts    checks the harbour level without a server: the warehouse's rules, and a way without jumps between the truck and the loading door, on foot and with a sofa (`--map` draws the yard)
 scripts/unity-import/      prefabs from a Unity .unitypackage → textured .glb in assets/, through Blender
 scripts/models/            models made in code: one Python script per model, built in Blender (`pnpm run model`)
 scripts/surfaces/          the surface library's baker, on the GPU: one WGSL recipe per surface over a noise library (`pnpm run surface`)
@@ -175,13 +176,18 @@ This is a solo, local project. Start everything with **`pnpm run dev`** (require
   basement, and a dimmer for the lights, to try things out in. The store is at `http://127.0.0.1:5173/?level=store`.
   The **harbour** (`?level=harbour`, a game; `harbour-<seed>` for another building) is a generated
   warehouse on the lot in the harbour's north-west corner (`HARBOUR_SITE` in `shared/harbourSite.ts`),
-  with the truck backed up to its loading door: players start in the truck, and walk down its ramp
-  and in. The door is a `gate` edge (`g`) in the outer wall, cut after generating, so the building
+  with the truck in an alley across the quay, some 90 m of walking away: players start in the
+  truck, and find their way through the yard to the loading door. **The yard**
+  (`harbourYard(seed)` in `shared/harbourYard.ts`) is what stands between them, made in code on
+  the harbour's baked ground: blocks of stacked containers that leave a zigzag way through, clutter,
+  a ramp from the quay down to the lot (drawn by `client/src/yard.ts`) and a street lamp. Its
+  containers and clutter are props like the building's, with `room: -1`. The blocks are fixed and
+  the seed varies paint, stack heights and clutter. The door is a `gate` edge (`g`) in the outer wall, cut after generating, so the building
   is the same as `generated-<seed>`. The lot is a jump down from the quay, and the water drowns. The
   harbour model draws what's round it; `pnpm run harbour` works out its floors (`ground`) and boxes
   (`scenery`) from that model into `shared/harbour.json`, which is in git, leaving the building's
   footprint out: run it again when the harbour or the site changes, and
-  `pnpm exec tsx scripts/harbourCheck.ts` after either. A building outdoors is lit by the sky
+  `pnpm exec tsx scripts/harbourCheck.ts` after either, or after changing the yard. A building outdoors is lit by the sky
   outside its footprint and by its fittings inside, both in the interior light's shader
   (`interiorLight.ts`), so the sun casts no shadows there; its outside is `shell()` in `building.ts`. Lookups in big levels go through a grid (`near()` in `shared/spatial.ts`).
   New models go on show in the playground through `CONCEPTS` in `client/src/playground.ts`. Each level has its own

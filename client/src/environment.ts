@@ -58,7 +58,11 @@ export const ENVIRONMENTS: Record<EnvironmentName, Environment> = {
     draw: (world) =>
       Promise.all([
         world.level.name === "store" ? addProps(world) : undefined,
-        addHarbour(world.scene, world.level.grid ? HARBOUR_SITE : undefined),
+        addHarbour(
+          world.scene,
+          world.level.grid ? HARBOUR_SITE : undefined,
+          world.level.yard?.lamps,
+        ),
       ]),
   },
   // A deep valley on an overcast autumn night: no lamps for miles, a little moonlight through the

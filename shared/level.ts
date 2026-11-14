@@ -3,7 +3,8 @@ import { ARENA_SIZE, type ItemKind } from "./constants";
 import { furnish } from "./furnish";
 import { type GenerateOptions, generate } from "./generate";
 import HARBOUR_TERRAIN from "./harbour.json";
-import { HARBOUR_SITE, HARBOUR_TRUCK } from "./harbourSite";
+import { HARBOUR_SITE } from "./harbourSite";
+import { harbourYard } from "./harbourYard";
 import type { Mode } from "./modes";
 import { CELL, composeTiles, type Screen, type Side, STOREY, type TileGrid } from "./tiles";
 import { type ParkedTruck, parkTruck } from "./truck";
@@ -194,6 +195,15 @@ export interface Level {
   dock: Box | undefined;
   /** The crew's truck, where it's parked outside: its cargo space is the dock. */
   truck?: ParkedTruck;
+  /**
+   * What an outdoor level's yard has besides props and boxes: ramps for the client to draw, street
+   * lamps, and a spot for the lobby camera to circle over.
+   */
+  yard?: {
+    ramps: Floor[];
+    lamps: { x: number; y: number; z: number }[];
+    overview: { x: number; y: number; z: number };
+  };
   /**
    * The way in and out, in the outer wall, where a vent above it hums: the level's ambience is
    * loudest there (client/src/ambience.ts).
@@ -476,14 +486,16 @@ export const HARBOUR_SEED = 1;
 
 /**
  * The harbour: a generated warehouse on its lot in the harbour, its loading door open, and the
- * crew's truck backed up to it. The harbour's model draws what's round it (client/src/harbour.ts);
- * its ground and what's in the way come from that model, through scripts/harbour.ts, into
- * shared/harbour.json. The lot is half a meter below the quay, a step to jump, and falling in the
- * water is a fall like any other.
+ * crew's truck in an alley across the quay, with a container yard between them
+ * (shared/harbourYard.ts). The harbour's model draws what's round it (client/src/harbour.ts); its
+ * ground and what's in the way come from that model, through scripts/harbour.ts, into
+ * shared/harbour.json. The lot is half a meter below the quay: a step to jump, or the yard's ramp.
+ * Falling in the water is a fall like any other.
  */
 export function harbourLevel(seed = HARBOUR_SEED): Level {
   const building = generatedLevel(seed, { x: HARBOUR_SITE.x, z: HARBOUR_SITE.z, gate: true });
-  const truck = parkTruck(HARBOUR_TRUCK);
+  const yard = harbourYard(seed);
+  const truck = parkTruck(yard.truck);
   return {
     ...building,
     name: seed === HARBOUR_SEED ? "harbour" : `harbour-${seed}`,
@@ -491,6 +503,7 @@ export function harbourLevel(seed = HARBOUR_SEED): Level {
     boxes: [
       ...building.boxes,
       ...truck.boxes,
+      ...yard.boxes,
       ...HARBOUR_TERRAIN.boxes.map(([minX, minZ, maxX, maxZ, y, height]) => ({
         minX,
         minZ,
@@ -504,6 +517,7 @@ export function harbourLevel(seed = HARBOUR_SEED): Level {
     floors: [
       ...building.floors,
       ...truck.floors,
+      ...yard.ramps,
       ...HARBOUR_TERRAIN.floors.map(([minX, minZ, maxX, maxZ, y]) => ({
         minX,
         minZ,
@@ -518,6 +532,8 @@ export function harbourLevel(seed = HARBOUR_SEED): Level {
     dimmer: undefined,
     dock: truck.dock,
     truck,
+    yard: { ramps: yard.ramps, lamps: yard.lamps, overview: yard.overview },
+    props: [...building.props, ...yard.props],
     spawnPoint: truck.spawn,
   };
 }

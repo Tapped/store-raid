@@ -12,9 +12,9 @@ The goal is a playable game after every step, with each step shipped separately.
 played it yet.** A game runs lobby, raid and results against a quota, with hands, flashlights,
 running, jumping, stairs and ladders, and sound placed in the world. What exists, by place:
 
-- **The harbour** (`?level=harbour`) is the game: the crew starts in the truck on the lot, walks
-  down its ramp and in through the warehouse's loading door, carries loot back up into the truck,
-  and sees how it went on a results screen.
+- **The harbour** (`?level=harbour`) is the game: the crew starts in the truck in an alley, finds
+  its way through a container yard to the warehouse's loading door, carries loot back to the
+  truck, and sees how it went on a results screen.
 - **The warehouse** in it is generated (also on its own at `?level=generated-<seed>`): four storeys
   of halls, cages, workshops and offices, furnished, drawn as a building, lit by its own fittings
   and darker the further in. Ten cargo models are still boxes.
@@ -150,14 +150,20 @@ screen.
   overlay plain text.
 - **Harbour:** `?level=harbour` is a game in the harbour, with its ground and obstacles worked out
   from the harbour model (`pnpm run harbour`): a generated warehouse stands on the lot under the
-  quay, its loading door open, and the crew's truck is backed up to it. Players start between the
-  benches in its cargo space, which is where loot counts, and walk down its ramp. Outside, the sky
-  lights things; inside, only the fittings. The water drowns.
+  quay, its loading door open. Players start between the benches in the truck's cargo space, which
+  is where loot counts, and walk down its ramp. Outside, the sky lights things; inside, only the
+  fittings. The water drowns.
+- **The yard:** the truck stands in an alley across the quay, about 90 m of walking from the
+  loading door. Between them is a container yard made in code (`shared/harbourYard.ts`): blocks of
+  stacked containers across the quay, each open at one end, so the way zigzags and the warehouse
+  is out of sight until the last of them; a ramp down to the lot, so loot comes back without a
+  jump; one street lamp at its head. Jumping down to the lot is a way round. The seed varies the
+  containers' paint, the stacks' heights and the clutter.
 - **Results:** a screen of its own when the round ends: cleared or failed, the haul against the
   quota, what's in the truck and what became of each of the crew.
-- **Done.** Left for later: the truck doesn't drive in or away, the lot is bare and unlit but for
-  the truck's lamp, the sun casts no shadows round the warehouse, and the village still has a bare
-  dock where its truck should be.
+- **Done.** Left for later: the truck doesn't drive in or away, the sun casts no shadows round the
+  warehouse, the yard has nothing to find in it yet (loot, a second way in), and the village still
+  has a bare dock where its truck should be.
 - **Village:** `?level=village` is a second outdoor environment, an abandoned farm hamlet in a
   Norwegian valley, run as a game: the truck at the south end of a gravel track, loot in the
   farmyards, at the boathouse and by the stave church on its knoll, a wadeable river with a
@@ -271,6 +277,12 @@ What we build the game with, besides the game itself:
   tried; games run the real round. Every level can run as either.
 - **Levels are tiles:** hand-written grids and generated ones use the same tiles and the same
   `composeTiles`, so whatever the playground gets, generated buildings get too.
+- **Baked backdrop, generated play space:** a level's surroundings (the harbour's model) are made
+  by hand or from a pack and baked into ground and boxes once. Everything the round depends on,
+  the building, the truck's place, the way between them and what stands in it, is made in code
+  from a seed, shared by server and clients, and checked by a script. That holds for the finished
+  game as much as for development: levels have to differ from round to round and be the same on
+  every machine.
 - **Money is shared by the crew.** `persist.ts` keys state by player name, so the crew needs a
   name of its own to save money under.
 - **Gear survives death:** it stays by the ragdoll until someone picks it up. It's only lost if

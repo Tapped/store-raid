@@ -24,6 +24,7 @@ import { addShelves } from "./store";
 import { addTruck } from "./truck";
 import { describeChanges } from "./tuning";
 import { toggleTuning } from "./tuningPanel";
+import { addYard } from "./yard";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const hint = document.getElementById("hint") as HTMLDivElement;
@@ -51,6 +52,7 @@ if (!playground) void addShelves(world);
 const environment = world.environment;
 if (environment) void environment.draw(world);
 const truck = addTruck(world);
+addYard(world);
 occludeIn(world.level);
 if (environment?.ambience) void environment.ambience(world);
 else void addAmbience(world);

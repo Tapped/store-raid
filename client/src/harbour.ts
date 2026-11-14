@@ -15,6 +15,8 @@ const MODEL = "models/level/harbour.glb";
 const LAYOUT = "models/level/harbour.json";
 const WATER_SIZE = 1500;
 const PAVING = ["M_TileConcrete", "M_Road", "M_Ground"];
+/** How high the street is where the first street light stands. */
+const LAMP_GROUND = 0.6;
 
 interface Layout {
   water: { x: number; y: number; z: number }[];
@@ -55,17 +57,30 @@ function outside(
 /**
  * The harbour around the store, as scenery with no collision or shadows. Each model is one mesh
  * drawn many times, so thousands of copies stay cheap. If the files are missing, it's left out.
- * With a `site`, the paving under the building that stands there is left out too.
+ * With a `site`, the paving under the building that stands there is left out too; `lamps` are
+ * more street lights, where a level wants them.
  */
 export async function addHarbour(
   scene: Scene,
   site?: { x: number; z: number; width: number; depth: number },
+  lamps: { x: number; y: number; z: number }[] = [],
 ): Promise<void> {
   const response = await fetch(assetUrl(LAYOUT));
   if (!response.headers.get("content-type")?.includes("json")) return;
   const layout = (await response.json()) as Layout;
   const container = await LoadAssetContainerAsync(assetUrl(MODEL), scene);
   container.addAllToScene();
+  // More street lights where a level asks: copies of the first, moved. The model's origin is a
+  // little under the ground it stands on.
+  const lights = layout.placements.SM_StreetLight;
+  if (lights && lights.length >= 16) {
+    const sink = lights[13] - LAMP_GROUND;
+    for (const lamp of lamps) {
+      const copy = lights.slice(0, 16);
+      [copy[12], copy[13], copy[14]] = [lamp.x, lamp.y + sink, lamp.z];
+      lights.push(...copy);
+    }
+  }
 
   for (const mesh of container.meshes) {
     if (!(mesh instanceof Mesh) || mesh.getTotalVertices() === 0) continue;
