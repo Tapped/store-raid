@@ -342,6 +342,9 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
 - `loadModel(scene, "models/props/crate.glb", placeholder)` shows the placeholder until the file
   exists, so use the final path from day one. Vite answers a missing asset with `200` and its HTML
   page, so check the content type, not only the status, when testing a URL with curl.
-- Folders: `models/{characters,props,level}`, `textures/`, `audio/{sfx,music}`, `ui/`. Lowercase
-  kebab-case. `.glb` from Blender: Y-up, transforms applied, meters.
+- Folders: `models/{characters,props,level,village}`, `textures/`, `audio/{sfx,music}`, `ui/`. Lowercase
+  kebab-case. `.glb` from Blender: Y-up, transforms applied, meters. What a model was made from
+  goes in `raw/` next to `assets/`, not in it (`raw/characters/ch17/` has the Mixamo `.fbx` files
+  behind `ch17.glb`, `raw/industrial-harbour/` the Unity package): `raw/` isn't served, built or
+  backed up.
 - Anything bundled with the client uses `import.meta.env.BASE_URL`, never a bare `/` path.
