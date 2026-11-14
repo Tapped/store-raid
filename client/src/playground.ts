@@ -12,13 +12,12 @@ import { addRoof } from "./building";
 import { surfaceMaterial } from "./graphics";
 import type { InteriorLighting } from "./interiorLight";
 import type { World } from "./scene";
-import { TickView } from "./tick";
 import { tunables } from "./tuning";
 
 /**
  * Things to look at, standing along the east wall: models made for the game but not in it yet.
- * Drawn only, with no collision. Add a line here to put a new one out. A creature with `wander`
- * walks about within that many meters of its place instead of standing still.
+ * Drawn only, with no collision. Add a line here to put a new one out. The large tick stood here
+ * until it became an enemy: two of them roam this corner now, moved by the server.
  */
 const CONCEPTS: {
   model: string;
@@ -26,17 +25,7 @@ const CONCEPTS: {
   x: number;
   z: number;
   turn?: number;
-  wander?: number;
-}[] = [
-  {
-    model: "models/characters/tick.glb",
-    label: "Large tick",
-    x: 11.5,
-    z: -8,
-    turn: -Math.PI / 2,
-    wander: 2,
-  },
-];
+}[] = [];
 
 const STRIP_GLOW = new Color3(1, 0.93, 0.8);
 
@@ -249,10 +238,6 @@ function addDimmer(world: World): (brightness: number) => void {
 
 async function addConcept(world: World, concept: (typeof CONCEPTS)[number]) {
   const { scene } = world;
-  if (concept.wander) {
-    addWanderer(world, concept, concept.wander);
-    return;
-  }
   const holder = new TransformNode(`concept-${concept.label}`, scene);
   holder.position.set(concept.x, 0, concept.z);
   holder.rotation.y = concept.turn ?? 0;
@@ -289,59 +274,4 @@ async function addConcept(world: World, concept: (typeof CONCEPTS)[number]) {
     mesh.receiveShadows = true;
     world.shadows.addShadowCaster(mesh);
   }
-}
-
-/** Tick walking speed, m/s, turning speed, radians a second, and how fast it gets up to that. */
-const WANDER_SPEED = 0.35;
-const WANDER_TURN = 1;
-const WANDER_TURN_ACCEL = 3;
-
-/**
- * A tick walking from one random spot to the next within `radius` of its place, turning to face
- * each before it sets off and pausing at each, long enough to start questing.
- */
-function addWanderer(world: World, concept: (typeof CONCEPTS)[number], radius: number) {
-  const tick = new TickView(world.scene, world.shadows, `concept-${concept.label}`);
-  let x = concept.x;
-  let z = concept.z;
-  let yaw = concept.turn ?? 0;
-  let speed = 0;
-  let turnRate = 0;
-  let goal = { x, z };
-  let pause = 2;
-  world.scene.onBeforeRenderObservable.add(() => {
-    const dt = Math.min(world.scene.getEngine().getDeltaTime() / 1000, 0.1);
-    const dx = goal.x - x;
-    const dz = goal.z - z;
-    const distance = Math.hypot(dx, dz);
-    if (distance < 0.05) {
-      speed = 0;
-      turnRate = 0;
-      pause -= dt;
-      if (pause <= 0) {
-        const a = Math.random() * Math.PI * 2;
-        const r = radius * Math.sqrt(Math.random());
-        goal = { x: concept.x + Math.cos(a) * r, z: concept.z + Math.sin(a) * r };
-        pause = 1.5 + Math.random() * 3;
-      }
-    } else {
-      const want = Math.atan2(dx, dz);
-      const off = Math.atan2(Math.sin(want - yaw), Math.cos(want - yaw));
-      // Speeds up and slows down into turns, rather than snapping round.
-      const wantRate =
-        Math.sign(off) * Math.min(WANDER_TURN, Math.sqrt(2 * WANDER_TURN_ACCEL * Math.abs(off)));
-      turnRate += Math.max(
-        -WANDER_TURN_ACCEL * dt,
-        Math.min(WANDER_TURN_ACCEL * dt, wantRate - turnRate),
-      );
-      yaw += turnRate * dt;
-      // Turn on the spot first, then walk, slowing down on arrival.
-      const target = Math.abs(off) < 0.4 ? Math.min(WANDER_SPEED, distance * 1.5) : 0;
-      speed += (target - speed) * Math.min(1, dt * 3);
-      const stepped = Math.min(distance, speed * dt);
-      x += Math.sin(yaw) * stepped;
-      z += Math.cos(yaw) * stepped;
-    }
-    tick.update(x, z, yaw, dt);
-  });
 }

@@ -20,6 +20,7 @@ import {
 import { MECHANICS, MECHANICS_KEYS, MECHANICS_RANGE, type Mechanics } from "../../shared/mechanics";
 import type { Mode } from "../../shared/modes";
 import { stepMover } from "../../shared/movement";
+import { PITCH_SCALE } from "../../shared/ticks";
 import { terrainOf } from "../../shared/truck";
 import { Gait, playOwnFootstep } from "./footsteps";
 import { addCameraEffects } from "./graphics";
@@ -187,6 +188,7 @@ export class LocalPlayer {
 
     // Other players: interpolate towards the latest snapshot (small spring for smooth motion).
     predict.attachAll("players", { mode: "lerp", fields: ["x", "y", "z"], smoothMs: 65 });
+    predict.attachAll("ticks", { mode: "lerp", fields: ["x", "y", "z"], smoothMs: 65 });
     predict.attachAll("items", {
       x: ITEM_SMOOTHING,
       y: ITEM_SMOOTHING,
@@ -453,6 +455,8 @@ export class LocalPlayer {
       session.input.data.moveX = still ? 0 : Math.round(worldX * MOVE_SCALE);
       session.input.data.moveZ = still ? 0 : Math.round(worldZ * MOVE_SCALE);
       session.input.data.yaw = Math.round(rotation.y * YAW_SCALE);
+      // Babylon's pitch grows looking down; ours grows looking up.
+      session.input.data.pitch = Math.round(-rotation.x * PITCH_SCALE);
       session.input.data.run = !still && running;
       session.input.data.jump = !still && jump;
       session.input.send();

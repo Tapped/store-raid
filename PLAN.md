@@ -36,8 +36,8 @@ In this order, to get to the first playtest soonest:
    a choice, and the jackpot safe on the top floor. Try the sofa down a flight of stairs (step 4).
 3. **Proximity voice, then the first playtest** (step 3). The playtest should decide what comes
    after: whether carrying and the dawn timer are fun without enemies.
-4. **The tick on the server** (step 5): health, latching on, backing off from light, dropping from
-   racking. It's modelled and walks on the client already, so it's the shortest way to a first scare.
+4. ~~**The tick on the server**~~ (step 5): done, untuned: health, latching on, backing off from
+   light, dropping from racking. Tune it in the playtest.
 5. **Money and a first shop** (step 6), once rounds are worth repeating.
 
 Kept for later, on purpose: the ten cargo models and calmer offices (step 4's Next), which only
@@ -230,8 +230,18 @@ screen.
 - The shovel as the first weapon, found in the building.
 - **Done when:** players get scared, and someone dies for a TV that wasn't worth it.
 - **Groundwork:** the large tick is modelled, rigged and walked in code (`client/src/tick.ts`: leg
-  IK, a tetrapod gait, questing front legs), with claw taps and a questing hiss. It wanders in the
-  playground as a concept, on the client only: nothing about enemies is on the server yet.
+  IK, a tetrapod gait, questing front legs), with claw taps and a questing hiss.
+- **Started: ticks and health.** Ticks are on the server (`server/src/ticks.ts`): a raid starts
+  with them perched on dark racking, they drop on whoever walks under, hunt across the floor round
+  the racking and up stairs, leap, and latch onto a face, draining health until a grab with a free
+  hand pulls them off, by the victim or a teammate. A flashlight's beam keeps a perched one from
+  dropping, drives one on the floor away and makes a latched one let go, so beams aim up and down
+  now. They keep out of lit rooms and the truck, and get faster and come down unasked towards
+  dawn. Health is on screen, and running out of it in a raid is death. Two roam the playground,
+  hunting when the dimmer is low. `scripts/ticks.ts` checks it with a bot.
+- **Next:** nobody has been scared by one yet: the numbers (`TICK` in `shared/ticks.ts`) are
+  guesses to tune in a playtest. A bite and a latch sound, a ragdoll and dropped gear at death,
+  the shovel, worms, failing lights, and ticks that climb back up.
 
 ### 6. Shop and money
 

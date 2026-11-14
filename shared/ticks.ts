@@ -133,7 +133,7 @@ export function perches(level: Level): Perch[] {
 /** How many ticks a level starts a raid with, of the perches it has. */
 export function tickCount(level: Level, available: number): number {
   if (level.name === "playground") return available;
-  return Math.min(available, Math.max(4, Math.min(12, Math.round(available * 0.12))));
+  return Math.min(available, Math.max(4, Math.min(12, Math.round(available * 0.2))));
 }
 
 function distanceToBox(box: Box, x: number, z: number): number {

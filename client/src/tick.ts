@@ -100,6 +100,21 @@ interface Leg {
   step?: { from: Vector3; t: number; time: number };
 }
 
+/** How a tick is held this frame, besides where it stands: see `TickView.update`. */
+export interface TickPose {
+  /** The height of its feet, when it isn't where the root was left. */
+  y?: number;
+  /**
+   * Off the ground: falling, leaping, on its back or on someone. Its legs curl under it and
+   * scrabble at the air instead of stepping, and nothing taps.
+   */
+  loose?: boolean;
+  /** Reared up with its front legs raised, as when a light finds it, without waiting to. */
+  rear?: boolean;
+  /** Crouched and silent: it doesn't start questing or hiss, as when it waits on a perch. */
+  still?: boolean;
+}
+
 export class TickView {
   /** Move and turn this, or call update(): the tick is drawn standing at its origin. */
   readonly root: TransformNode;
@@ -265,10 +280,22 @@ export class TickView {
     return new Vector3(x + at.x, this.root.position.y, z + at.z);
   }
 
-  /** Once per rendered frame: stand at (x, z), facing yaw, as in LocalPlayer (+z at yaw 0). */
-  update(x: number, z: number, yaw: number, dt: number) {
+  /** A hiss from its mouth, now: as it leaps, or as a light finds it. */
+  hissNow() {
+    if (!this.hiss) return;
+    const rate = 0.9 + 0.25 * Math.random();
+    this.hiss.play({ at: this.head?.node, volume: TICK_SOUND.hiss }, { pitch: 0, rate });
+    this.nextHiss = this.clock + this.hiss.duration / rate + HISS_GAP.max;
+  }
+
+  /**
+   * Once per rendered frame: stand at (x, z), facing yaw, as in LocalPlayer (+z at yaw 0). Tip it
+   * over or stand it on end by turning `root` about x and z before calling this.
+   */
+  update(x: number, z: number, yaw: number, dt: number, pose: TickPose = {}) {
     this.root.position.x = x;
     this.root.position.z = z;
+    if (pose.y !== undefined) this.root.position.y = pose.y;
     this.root.rotation.y = yaw;
     if (!this.body || dt <= 0) return;
     this.clock += dt;
@@ -286,11 +313,11 @@ export class TickView {
     this.last = { x, z, yaw };
     const speed = Math.hypot(this.velocity.x, this.velocity.z);
     const moving = speed > 0.03 || Math.abs(this.turnRate) > 0.15;
-    this.still = moving ? 0 : this.still + dt;
-    const questing = this.still > QUEST_AFTER;
+    this.still = moving || pose.loose || pose.still ? 0 : this.still + dt;
+    const questing = pose.rear === true || this.still > QUEST_AFTER;
     this.quest = Math.max(0, Math.min(1, this.quest + (questing ? dt : -dt) * QUEST_RATE));
     // A hiss as it rears up to quest, then now and then while it goes on.
-    if (this.hiss && questing && this.quest > 0.3 && this.clock >= this.nextHiss) {
+    if (this.hiss && questing && !pose.rear && this.quest > 0.3 && this.clock >= this.nextHiss) {
       const rate = 0.85 + 0.2 * Math.random();
       // From its mouth, wherever that goes.
       this.hiss.play({ at: this.head?.node, volume: TICK_SOUND.hiss }, { pitch: 0, rate });
@@ -298,7 +325,7 @@ export class TickView {
         this.clock + this.hiss.duration / rate + lerp(HISS_GAP.min, HISS_GAP.max, Math.random());
     }
 
-    this.stepLegs(x, z, yaw, speed, moving, dt);
+    if (!pose.loose) this.stepLegs(x, z, yaw, speed, moving, dt);
 
     // The body rides a little lower while legs are in the air, rolls away from lifted legs, and
     // rears back when questing; at rest it breathes.
@@ -345,9 +372,23 @@ export class TickView {
     const rigToWorld = this.rigWorld();
     const worldToRig = Matrix.Invert(rigToWorld);
     const bodyMotion = Matrix.Invert(this.body.rest).multiply(bodyNow);
+    this.root.computeWorldMatrix(true);
     for (const leg of this.legs) {
       let foot = leg.foot;
-      if (leg.index === 0 && this.quest > 0) {
+      if (pose.loose) {
+        // Curled in under the body, each leg scrabbling at the air out of time with the rest.
+        const side = leg.home.x > 0 ? 1 : -1;
+        const beat = this.clock * 13 + leg.index * 1.9 + side;
+        const curled = new Vector3(
+          leg.home.x * 0.72 + 0.03 * Math.sin(beat * 0.7),
+          0.1 + 0.06 * Math.sin(beat),
+          leg.home.z * 0.8 + 0.05 * Math.cos(beat),
+        );
+        foot = Vector3.TransformCoordinates(curled, this.root.getWorldMatrix());
+        // When it lands, each foot starts from where it was.
+        leg.foot = foot;
+        leg.step = undefined;
+      } else if (leg.index === 0 && this.quest > 0) {
         // Held out forward and up, well above the hip, waving, each leg out of time with the other.
         const side = leg.home.x > 0 ? 1 : -1;
         const wave = this.clock * 2.6 + side * 1.3;

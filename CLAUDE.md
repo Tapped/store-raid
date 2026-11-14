@@ -41,7 +41,9 @@ client/src/parts.ts        PartBuilder: geometry from primitives with metric UVs
 client/src/terrain.ts      addTerrain(): floors, planks, stairs, ladders, railings and pits of levels without a grid (the store); worldBox() for seamless tiling
 client/src/tileViewer.ts   the tile viewer at /tiles.html: generated levels, every tile and hand-written grids, drawn by the game's code, to inspect
 client/src/tileCatalogue.ts every tile in a small grid of its own, for the tile viewer
-client/src/tick.ts         TickView: the large tick, walked in code: leg IK, a tetrapod gait, questing front legs
+client/src/tick.ts         TickView: the large tick, walked in code: leg IK, a tetrapod gait, questing front legs; legs curled when off the ground
+client/src/ticks.ts        syncTicks(): the room's ticks drawn where the server says: perched, in the air, on their back, on a face
+client/src/health.ts       showHealth(): our health as a bar, red screen edges, and what to do with a tick on us
 client/src/audio.ts        sound on Web Audio, heard from the active camera: OneShots (varied one-shots) and Loop, placed or heard straight
 client/src/occlusion.ts    how many walls' worth lie between two points, and how muffled that makes a sound
 client/src/store.ts        addShelves(): stocked shelving over the shelf collision boxes; storeSurface(): textured walls and floor
@@ -68,9 +70,11 @@ client/src/net.ts          Colyseus client, joinGame(), waitForServer()
 client/src/assets.ts       assetUrl(), loadModel() with placeholder fallback
 server/src/rooms/          GameRoom (simulation) + schema.ts (synced state + input)
 server/src/physics.ts      PhysicsWorld: Havok bodies for one room
+server/src/ticks.ts        Ticks: the room's ticks, moved on the server: perch, drop, hunt, leap, latch, flee from light
 server/src/persist.ts      load()/save(): state that survives server restarts
 scripts/bot.ts             headless player
 scripts/hands.ts           bots check the hands in the store: phones, a TV and a two-person sofa, and report what worked
+scripts/ticks.ts           a bot checks the ticks in a raid on the store: wary of a beam, dropping, draining, pulled off, death
 scripts/playground.ts      a bot checks the playground: dimmer, stairs up and down, ladders, railing, plank and the pit
 scripts/generate.ts        draws a generated level from a seed, or checks the rules on many seeds
 scripts/village.ts         checks the village without a server: drawn ground against floors, ways through, a map (`--map`)
@@ -132,6 +136,19 @@ scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`p
   (`POSES.aim` in `client/src/hands.ts`); everyone else's points the way its holder looks, as an
   item with `front` in `ITEM_KINDS` is carried. Surfaces take `MAX_LIGHTS` lights, chosen by
   `LIGHT_PRIORITY` (`client/src/scene.ts`): the sky and sun, then our own, then others'.
+- **Ticks and health** (`shared/ticks.ts` has the numbers and the level questions, `server/src/ticks.ts`
+  moves them, `state.ticks` syncs them): each player has `health`, which only a latched tick takes;
+  at 0 in a raid they're `dead`, anywhere else it comes back. A raid starts with ticks `perched` on
+  top of racking (boxes of kind `shelf`) away from working light fittings and the truck. One drops
+  on whoever walks under it, else lands and is `hunting`: it finds its way round racking and up
+  stairs (`findPath`, A* over half-meter cells), keeps out of fittings' light, and leaps from 2.6 m.
+  In the air it latches onto a player it passes: `latched`, riding in front of their face, one tick
+  a player. Grab (E, RB) with a free hand pulls off the one on you, or on someone in front of you;
+  it lies `stunned` for a moment. A switched-on flashlight's beam makes a perched tick `wary` (it
+  won't drop), sends one on the floor `fleeing`, and held on a latched one by someone else makes it
+  let go. Beams are aimed with `Player.pitch`, which inputs carry besides yaw. In the playground two
+  roam the south-east corner and only hunt with the dimmer below half. `TICKS=0` in the server's
+  environment leaves them out. Ticks get faster towards dawn, and past half time come down unasked.
 - Lasting state goes through `server/src/persist.ts`, keyed by player name, never `sessionId`.
 - **Modes** (`shared/modes.ts`, `state.mode`): `?mode=playground` or `?mode=game`, else the
   level's own: the playground level is playground, the store, the harbour and generated levels are game. Each
@@ -277,6 +294,8 @@ You can't see the browser, so check your work from the terminal, with `pnpm run 
   file doesn't compile.
 - **Bot players:** `pnpm exec tsx scripts/bot.ts [name] [seconds]` joins your game server, walks in a
   square and prints every player's position each second (`LEVEL=` and `MODE=` choose the room).
+- **Ticks:** `SERVER_PORT=2601 pnpm exec tsx scripts/ticks.ts`, against a server of its own on that
+  port, has a bot baited, bitten and drained in the store, and says what worked.
 - **Rounds:** start a second server with a short raid, `SERVER_PORT=2601 RAID_TIME=12 pnpm exec tsx
   server/src/index.ts`, and point bots at it, rather than waiting ten minutes for dawn.
 - **Surface viewer:** `http://127.0.0.1:5173/surfaces.html` shows the surface library on a floor and
