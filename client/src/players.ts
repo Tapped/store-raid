@@ -14,6 +14,7 @@ import { loadContainer } from "./assets";
 import { Gait, playFootstep } from "./footsteps";
 import { surfaceMaterial } from "./graphics";
 import type { World } from "./scene";
+import { tunables } from "./tuning";
 
 const CHARACTER = "models/characters/ch17.glb";
 
@@ -33,7 +34,37 @@ const WALK_RATE = PLAYER_SPEED * RATE_PER_SPEED;
 const STAND_FRAME = 2;
 const BLEND_SPEED = 0.08;
 
-type Pose = "stand" | "walk" | "carry-stand" | "carry-walk";
+/**
+ * Sitting on a seat in the truck. The seated clips sit behind the player's feet (see
+ * scripts/characterClips.ts), so standing up ends where they stand; sitting down is the stand-up
+ * played backwards. The eye's height and how far behind the feet it is are the seated clips' own.
+ */
+export const SITTING = tunables("Feel/Sitting", {
+  standUpTime: {
+    value: 1.4,
+    min: 0.5,
+    max: 2.5,
+    hint: "Seconds getting up from a seat takes, during which the player can't move",
+  },
+  sitDownTime: { value: 1.2, min: 0.4, max: 2.5, hint: "Seconds sitting down on a seat takes" },
+  eyeHeight: {
+    value: 1.22,
+    min: 0.9,
+    max: 1.5,
+    hint: "Meters the eyes are above the floor, seated",
+  },
+  eyeBack: {
+    value: 0.3,
+    min: 0,
+    max: 0.6,
+    hint: "Meters the eyes are behind the feet, seated: over the seat",
+  },
+});
+
+type Pose = "stand" | "walk" | "carry-stand" | "carry-walk" | "sit" | "sit-down" | "stand-up";
+
+/** The seated idles, one per player, chosen by name. */
+const SEATED_IDLES = ["sit-idle", "sit-idle-2"];
 
 /**
  * The visual for one player: the character model, or a coloured capsule until it has loaded or if
@@ -53,6 +84,14 @@ export class PlayerView {
   private speed = 0;
   private readonly gait = new Gait();
   private disposed = false;
+  /** Which seated idle this player sits in. */
+  private readonly idle: string;
+  /** The yaw of the seat they sit on, or last sat on while they get up. */
+  private seatYaw = 0;
+  /** Whether they sat last frame, and whether there has been a frame yet. */
+  private seated: boolean | undefined;
+  /** Seconds left of sitting down or getting up. */
+  private shifting = 0;
 
   constructor(
     private readonly world: World,
@@ -60,6 +99,9 @@ export class PlayerView {
     color: string,
   ) {
     const scene: Scene = world.scene;
+    let hash = 0;
+    for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) | 0;
+    this.idle = SEATED_IDLES[Math.abs(hash) % SEATED_IDLES.length];
     this.root = new TransformNode(`player-${name}`, scene);
     this.body = new TransformNode(`player-${name}-facing`, scene);
     this.body.parent = this.root;
@@ -130,7 +172,12 @@ export class PlayerView {
     if (pose === this.pose || !this.model) return;
     this.pose = pose;
     for (const group of this.model.animationGroups) group.stop();
-    if (pose === "walk") this.clip("-walk")?.start(true, WALK_RATE);
+    const up = this.clip("sit-to-stand");
+    if (pose === "sit") this.clip(this.idle)?.start(true);
+    else if (pose === "sit-down" && up) {
+      up.start(false, clipSeconds(up) / SITTING.sitDownTime, up.to, up.from);
+    } else if (pose === "stand-up" && up) up.start(false, clipSeconds(up) / SITTING.standUpTime);
+    else if (pose === "walk") this.clip("-walk")?.start(true, WALK_RATE);
     else if (pose === "carry-walk") this.clip("carry-walk")?.start(true, WALK_RATE);
     else if (pose === "carry-stand") this.clip("carry-stop")?.start(false);
     // Looping a sliver of a frame holds the pose; a clip that ends would cut the blend into it short.
@@ -139,7 +186,7 @@ export class PlayerView {
 
   /**
    * Once per rendered frame, wherever the player is now and wherever they look, and whether they're
-   * on the ground, where their feet make a sound.
+   * on the ground, where their feet make a sound. Sitting on a seat, `seatYaw` is the way it faces.
    */
   update(
     x: number,
@@ -148,6 +195,7 @@ export class PlayerView {
     yaw: number,
     carrying: boolean,
     grounded: boolean,
+    seatYaw: number | undefined,
     dt: number,
   ) {
     const dx = x - (this.lastX ?? x);
@@ -160,26 +208,47 @@ export class PlayerView {
     const blend = 1 - Math.exp(-SPEED_SMOOTHING * dt);
     this.speed += (Math.hypot(dx, dz) / dt - this.speed) * blend;
     const moving = this.speed > MOVING_SPEED;
-    if (this.gait.update(dt, this.speed, grounded)) {
+
+    // Sitting down as they take a seat, but already seated when we first see them; getting up as
+    // they leave it.
+    const seated = seatYaw !== undefined;
+    if (seated) this.seatYaw = seatYaw;
+    if (this.seated !== undefined && seated !== this.seated) {
+      this.shifting = seated ? SITTING.sitDownTime : SITTING.standUpTime;
+    }
+    this.seated = seated;
+    this.shifting = Math.max(0, this.shifting - dt);
+    const onSeat = seated || this.shifting > 0;
+
+    if (!onSeat && this.gait.update(dt, this.speed, grounded)) {
       playFootstep(this.world.scene, this.root.position, this.gait.volume);
     }
 
-    // Facing where they look, the shortest way round, so nobody spins the long way across ±180°.
+    // Facing where they look, the shortest way round, so nobody spins the long way across ±180°;
+    // on a seat, across the truck.
+    const facing = onSeat ? this.seatYaw : yaw;
     const turn = Math.atan2(
-      Math.sin(yaw - this.body.rotation.y),
-      Math.cos(yaw - this.body.rotation.y),
+      Math.sin(facing - this.body.rotation.y),
+      Math.cos(facing - this.body.rotation.y),
     );
     this.body.rotation.y += turn * (1 - Math.exp(-TURN_SMOOTHING * dt));
 
-    if (carrying) this.setPose(moving ? "carry-walk" : "carry-stand");
+    if (seated) this.setPose(this.shifting > 0 ? "sit-down" : "sit");
+    else if (this.shifting > 0) this.setPose("stand-up");
+    else if (carrying) this.setPose(moving ? "carry-walk" : "carry-stand");
     else this.setPose(moving ? "walk" : "stand");
 
     // The walk clips keep pace with however fast they go, never slower than half a walk.
-    if (moving) {
+    if (moving && (this.pose === "walk" || this.pose === "carry-walk")) {
       const rate = Math.max(WALK_RATE / 2, this.speed * RATE_PER_SPEED);
       for (const group of this.model?.animationGroups ?? [])
         if (group.isPlaying) group.speedRatio = rate;
     }
+  }
+
+  /** Whether they're on a seat, sitting down or getting up: the eyes are lower. */
+  get sitting(): boolean {
+    return this.seated === true || this.shifting > 0;
   }
 
   /** Hidden while we watch through this player's eyes, so the camera isn't inside their head. */
@@ -193,4 +262,10 @@ export class PlayerView {
     this.model?.dispose();
     this.root.dispose(false, true);
   }
+}
+
+/** How long a clip lasts as recorded, in seconds. */
+function clipSeconds(group: AnimationGroup): number {
+  const fps = group.targetedAnimations[0]?.animation.framePerSecond ?? 60;
+  return (group.to - group.from) / fps;
 }

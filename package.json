@@ -19,6 +19,7 @@
     "assets:backup": "tsx scripts/assets.ts backup",
     "assets:restore": "tsx scripts/assets.ts restore",
     "model": "tsx scripts/models/index.ts",
+    "clips": "tsx scripts/characterClips.ts",
     "image": "tsx scripts/image.ts",
     "harbour": "tsx scripts/harbour.ts",
     "sounds": "node F:/Dev/Libraries/SonnisSounds/sounds.mjs",

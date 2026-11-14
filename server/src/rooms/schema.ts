@@ -40,6 +40,8 @@ export const Player = schema({
   role: t.string(),
   /** In the lobby, ready to start; in the raid, in the truck and wanting to leave. */
   ready: t.boolean(),
+  /** The truck's seat they sit on, an index into `ParkedTruck.seats`, or -1 standing. */
+  seat: t.int8(),
 });
 export type Player = SchemaType<typeof Player>;
 

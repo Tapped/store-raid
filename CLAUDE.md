@@ -76,6 +76,7 @@ scripts/generate.ts        draws a generated level from a seed, or checks the ru
 scripts/village.ts         checks the village without a server: drawn ground against floors, ways through, a map (`--map`)
 scripts/villageWalk.ts     a bot walks the village from the truck to the church door (or over the bridge and back through the river)
 scripts/harbour.ts         the harbour's ground and what's in the way, from its model, into shared/harbour.json (`pnpm run harbour`)
+scripts/characterClips.ts  Mixamo clips from raw/ into the character model, through Blender (`pnpm run clips`)
 scripts/hatch.ts           a bot checks the truck's hatch in a game in the harbour: shut in the lobby, down for the raid, both control boxes
 scripts/harbourCheck.ts    checks the harbour level without a server: the warehouse's rules, and a way without jumps between the truck and the loading door, on foot and with a sofa (`--map` draws the yard)
 scripts/unity-import/      prefabs from a Unity .unitypackage → textured .glb in assets/, through Blender
@@ -161,6 +162,16 @@ scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`p
   it's up through the lobby, where the buttons do nothing, so the crew is shut in until the raid
   starts and it comes down by itself; in the playground it starts down. The client turns the hatch's
   own model on its hinge (`client/src/truck.ts`). `scripts/hatch.ts` checks all of it with a bot.
+- **Seats:** `ParkedTruck.seats` are the benches' ten seats, alternating sides from the bulkhead,
+  each with where a seated player's feet are (just clear of the bench), the yaw they face and the
+  seat to reach for. `Player.seat` is the one they sit on, or -1. A game's lobby seats everyone
+  (`resetRound`, and joining), keeping seats already taken, and the raid starting stands them all
+  up. Grab (E, RB) facing a free seat in the truck sits down, when there's nothing to take and both
+  arms aren't full. Seated, the server skips their movement and the client sends none and predicts
+  none; moving or jumping sends `stand`, and the client stays put for `SITTING.standUpTime`
+  (`client/src/players.ts`, under `Feel/Sitting`) while the camera rises from the seated eye.
+  `PlayerView` sits in one of the seated idles, picked by name, and plays `sit-to-stand` forward
+  to get up and backward to sit down.
 
 ## Running
 
@@ -395,4 +406,9 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
   goes in `raw/` next to `assets/`, not in it (`raw/characters/ch17/` has the Mixamo `.fbx` files
   behind `ch17.glb`, `raw/industrial-harbour/` the Unity package): `raw/` isn't served, built or
   backed up.
+- **Character clips:** `ch17.glb` holds its animation groups `walk`, `carry-walk`, `carry-stop`,
+  `sit-idle`, `sit-idle-2` and `sit-to-stand`. `pnpm run clips` (`scripts/characterClips.ts`) adds or
+  replaces the Mixamo clips listed in its `CLIPS` (downloaded without skin, into `raw/characters/ch17/`)
+  through Blender, keeping only bones' rotations and the hips' translation, and leaving the rest of the
+  model as it is. The seated clips sit 0.45 m behind the origin, so the stand-up ends over it.
 - Anything bundled with the client uses `import.meta.env.BASE_URL`, never a bare `/` path.

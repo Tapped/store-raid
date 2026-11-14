@@ -27,6 +27,7 @@ import { FirstPersonHands, type Held } from "./hands";
 import type { Device } from "./input";
 import type { ItemView } from "./items";
 import { type GameConnection, joinGame, waitForServer } from "./net";
+import { SITTING } from "./players";
 import { createPlayerCamera, type World } from "./scene";
 import { TiredEffect } from "./tired";
 import { addSetting, tunables } from "./tuning";
@@ -118,6 +119,13 @@ export class LocalPlayer {
   private readonly tuned: Partial<Mechanics> = {};
   /** Out of the building, the session of whoever we watch through the eyes of. */
   private watching: string | undefined;
+  /** The seat we sat on last frame, or -1, and the way the last one faced. */
+  private lastSeat = -1;
+  private seatYaw = 0;
+  /** Seconds left of getting up, during which we stay put. */
+  private rising = 0;
+  /** How far down into a seat the camera is, from 0 standing to 1 seated. */
+  private seatedness = 0;
 
   constructor(
     private readonly world: World,
@@ -209,7 +217,9 @@ export class LocalPlayer {
       input,
       fields: ["x", "y", "z", "vx", "vy", "vz", "stamina", "winded"],
       // With what our hands hold now: a replay after picking something up may differ for a tick.
-      step: (ctx, predicted, command) =>
+      // Seated, we stay put, as the server keeps us.
+      step: (ctx, predicted, command) => {
+        if (self.seat >= 0) return;
         stepMover(
           predicted,
           command,
@@ -217,7 +227,8 @@ export class LocalPlayer {
           terrainOf(this.world.level, room.state.hatch >= 1),
           room.state.mechanics,
           canClimb(self),
-        ),
+        );
+      },
     });
 
     this.session = { room, predict, input, sessionId: room.sessionId, self };
@@ -400,10 +411,13 @@ export class LocalPlayer {
         );
         rotation.y += turn * follow;
         rotation.x += (0 - rotation.x) * follow;
+        // Lower, and over the seat, if they sit.
+        const seat = target.seat >= 0 ? this.world.level.truck?.seats[target.seat] : undefined;
+        const back = seat ? SITTING.eyeBack : 0;
         this.camera.position.set(
-          session.predict.value(target, "x"),
-          session.predict.value(target, "y") + EYE_HEIGHT,
-          session.predict.value(target, "z"),
+          session.predict.value(target, "x") - Math.sin(seat?.yaw ?? 0) * back,
+          session.predict.value(target, "y") + (seat ? SITTING.eyeHeight : EYE_HEIGHT),
+          session.predict.value(target, "z") - Math.cos(seat?.yaw ?? 0) * back,
         );
         return;
       }
@@ -431,23 +445,61 @@ export class LocalPlayer {
     const worldZ = -controls.moveX * forwardX + controls.moveY * forwardZ;
     const running = this.device.runHeld();
     const jump = this.device.jumpHeld();
+    const still = this.sit(dt, controls.moveX !== 0 || controls.moveY !== 0 || jump);
 
-    // One input per simulation step, independent of frame rate.
+    // One input per simulation step, independent of frame rate. On a seat, or getting up, no moving.
     const steps = session.predict.tick(performance.now());
     for (let i = 0; i < steps; i++) {
-      session.input.data.moveX = Math.round(worldX * MOVE_SCALE);
-      session.input.data.moveZ = Math.round(worldZ * MOVE_SCALE);
+      session.input.data.moveX = still ? 0 : Math.round(worldX * MOVE_SCALE);
+      session.input.data.moveZ = still ? 0 : Math.round(worldZ * MOVE_SCALE);
       session.input.data.yaw = Math.round(rotation.y * YAW_SCALE);
-      session.input.data.run = running;
-      session.input.data.jump = jump;
+      session.input.data.run = !still && running;
+      session.input.data.jump = !still && jump;
       session.input.send();
     }
 
+    // Seated, the eyes are lower and back over the seat.
+    const sunk = this.seatedness * this.seatedness * (3 - 2 * this.seatedness);
+    const back = sunk * SITTING.eyeBack;
+    const eye = EYE_HEIGHT + (SITTING.eyeHeight - EYE_HEIGHT) * sunk;
     this.camera.position.set(
-      session.predict.value(session.self, "x"),
-      session.predict.value(session.self, "y") + EYE_HEIGHT + this.tired.heave * HEAVE.breathHeave,
-      session.predict.value(session.self, "z"),
+      session.predict.value(session.self, "x") - Math.sin(this.seatYaw) * back,
+      session.predict.value(session.self, "y") + eye + this.tired.heave * HEAVE.breathHeave,
+      session.predict.value(session.self, "z") - Math.cos(this.seatYaw) * back,
     );
+  }
+
+  /**
+   * Sitting on a seat in the truck: put there, we look across the truck; trying to move gets us
+   * up, which takes a moment. Whether we must stay put.
+   */
+  private sit(dt: number, wantsToMove: boolean): boolean {
+    const session = this.session;
+    if (!session) return false;
+    const seatIndex = session.self.seat;
+    const seat = seatIndex >= 0 ? this.world.level.truck?.seats[seatIndex] : undefined;
+    if (seat && this.lastSeat < 0) {
+      // Just sat down: face the other bench.
+      this.camera.rotation.y = seat.yaw;
+      this.camera.rotation.x = 0;
+      this.rising = 0;
+    }
+    if (seat) this.seatYaw = seat.yaw;
+    // Stood up by the server, as the raid starts, or by us.
+    if (!seat && this.lastSeat >= 0 && this.rising <= 0) this.rising = SITTING.standUpTime;
+    this.lastSeat = seat ? seatIndex : -1;
+    if (seat && wantsToMove && this.rising <= 0) {
+      session.room.send("stand");
+      this.rising = SITTING.standUpTime;
+    }
+    this.rising = Math.max(0, this.rising - dt);
+
+    if (seat && this.rising <= 0) {
+      this.seatedness = Math.min(1, this.seatedness + dt / SITTING.sitDownTime);
+    } else if (this.rising > 0) {
+      this.seatedness = Math.min(this.seatedness, this.rising / SITTING.standUpTime);
+    } else this.seatedness = 0;
+    return seat !== undefined || this.rising > 0;
   }
 
   leave(): void {

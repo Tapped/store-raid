@@ -1,4 +1,5 @@
 import type { Box } from "./collision";
+import { PLAYER_RADIUS } from "./constants";
 import type { Floor, Level, LevelBox } from "./level";
 import type { Terrain } from "./movement";
 import type { Side } from "./tiles";
@@ -33,6 +34,8 @@ export const TRUCK = {
   ],
   /** A bench along each side wall, from the bulkhead back. */
   bench: { depth: 0.45, back: 0.1, front: 3.0, height: 0.45 },
+  /** The seats on each bench, five a side: the first's and the last's z. */
+  seats: { first: 0.48, last: 2.72, perSide: 5 },
   /** The cab, which nobody gets into: half its width, its front and its top. */
   cab: { halfWidth: 1.15, front: 5.1, top: 2.8 },
   /** The caged lamp on the ceiling. */
@@ -81,11 +84,31 @@ export interface ParkedTruck {
   dock: Box;
   /** Where the index-th player stands when a round begins, between the benches. */
   spawn(index: number): { x: number; y: number; z: number };
+  /**
+   * The seats on the benches: where a player sitting there has their feet, in the aisle just
+   * clear of the bench, the yaw they face, across the truck, and the middle of the seat itself.
+   */
+  seats: Seat[];
   /** Where the ceiling lamp hangs. */
   lamp: { x: number; y: number; z: number };
   /** The foot of the ramp, on the ground. */
   rampFoot: { x: number; z: number };
 }
+
+/** A seat on a bench, in the level's space. */
+export interface Seat {
+  /** Where a seated player is: their feet, in front of the bench. The character sits behind them. */
+  x: number;
+  y: number;
+  z: number;
+  /** Where they face, across the truck. */
+  yaw: number;
+  /** The middle of the seat, to reach for. */
+  at: { x: number; y: number; z: number };
+}
+
+/** How far players sitting on a bench are from its front edge: just clear of it. */
+const SEAT_CLEAR = PLAYER_RADIUS + 0.01;
 
 const SIDES: readonly Side[] = ["n", "e", "s", "w"];
 
@@ -177,6 +200,22 @@ export function parkTruck(place: TruckPlace): ParkedTruck {
       const at = point(index % 2 === 0 ? -0.36 : 0.36, 2.5 - row * 0.62);
       return { ...at, y: place.y + inside.floor };
     },
+    // From the bulkhead back, one side and then the other, so the first to sit face each other.
+    seats: Array.from({ length: 2 * TRUCK.seats.perSide }, (_, n): Seat => {
+      const { first, last, perSide } = TRUCK.seats;
+      const side = n % 2 === 0 ? -1 : 1;
+      const z = last - ((last - first) * Math.floor(n / 2)) / (perSide - 1);
+      const edge = inside.halfWidth - bench.depth;
+      const feet = point(side * (edge - SEAT_CLEAR), z);
+      const seat = point(side * (edge + bench.depth / 2), z);
+      return {
+        ...feet,
+        y: place.y + inside.floor,
+        // Facing the other bench: +x from the -x side, turned with the truck.
+        yaw: (-side * Math.PI) / 2 + (place.turns * Math.PI) / 2,
+        at: { ...seat, y: place.y + inside.floor + bench.height },
+      };
+    }),
     lamp: { ...point(TRUCK.lamp.x, TRUCK.lamp.z), y: place.y + TRUCK.lamp.y },
     rampFoot: point(0, HATCH_FOOT),
     hatch: {

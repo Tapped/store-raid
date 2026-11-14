@@ -135,9 +135,10 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     // that aren't per-tick inputs (chat, emotes, abilities, …).
     /** Grab what's in front, with the right hand if it's free, else the left. */
     /** A dimmer in front of the player gets held instead, until `release`. */
+    /** A free seat in the truck in front of them, with nothing else to take, sits them down. */
     grab: (client: Client) => {
       const player = this.playing(client.sessionId);
-      if (!player) return;
+      if (!player || player.seat >= 0) return;
       if (this.atHatchPanel(player)) {
         this.pressHatch();
         return;
@@ -149,7 +150,13 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
         return;
       }
       const hand = grabbingHand(player);
-      if (hand) this.grab(player, hand);
+      if (hand && this.grab(player, hand)) return;
+      this.sitDown(player);
+    },
+    /** Get up from a seat in the truck. */
+    stand: (client: Client) => {
+      const player = this.playing(client.sessionId);
+      if (player) player.seat = -1;
     },
     /** The grab button is up again: stop turning the dimmer. */
     release: (client: Client) => {
@@ -227,11 +234,16 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     const name = (options?.name ?? "").trim().slice(0, 16) || `player-${index + 1}`;
     const game = this.state.mode === "game";
     // A game starts everyone in the truck; the playground puts them back where they were.
-    const spawn = game
-      ? this.truckSpot(index)
-      : { y: 0, ...(this.lastSeen[this.seenKey(name)] ?? this.level.spawnPoint(index)) };
     // Once a raid has begun, newcomers watch until the next round.
     const role: Role = game && this.state.phase !== "lobby" ? "waiting" : "playing";
+    // In the lobby, they sit down on a free seat in the truck if there is one.
+    const seat = game && role === "playing" ? this.freeSeat() : -1;
+    const spawn =
+      seat >= 0
+        ? this.seatSpot(seat)
+        : game
+          ? this.truckSpot(index)
+          : { y: 0, ...(this.lastSeen[this.seenKey(name)] ?? this.level.spawnPoint(index)) };
     this.state.players.set(
       client.sessionId,
       new Player({
@@ -250,6 +262,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
         right: "",
         role,
         ready: false,
+        seat,
       }),
     );
     if (role === "playing") {
@@ -301,6 +314,54 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     return inside(this.level.dock, player.x, player.z);
   }
 
+  /** Where a player sitting on the truck's seat is: their feet, in front of it. */
+  private seatSpot(seat: number): { x: number; y: number; z: number } {
+    const { x, y, z } = this.level.truck?.seats[seat] ?? { x: 0, y: 0, z: 0 };
+    return { x, y, z };
+  }
+
+  /** The seats someone sits on. */
+  private takenSeats(): Set<number> {
+    return new Set([...this.state.players.values()].map((player) => player.seat));
+  }
+
+  /** The first of the truck's seats nobody sits on, or -1. */
+  private freeSeat(): number {
+    const taken = this.takenSeats();
+    return (this.level.truck?.seats ?? []).findIndex((_, i) => !taken.has(i));
+  }
+
+  /**
+   * Sit down on the nearest free seat in the truck that the player reaches for, unless their arms
+   * are full: they're put where a seated player is, facing across, and stay until they get up.
+   */
+  private sitDown(player: Player) {
+    const seats = this.level.truck?.seats;
+    if (!seats || !this.inTruck(player)) return;
+    if (player.left !== "" && player.left === player.right) return;
+    const taken = this.takenSeats();
+    let nearest = -1;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const [i, seat] of seats.entries()) {
+      if (taken.has(i) || !this.reaches(player, seat.at)) continue;
+      const distance = Math.hypot(seat.at.x - player.x, seat.at.z - player.z);
+      if (distance < nearestDistance) {
+        nearest = i;
+        nearestDistance = distance;
+      }
+    }
+    if (nearest < 0) return;
+    const seat = seats[nearest];
+    player.seat = nearest;
+    player.x = seat.x;
+    player.y = seat.y;
+    player.z = seat.z;
+    player.vx = 0;
+    player.vy = 0;
+    player.vz = 0;
+    player.yaw = seat.yaw;
+  }
+
   /** Where the index-th player stands in the truck at the start of a round: in rows across it. */
   private truckSpot(index: number): { x: number; y: number; z: number } {
     // A real truck has its own places, between its benches.
@@ -334,6 +395,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     for (const hand of HANDS) this.drop(sessionId, hand);
     player.role = role;
     player.ready = false;
+    player.seat = -1;
     const body = this.playerBodies.get(sessionId);
     if (body) this.physics.removeBody(body);
     this.playerBodies.delete(sessionId);
@@ -351,11 +413,32 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     this.playerBodies.set(sessionId, this.physics.addPlayer(player.x, player.y, player.z));
   }
 
-  /** Every player back in the building, standing in the truck, and every item where it started. */
+  /**
+   * Every player back in the building, in the truck, and every item where it started. In a truck
+   * with seats, they sit on them, as many as there are.
+   */
   private resetRound() {
+    // Those already sitting keep their seats; the rest take the free ones, then stand between.
+    const seats = new Map<string, number>();
+    for (const [sessionId, player] of this.state.players) {
+      if (player.role === "playing" && player.seat >= 0) seats.set(sessionId, player.seat);
+    }
+    const taken = new Set(seats.values());
+    const all = this.level.truck?.seats.length ?? 0;
     let index = 0;
     for (const [sessionId, player] of this.state.players) {
-      this.setRole(sessionId, player, "playing", this.truckSpot(index++));
+      let seat = seats.get(sessionId) ?? -1;
+      if (seat < 0) {
+        seat = Array.from({ length: all }, (_, i) => i).find((i) => !taken.has(i)) ?? -1;
+        if (seat >= 0) taken.add(seat);
+      }
+      this.setRole(
+        sessionId,
+        player,
+        "playing",
+        seat >= 0 ? this.seatSpot(seat) : this.truckSpot(index++),
+      );
+      player.seat = seat;
     }
     for (const [id, item] of this.state.items) {
       const body = this.itemBodies.get(id);
@@ -385,7 +468,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       else if (this.state.timeLeft === 0) this.state.timeLeft = START_TIME;
       else if (runsOut()) {
         this.resetRound();
-        // There: the hatch comes down.
+        // Go: everyone gets up, and the hatch comes down.
+        for (const player of this.state.players.values()) player.seat = -1;
         this.hatchGoal = 1;
         this.state.phase = "raid";
         this.state.timeLeft = RAID_SECONDS;
@@ -491,7 +575,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     this.state.light = Math.min(1, Math.max(0, light));
   }
 
-  private grab(player: Player, hand: Hand) {
+  /** Whether there was something to take. */
+  private grab(player: Player, hand: Hand): boolean {
     const bothFree = !player.left && !player.right;
     let nearest: string | undefined;
     let nearestGap = REACH;
@@ -509,13 +594,14 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
         nearestGap = gap;
       }
     }
-    if (!nearest) return;
+    if (!nearest) return false;
     const item = this.state.items.get(nearest);
-    if (!item) return;
+    if (!item) return false;
     if (this.kindOf(item).hands === 2) {
       player.left = nearest;
       player.right = nearest;
     } else player[hand] = nearest;
+    return true;
   }
 
   /** Let go of what's in a hand. Off the ground, that drops it for everyone: one person can't hold up a sofa. */
@@ -701,6 +787,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       if (!channel) continue;
       for (const input of channel) {
         if (player.role !== "playing") continue;
+        // Seated, they stay put, facing across, until they get up; the client sends no movement.
+        if (player.seat >= 0) continue;
         const terrain = terrainOf(this.level, this.state.hatch >= 1);
         stepMover(player, input, ctx.dt, terrain, this.state.mechanics, canClimb(player));
         player.yaw = input.yaw / YAW_SCALE;
@@ -716,6 +804,20 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     for (let i = 0; i < players.length; i++) {
       for (let j = i + 1; j < players.length; j++) {
         if (Math.abs(players[i].y - players[j].y) > PLAYER_HEIGHT) continue;
+        // Those sitting side by side are closer than that, and don't budge for anyone.
+        const [iSits, jSits] = [players[i].seat >= 0, players[j].seat >= 0];
+        if (iSits && jSits) continue;
+        if (iSits || jSits) {
+          const [still, pushed] = iSits ? [players[i], players[j]] : [players[j], players[i]];
+          const dx = pushed.x - still.x;
+          const dz = pushed.z - still.z;
+          const distance = Math.hypot(dx, dz);
+          if (distance >= 2 * PLAYER_RADIUS) continue;
+          const [ux, uz] = distance > 1e-6 ? [dx / distance, dz / distance] : [1, 0];
+          pushed.x = still.x + ux * 2 * PLAYER_RADIUS;
+          pushed.z = still.z + uz * 2 * PLAYER_RADIUS;
+          continue;
+        }
         const a = { x: players[i].x, z: players[i].z, radius: PLAYER_RADIUS };
         const b = { x: players[j].x, z: players[j].z, radius: PLAYER_RADIUS };
         if (resolveCircleCircle(a, b)) {
