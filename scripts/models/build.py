@@ -1,65 +1,113 @@
 """
-Run by index.ts inside Blender: builds each model script and exports it as <work>/<name>/raw.glb,
-with PNG textures that index.ts compresses. Arguments after --: the job file.
+Run by index.ts inside Blender. Arguments after --:
+
+  <job.json>                   run one job (see pipeline.py) and exit
+  --serve <dir> <idle seconds> stay running: take each <dir>/*.job.json in turn, run it, and exit
+                               after that long without a job. Saves starting Blender, importing
+                               the exporter and loading Cycles' kernels on every build.
+
+Every job writes {"models": {name: result}, "log": [lines]} to the job's "result" path, the log
+being the lines printed with a MODEL prefix. Before each job, pipeline.py, lib.py and every other
+module in this folder are loaded again, so edits to them take effect without restarting.
 """
 
-import importlib.util
+import glob
 import json
 import os
 import sys
-import traceback
+import time
 
-import bpy
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import lib  # noqa: E402
 
-job = json.load(open(sys.argv[sys.argv.index("--") + 1]))
-lib.ITEMS = job["items"]
-work = job["work"]
-result = {}
+class Log:
+    """Passes stdout through, keeping the MODEL lines for the result."""
 
-for model in job["models"]:
-    name = model["name"]
-    out_dir = os.path.join(work, name)
-    os.makedirs(out_dir, exist_ok=True)
+    def __init__(self, out):
+        self.out, self.lines, self.partial = out, [], ""
+
+    def write(self, text):
+        self.out.write(text)
+        self.partial += text
+        *done, self.partial = self.partial.split("\n")
+        self.lines += [line[6:] for line in done if line.startswith("MODEL ")]
+
+    def flush(self):
+        self.out.flush()
+
+
+def fresh_modules():
+    """Forget every module loaded from this folder, so the next import reads it from disk."""
+    for name, mod in list(sys.modules.items()):
+        path = getattr(mod, "__file__", None) or ""
+        if name != "__main__" and os.path.abspath(path).startswith(HERE + os.sep):
+            del sys.modules[name]
+
+
+def run(job_path):
+    job = json.load(open(job_path, encoding="utf8"))
+    log = Log(sys.stdout)
+    sys.stdout = log
     try:
-        lib.reset()
-        spec = importlib.util.spec_from_file_location(f"model_{name}", model["script"])
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        item = getattr(mod, "ITEM", None)
-        if item is not None and item not in lib.ITEMS:
-            raise ValueError(f"ITEM {item!r} is not in ITEM_KINDS")
-        mod.build()
-        obj = lib.join(name, getattr(mod, "SMOOTH_ANGLE", 35))
-        baked = lib.bake_all(obj, out_dir, name)
-        ao = getattr(mod, "AO", 512)
-        if ao:
-            lib.bake_ao(obj, ao, getattr(mod, "AO_DISTANCE", 0.3), out_dir)
-        dims, offset = lib.place_origin(obj, getattr(mod, "ORIGIN", "center" if item else "bottom"))
-        if lib.BONES:
-            lib.rig(obj, offset)
-        # Applying modifiers leaves the armature's alone, so the mesh exports skinned in its rest pose.
-        bpy.ops.export_scene.gltf(
-            filepath=os.path.join(out_dir, "raw.glb"), export_format="GLB", export_yup=True,
-            export_apply=True, export_tangents=True, export_materials="EXPORT",
-            export_image_format="AUTO", export_animations=False, export_extras=False,
-            export_skins=bool(lib.BONES), export_def_bones=False,
-        )
-        result[name] = {
-            "out": getattr(mod, "OUT", f"models/props/{name}.glb"),
-            "item": item,
-            "tris": lib.triangles(obj),
-            "budget": getattr(mod, "TRIS", None),
-            "dims": dims,
-            "materials": [s.material.name for s in obj.material_slots if s.material],
-            "baked": baked,
-            "ao": bool(ao),
-        }
-    except Exception:
-        for line in traceback.format_exc().splitlines():
-            print("MODEL", name, line)
-        result[name] = {"error": True}
+        fresh_modules()
+        import pipeline
 
-json.dump(result, open(job.get("built", os.path.join(work, "built.json")), "w"))
+        models = pipeline.run(job)
+    except Exception:
+        import traceback
+
+        for line in traceback.format_exc().splitlines():
+            print("MODEL", line)
+        models = {}
+    finally:
+        sys.stdout = log.out
+    tmp = job["result"] + ".tmp"
+    with open(tmp, "w", encoding="utf8") as f:
+        json.dump({"models": models, "log": log.lines}, f)
+    os.replace(tmp, job["result"])
+
+
+def _age(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:  # taken by another server meanwhile
+        return 0
+
+
+def serve(folder, idle):
+    os.makedirs(folder, exist_ok=True)
+    pid = os.getpid()
+    marker = os.path.join(folder, "server.json")
+    with open(marker, "w", encoding="utf8") as f:
+        json.dump({"pid": pid}, f)
+    print(f"Serving model jobs from {folder}, until {idle} s without one", flush=True)
+    last = time.time()
+    while time.time() - last < idle:
+        jobs = sorted(glob.glob(os.path.join(folder, "*.job.json")), key=_age)
+        if not jobs:
+            time.sleep(0.1)
+            continue
+        for path in jobs:
+            claimed = f"{path[: -len('.job.json')]}.{pid}.running"
+            try:
+                os.rename(path, claimed)  # another server may have taken it
+            except OSError:
+                continue
+            started = time.time()
+            run(claimed)
+            os.remove(claimed)
+            print(f"Job {os.path.basename(path)} took {time.time() - started:.1f} s", flush=True)
+            last = time.time()
+    try:
+        if json.load(open(marker, encoding="utf8")).get("pid") == pid:
+            os.remove(marker)
+    except (OSError, ValueError):
+        pass
+
+
+args = sys.argv[sys.argv.index("--") + 1:]
+if args[0] == "--serve":
+    serve(args[1], float(args[2]))
+else:
+    run(args[0])

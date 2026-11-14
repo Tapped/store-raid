@@ -311,7 +311,12 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
   second UV set (Cycles, on the GPU if there is one), writes the `.glb` to `assets/` with KTX2
   textures, checks it against `ITEM_KINDS` and its triangle budget, and renders
   `node_modules/.cache/models/<name>/preview.png` from four sides. Look at the preview, then at the
-  model in the game, whose lighting differs. Screen-space AO only adds contact shadows between
+  model in the game, whose lighting differs. Iterate with `--draft`: only the preview, rendered from
+  the live materials unbaked, in seconds (`--watch` builds again on every save; `--focus`, `--views`
+  and `--ref` for close-ups and a reference beside them). `--quick` bakes at a quarter of the size
+  to check in the game, and must be built again in full. Builds go through a Blender kept running
+  in the background for 15 minutes (`--stop`, `--no-server`); the options are at the top of
+  `scripts/models/index.ts`. Screen-space AO only adds contact shadows between
   things, so a model's own creases come from its bake. The scripts are in git and the models aren't, so run
   `pnpm run assets:backup` after building.
 - **Video memory:** a texture unpacked on the GPU takes 4 bytes a pixel plus a third for mipmaps, 85 MB

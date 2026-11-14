@@ -32,9 +32,24 @@ with `pnpm run model <name>`. Read these first. This skill doesn't repeat them:
 4. **Shade it.** Use `lib.procedural()` materials, whose coordinates are the model's meters, so
    grooves and plates in the shader can line up with the same constants as the geometry. Use
    `lib.material()` for small plain parts.
-5. **Build and look.** Run `pnpm run model <name>` and Read `node_modules/.cache/models/<name>/preview.png`.
-   Compare it with the reference side by side and list what's off, then fix the biggest things
-   first. Two or three rounds is normal.
+5. **Draft and look.** Iterate with `pnpm run model <name> --draft` and Read
+   `node_modules/.cache/models/<name>/preview.png`. A draft renders the live scene with its
+   procedural materials unbaked and writes nothing else, in about 5–15 s. A full build bakes,
+   which takes minutes for a big model. Compare the draft with the reference side by side and list
+   what's off, then fix the biggest things first. Two or three rounds is normal.
+   - `--ref concept/<name>-sheet.png` puts the reference on the sheet beside the views.
+   - `--focus <material>` or `--focus=x,y,z,r` (meters, in the script's axes) frames a close-up of
+     one part. `--views front,top` renders only those views (also side, three-quarter, back, left,
+     rear, below). Fewer views render faster.
+   - The first build starts a Blender that stays in the background for 15 minutes, so later
+     builds skip its startup. After editing `build.py`, stop it with `pnpm run model --stop`; every
+     other module is reloaded for each job.
+   - A draft has no baked occlusion: the studio light's shadows stand in. Seams, texture resolution
+     and the baked occlusion only show in a full build.
+5b. **Build it once for real.** Run `pnpm run model <name>` when the draft looks right, and look at
+   its preview for bake problems. To check a model in the game sooner, `--quick` bakes textures at
+   a quarter of the size in a fraction of the time. Always build it again without `--quick` before
+   you finish.
 6. **Check it in the game** with the `mcp__chrome__*` tools. Put it on show in the playground
    (`CONCEPTS` in `client/src/playground.ts`, at `?level=playground`) to see it in even light, then
    in the store, which is dark, graded and fogged, so a model that reads in the preview can

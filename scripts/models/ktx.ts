@@ -33,6 +33,7 @@ const UASTC_RGBA = 3;
 async function encodeLevel(
   level: Pixels,
   kind: TextureKind,
+  effort: number,
 ): Promise<{ blocks: Uint8Array; first: KTX2Container }> {
   const across = Math.ceil(level.width / 4);
   const down = Math.ceil(level.height / 4);
@@ -52,7 +53,7 @@ async function encodeLevel(
         isKTX2File: true,
         generateMipmap: false,
         needSupercompression: false,
-        uastcLDRQualityLevel: 2,
+        uastcLDRQualityLevel: effort,
         isPerceptual: kind === "colour",
         isSetKTX2SRGBTransferFunc: kind === "colour",
         isNormalMap: kind === "normal",
@@ -100,8 +101,15 @@ async function half(level: Pixels, kind: TextureKind): Promise<Pixels> {
   return { data, width, height };
 }
 
-/** An image file (PNG, WebP, JPEG) as a KTX2 file with all its mipmaps. */
-export async function toKtx2(image: Uint8Array, kind: TextureKind): Promise<Uint8Array> {
+/**
+ * An image file (PNG, WebP, JPEG) as a KTX2 file with all its mipmaps. `effort` is the encoder's,
+ * 0 to 4: 2 for builds to keep, 0 for quick builds, several times faster and a little blockier.
+ */
+export async function toKtx2(
+  image: Uint8Array,
+  kind: TextureKind,
+  effort = 2,
+): Promise<Uint8Array> {
   const { data, info } = await sharp(image)
     .toColourspace("srgb")
     .ensureAlpha()
@@ -118,7 +126,7 @@ export async function toKtx2(image: Uint8Array, kind: TextureKind): Promise<Uint
   const levels: Uint8Array[] = [];
   let container: KTX2Container | undefined;
   for (;;) {
-    const { blocks, first } = await encodeLevel(level, kind);
+    const { blocks, first } = await encodeLevel(level, kind, effort);
     container ??= first;
     levels.push(blocks);
     if (level.width === 1 && level.height === 1) break;

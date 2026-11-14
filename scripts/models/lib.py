@@ -1,8 +1,8 @@
 """
-Helpers for model scripts, run inside Blender by build.py.
+Helpers for model scripts, run inside Blender by pipeline.py (through build.py).
 
 A model script defines build(), which makes objects in the empty scene with these helpers or plain
-bpy. build.py then joins them into one mesh, smooths it, bakes procedural materials into textures,
+bpy. pipeline.py then joins them into one mesh, smooths it, bakes procedural materials into textures,
 moves the origin and exports it. Conventions, in Blender's axes:
 
 - Meters. x is right, y is back, z is up: the model's front faces -y, as in Blender's front view.
@@ -25,7 +25,7 @@ Optional constants in a model script:
   AO_DISTANCE = 0.3      meters a crease can be across and still darken
 
 A model that moves declares bones with bone() and binds parts to them with bind(), or passes
-bone= to jointed(); build.py then adds the armature and exports the mesh skinned to it. Weights are
+bone= to jointed(); pipeline.py then adds the armature and exports the mesh skinned to it. Weights are
 rigid, one bone per vertex except where segments of a limb meet: shells and machines, not skin.
 """
 
@@ -35,8 +35,12 @@ import bmesh
 import bpy
 from mathutils import Matrix, Vector
 
-# Item sizes from shared/constants.ts, as game (width, height, depth); build.py fills this in.
+# Item sizes from shared/constants.ts, as game (width, height, depth); pipeline.py fills this in.
 ITEMS = {}
+
+# A quick build (pnpm run model --quick): bakes at a quarter of the size with fewer samples and the
+# cheap margin, to check a model in the game soon. pipeline.py sets it.
+QUICK = False
 
 # Bones declared by the script, in order: (name, head, tail, parent name or None).
 BONES = []
@@ -467,7 +471,7 @@ class Nodes:
         return node.outputs["Normal"]
 
 
-# Called by build.py once build() has run.
+# Called by pipeline.py once build() has run.
 
 
 def _select(obj):
@@ -512,7 +516,9 @@ def _unwrap(margin):
     bpy.context.scene.tool_settings.use_uv_select_sync = False
     bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=margin)
     bpy.ops.uv.select_all(action="SELECT")
-    bpy.ops.uv.pack_islands(rotate=True, margin=margin)
+    # By bounding boxes: the exact shapes filled no more of the texture on any model tried, and a
+    # model of few islands could keep the exact packer searching for 19 s.
+    bpy.ops.uv.pack_islands(rotate=True, margin=margin, shape_method="AABB")
 
 
 def bake_all(obj, work, model):
@@ -521,7 +527,7 @@ def bake_all(obj, work, model):
     for i, slot in enumerate(obj.material_slots):
         mat = slot.material
         if mat is not None and "bake" in mat:
-            size = int(mat["bake"])
+            size = max(256, int(mat["bake"]) // 4) if QUICK else int(mat["bake"])
             _bake(obj, i, size, work, model)
             baked.append({"material": mat.name, "size": size})
     return baked
@@ -557,8 +563,9 @@ def _bake(obj, index, size, work, model):
     _select(tmp)
 
     cycles(scene)
-    scene.cycles.samples = 16
+    scene.cycles.samples = 4 if QUICK else 16
     scene.render.bake.margin = max(2, size // 128)
+    scene.render.bake.margin_type = "EXTEND" if QUICK else "ADJACENT_FACES"
     tree = mat.node_tree
     target = tree.nodes.new("ShaderNodeTexImage")
     tree.nodes.active = target
@@ -619,8 +626,11 @@ def bake_ao(obj, size, distance, work):
     """
     Bake how much of the sky each point of the model sees, rays reaching `distance` meters, into
     <work>/ao.png on a second UV layout, "AO", of the whole model. It's the model's own shading,
-    so it moves with it; index.ts makes it the glTF occlusion texture of every material.
+    so it moves with it; index.ts makes it the glTF occlusion texture of every material. Returns
+    the size it baked at: half in a quick build.
     """
+    if QUICK:
+        size = max(128, size // 2)
     mesh = obj.data
     # By name: adding a layer can move the others, leaving a reference to one dangling.
     main = mesh.uv_layers.active.name
@@ -637,8 +647,9 @@ def bake_ao(obj, size, distance, work):
         scene.world = bpy.data.worlds.new("bake")
     scene.world.light_settings.distance = distance
     print("MODEL", obj.name, "bakes ambient occlusion on", cycles(scene))
-    scene.cycles.samples = 128
+    scene.cycles.samples = 32 if QUICK else 128
     scene.render.bake.margin = max(2, size // 128)
+    scene.render.bake.margin_type = "EXTEND" if QUICK else "ADJACENT_FACES"
 
     # Unused texels stay white, unoccluded, so filtering never bleeds darkness into an island.
     image = bpy.data.images.new("ao", size, size, is_data=True)
@@ -658,6 +669,7 @@ def bake_ao(obj, size, distance, work):
         tree.nodes.remove(node)
     mesh.uv_layers.active = mesh.uv_layers[main]
     mesh.uv_layers[main].active_render = True
+    return size
 
 
 def place_origin(obj, origin):
