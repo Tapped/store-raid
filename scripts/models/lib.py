@@ -234,11 +234,12 @@ def tube(name, points, radii, mat=None, sides=8, weights=None):
     return obj
 
 
-def lathe(name, profile, at=(0, 0, 0), axis="z", mat=None, sides=24):
+def lathe(name, profile, at=(0, 0, 0), axis="z", mat=None, sides=24, caps=(True, True)):
     """
     A turned shape, like a bottle, a knob or a torch: `profile` is (along, radius) pairs in meters,
     in order along its outline, turned round `axis` through `at`. The outline may double back (a
-    lip folding in round a lens); each end with a radius above 0 is closed flat.
+    lip folding in round a lens); each end with a radius above 0 is closed flat, unless `caps`
+    says to leave the first or the last open, as for a collar round something else.
     """
     bm = bmesh.new()
     turn = {
@@ -257,8 +258,8 @@ def lathe(name, profile, at=(0, 0, 0), axis="z", mat=None, sides=24):
     for a, b in zip(rings, rings[1:]):
         for s in range(sides):
             bm.faces.new((a[s], a[(s + 1) % sides], b[(s + 1) % sides], b[s]))
-    for ring, (_, r) in ((rings[0], profile[0]), (rings[-1], profile[-1])):
-        if r > 1e-6:
+    for ring, (_, r), cap in ((rings[0], profile[0], caps[0]), (rings[-1], profile[-1], caps[1])):
+        if cap and r > 1e-6:
             bm.faces.new(ring)
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
