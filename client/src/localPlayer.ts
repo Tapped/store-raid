@@ -14,13 +14,13 @@ import {
   ITEM_KINDS,
   type ItemKind,
   MOVE_SCALE,
+  PITCH_SCALE,
   TICK_RATE,
   YAW_SCALE,
 } from "../../shared/constants";
 import { MECHANICS, MECHANICS_KEYS, MECHANICS_RANGE, type Mechanics } from "../../shared/mechanics";
 import type { Mode } from "../../shared/modes";
 import { stepMover } from "../../shared/movement";
-import { PITCH_SCALE } from "../../shared/ticks";
 import { terrainOf } from "../../shared/truck";
 import { Gait, playOwnFootstep } from "./footsteps";
 import { addCameraEffects } from "./graphics";

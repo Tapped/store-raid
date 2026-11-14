@@ -1,5 +1,5 @@
 import type { Box } from "./collision";
-import type { Level, LevelBox } from "./level";
+import { floorHeight, type Level, type LevelBox, type LightSpawn } from "./level";
 import type { Mechanics } from "./mechanics";
 import { groundUnder } from "./movement";
 import { near } from "./spatial";
@@ -31,12 +31,6 @@ export type TickState =
   | "fleeing"
   | "latched"
   | "stunned";
-
-/** What a player's health starts at. */
-export const MAX_HEALTH = 100;
-
-/** `MoveInput.pitch` is radians times this, a whole number: how far up the player looks. */
-export const PITCH_SCALE = 80;
 
 /** A tick's collision radius and height, in meters. */
 export const TICK_RADIUS = 0.3;
@@ -123,11 +117,31 @@ export function perches(level: Level): Perch[] {
       const z = width >= depth ? (box.minZ + box.maxZ) / 2 : box.minZ + depth * t;
       const y = box.y + box.height;
       if (litByFittings(level, x, box.y, z)) continue;
+      if (headroom(level, x, y, z) < PERCH_HEADROOM) continue;
       if (level.dock && distanceToBox(level.dock, x, z) < 6) continue;
       found.push({ x, y, z, box });
     }
   }
   return found;
+}
+
+/**
+ * A perch needs this much room under the floor above, so a tick crouched there stays inside the
+ * slab at worst: racking 2.6 m high in a 3 m storey leaves 0.1, which had a tick's back and knees
+ * up through the floor of the storey above.
+ */
+const PERCH_HEADROOM = TICK_HEIGHT;
+
+/** Meters from a point up to the underside of the lowest floor over it; Infinity under open sky. */
+function headroom(level: Level, x: number, y: number, z: number): number {
+  let ceiling = Number.POSITIVE_INFINITY;
+  for (const floor of near(level.floors, x, z)) {
+    if (x < floor.minX || x > floor.maxX || z < floor.minZ || z > floor.maxZ) continue;
+    const under = floorHeight(floor, x, z) - floor.thickness;
+    // A floor whose top is above the point is over it, however thick it is.
+    if (floorHeight(floor, x, z) > y && under < ceiling) ceiling = under;
+  }
+  return ceiling - y;
 }
 
 /** How many ticks a level starts a raid with, of the perches it has. */
@@ -144,18 +158,33 @@ function distanceToBox(box: Box, x: number, z: number): number {
 }
 
 /**
- * Whether a point on a floor is in the light of one of the level's working fittings: ticks keep
- * out of it, so the lit rooms by the entrance are safe. Levels without fittings are never lit.
+ * The working fitting whose light a point on a floor is in, if any: ticks keep out of it, so the
+ * lit rooms by the entrance are safe. Levels without fittings are never lit.
  */
-export function litByFittings(level: Level, x: number, y: number, z: number): boolean {
+export function fittingOver(level: Level, x: number, y: number, z: number): LightSpawn | undefined {
   for (const light of level.lights) {
     if (light.state !== "on" || light.kind === "exit") continue;
     const dy = light.y - y;
     if (dy < 0 || dy > 3.4) continue;
     const reach = 2.5 + 2 * Math.min(2, light.power);
-    if ((light.x - x) ** 2 + (light.z - z) ** 2 < reach * reach) return true;
+    if ((light.x - x) ** 2 + (light.z - z) ** 2 < reach * reach) return light;
   }
-  return false;
+  return undefined;
+}
+
+/** Whether a point on a floor is in the light of one of the level's working fittings. */
+export function litByFittings(level: Level, x: number, y: number, z: number): boolean {
+  return fittingOver(level, x, y, z) !== undefined;
+}
+
+/** Whether a walk straight across the floor from one point to another stays out of fittings' light. */
+export function darkWay(level: Level, a: Point, b: Point): boolean {
+  const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 0.5));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    if (litByFittings(level, a.x + (b.x - a.x) * t, a.y, a.z + (b.z - a.z) * t)) return false;
+  }
+  return true;
 }
 
 interface Point {
@@ -235,10 +264,38 @@ export function standing(
   return ground;
 }
 
-/** The size of a cell of the grid ticks find their way over, in meters. */
-const CELL = 0.5;
+/**
+ * The size of a cell of the grid ticks find their way over, in meters. A tick needs 0.3 m to each
+ * side, so a doorway a meter wide leaves a way 0.4 m wide: at half a meter a cell the grid stepped
+ * over it as often as not, and a tick gave up on anyone in the next room.
+ */
+const CELL = 0.25;
 /** A search gives up after looking at this many cells: the player is too far round for now. */
-const MAX_CELLS = 1500;
+const MAX_CELLS = 6000;
+/** How near the goal a way has to get, in meters across the floor. */
+const NEAR_GOAL = 0.5;
+
+/**
+ * `standing()` in the dark at the grid's cells, remembered: a level's floors, boxes and fittings
+ * don't change, and searches ask about the same cells over and over. Kept per level and per the
+ * steps ticks take, which the room can tune.
+ */
+const stood = new WeakMap<Level, Map<string, Map<string, number | undefined>>>();
+function cellsOf(level: Level, m: Steps): Map<string, number | undefined> {
+  let bySteps = stood.get(level);
+  if (!bySteps) {
+    bySteps = new Map();
+    stood.set(level, bySteps);
+  }
+  const steps = `${m.stepUp},${m.stepDown}`;
+  let cells = bySteps.get(steps);
+  if (!cells) {
+    cells = new Map();
+    bySteps.set(steps, cells);
+  }
+  return cells;
+}
+
 const NEIGHBOURS = [
   [1, 0],
   [-1, 0],
@@ -253,10 +310,18 @@ const NEIGHBOURS = [
 /**
  * A way across the floor from one point to another for a tick, round racking and walls and up or
  * down stairs, as points to walk to in turn, the last of them the goal; undefined if there's none
- * short enough to find. A* over a grid of half-meter cells, each as high as the floor there. Ticks
- * keep out of the light of fittings, so a way never goes through it.
+ * short enough to find. A* over a grid of `CELL`, each cell as high as the floor there. Ticks
+ * keep out of the light of fittings, so a way never goes through it. A step cornerwise needs both
+ * cells beside it too, or the walk between two good cells would cut across a pit's corner or the
+ * end of a railing, and stop there.
  */
-export function findPath(level: Level, from: Point, to: Point, m: Steps): Point[] | undefined {
+export function findPath(
+  level: Level,
+  from: Point,
+  to: Point,
+  m: Steps,
+  limit = MAX_CELLS,
+): Point[] | undefined {
   interface Cell {
     col: number;
     row: number;
@@ -267,22 +332,41 @@ export function findPath(level: Level, from: Point, to: Point, m: Steps): Point[
   }
   const col = (x: number) => Math.round(x / CELL);
   const goal = { col: col(to.x), row: col(to.z) };
+  const within = Math.round(NEAR_GOAL / CELL);
+  const cells = cellsOf(level, m);
+  /** Where a tick coming from height `y` would stand in a cell, if it can. */
+  const stand = (c: number, r: number, y: number) => {
+    const k = `${c},${r},${Math.round(y * 100)}`;
+    if (cells.has(k)) return cells.get(k);
+    const at = standing(level, c * CELL, y, r * CELL, m, true);
+    cells.set(k, at);
+    return at;
+  };
   const key = (c: number, r: number, y: number) => `${c},${r},${Math.round(y / 1.5)}`;
   const guess = (c: number, r: number) => Math.hypot(c - goal.col, r - goal.row) * CELL;
   const start: Cell = { col: col(from.x), row: col(from.z), y: from.y, cost: 0, score: 0 };
   const open: Cell[] = [start];
   const best = new Map<string, number>([[key(start.col, start.row, start.y), 0]]);
   let looked = 0;
-  while (open.length > 0 && looked++ < MAX_CELLS) {
-    // The most promising cell: a plain search of the list, which stays short.
-    let at = 0;
-    for (let i = 1; i < open.length; i++) if (open[i].score < open[at].score) at = i;
-    const cell = open[at];
-    open[at] = open[open.length - 1];
-    open.pop();
+  while (open.length > 0 && looked++ < limit) {
+    // The most promising cell: the top of the heap.
+    const cell = open[0];
+    const last = open.pop() as Cell;
+    if (open.length > 0) {
+      let i = 0;
+      for (;;) {
+        let least = 2 * i + 1;
+        if (least >= open.length) break;
+        if (least + 1 < open.length && open[least + 1].score < open[least].score) least++;
+        if (open[least].score >= last.score) break;
+        open[i] = open[least];
+        i = least;
+      }
+      open[i] = last;
+    }
     if (
-      Math.abs(cell.col - goal.col) <= 1 &&
-      Math.abs(cell.row - goal.row) <= 1 &&
+      Math.abs(cell.col - goal.col) <= within &&
+      Math.abs(cell.row - goal.row) <= within &&
       Math.abs(cell.y - to.y) < 1.2
     ) {
       const path: Point[] = [{ x: to.x, y: cell.y, z: to.z }];
@@ -294,13 +378,27 @@ export function findPath(level: Level, from: Point, to: Point, m: Steps): Point[
     for (const [dc, dr] of NEIGHBOURS) {
       const c = cell.col + dc;
       const r = cell.row + dr;
-      const y = standing(level, c * CELL, cell.y, r * CELL, m, true);
+      const y = stand(c, r, cell.y);
       if (y === undefined) continue;
+      if (dc !== 0 && dr !== 0) {
+        if (stand(c, cell.row, cell.y) === undefined) continue;
+        if (stand(cell.col, r, cell.y) === undefined) continue;
+      }
       const cost = cell.cost + Math.hypot(dc, dr) * CELL;
       const k = key(c, r, y);
       if ((best.get(k) ?? Number.POSITIVE_INFINITY) <= cost) continue;
       best.set(k, cost);
-      open.push({ col: c, row: r, y, cost, score: cost + guess(c, r), parent: cell });
+      // Onto the heap, kept with the least score on top.
+      const next: Cell = { col: c, row: r, y, cost, score: cost + guess(c, r), parent: cell };
+      let i = open.length;
+      open.push(next);
+      while (i > 0) {
+        const up = (i - 1) >> 1;
+        if (open[up].score <= next.score) break;
+        open[i] = open[up];
+        i = up;
+      }
+      open[i] = next;
     }
   }
   return undefined;

@@ -1,13 +1,15 @@
 import { resolveCircleBox } from "../../shared/collision";
 import { grabbingHand } from "../../shared/constants";
-import type { Level } from "../../shared/level";
+import type { Level, LevelBox } from "../../shared/level";
 import { inside } from "../../shared/modes";
 import { groundUnder, paceAt } from "../../shared/movement";
 import { near } from "../../shared/spatial";
 import {
   type Beam,
   clearLine,
+  darkWay,
   findPath,
+  fittingOver,
   inBeam,
   LATCH_AHEAD,
   LATCH_HEIGHT,
@@ -29,8 +31,11 @@ const COUNT = process.env.TICKS === undefined ? undefined : Number(process.env.T
 const AIM_HEIGHT = 1.3;
 /** How high above a tick's feet its middle is: where light has to reach. */
 const MIDDLE = 0.2;
-/** Seconds between looking for a new way to its prey. */
+/** Seconds a tick keeps going once it's out of a fitting's light, to get clear of its edge. */
+const FITTING_AFRAID = 0.4;
+/** Seconds between looking for a new way to its prey, and before trying again when there was none. */
 const REPATH = 0.5;
+const REPATH_LOST = 2;
 /** How fast someone throws a tick off, along the floor and up, in meters a second. */
 const THROW = { along: 3.5, up: 2 };
 
@@ -47,6 +52,8 @@ interface Mind {
   vx: number;
   vy: number;
   vz: number;
+  /** The racking it dropped off, which it falls past; everything else stops it in the air. */
+  off?: LevelBox;
   /** What it does when it lands: hunt, or lie stunned. */
   landAs: "hunting" | "stunned";
   /** Seconds it stays afraid of the light, and where that light was. */
@@ -78,8 +85,8 @@ export class Ticks {
   constructor(
     private readonly state: GameState,
     private readonly level: Level,
-    /** A tick drained this player's last health, and has let go. */
-    private readonly drained: (sessionId: string, player: Player) => void,
+    /** Takes health from a player a tick is on. True if that was the last of it. */
+    private readonly hurt: (sessionId: string, player: Player, amount: number) => boolean,
   ) {
     this.perches = perches(level);
   }
@@ -167,9 +174,17 @@ export class Ticks {
       const mind = this.minds.get(id);
       if (!mind) continue;
       const light = this.lightOn(tick, mind, beams);
+      // On the floor in the light of a fitting, carried or thrown there: it gets out of it, as
+      // from a beam. Left there it would never move again, with nowhere dark near to wander to.
+      const walking =
+        tick.state === "wandering" || tick.state === "hunting" || tick.state === "fleeing";
+      const fitting = walking ? fittingOver(this.level, tick.x, tick.y, tick.z) : undefined;
       if (light) {
         mind.afraid = TICK.afraid;
         mind.from = light;
+      } else if (fitting) {
+        mind.afraid = Math.max(mind.afraid, FITTING_AFRAID);
+        mind.from = fitting;
       } else mind.afraid = Math.max(0, mind.afraid - dt);
       mind.rest = Math.max(0, mind.rest - dt);
 
@@ -206,6 +221,7 @@ export class Ticks {
             tick.state = "hunting";
             mind.rest = Math.max(mind.rest, 1);
             mind.path = undefined;
+            mind.repath = 0;
           } else this.flee(tick, mind, haste, dt);
           break;
       }
@@ -308,6 +324,7 @@ export class Ticks {
           z: player.z + player.vz * time,
         },
         time,
+        mind.home.box,
       );
       return;
     }
@@ -321,7 +338,7 @@ export class Ticks {
         const z = tick.z + Math.cos(angle) * Math.min(reach, 1.6);
         const y = standing(this.level, x, box.y, z, this.state.mechanics);
         if (y === undefined) continue;
-        this.launch(tick, mind, { x, y, z }, this.fallTime(tick.y - y));
+        this.launch(tick, mind, { x, y, z }, this.fallTime(tick.y - y), box);
         return;
       }
     }
@@ -333,13 +350,15 @@ export class Ticks {
     return (hop + Math.sqrt(hop * hop + 2 * TICK.gravity * Math.max(0, height))) / TICK.gravity;
   }
 
-  /** Into the air, to be at `to` after `time` seconds. */
-  private launch(tick: Tick, mind: Mind, to: Point, time: number) {
+  /** Into the air, to be at `to` after `time` seconds; `off` is the racking it leaves, if it drops. */
+  private launch(tick: Tick, mind: Mind, to: Point, time: number, off?: LevelBox) {
+    mind.off = off;
     mind.vx = (to.x - tick.x) / time;
     mind.vz = (to.z - tick.z) / time;
     mind.vy = (to.y - tick.y + 0.5 * TICK.gravity * time * time) / time;
     mind.landAs = "hunting";
     mind.path = undefined;
+    mind.repath = 0;
     tick.yaw = Math.atan2(mind.vx, mind.vz);
     tick.state = "airborne";
   }
@@ -352,17 +371,21 @@ export class Ticks {
     mind.vy = THROW.up;
     mind.landAs = landAs;
     mind.shone = 0;
+    mind.off = undefined;
     tick.state = "airborne";
   }
 
-  /** In the air: it latches onto a player it passes, stops at walls, and lands on the floor. */
+  /**
+   * In the air: it latches onto a player it passes, stops at whatever is in the way, racking as
+   * much as walls, so it never lands inside something, and lands on the floor.
+   */
   private fly(tick: Tick, mind: Mind, players: [string, Player][], dt: number) {
     const before = tick.y;
     mind.vy -= TICK.gravity * dt;
     const circle = { x: tick.x + mind.vx * dt, z: tick.z + mind.vz * dt, radius: TICK_RADIUS };
     tick.y += mind.vy * dt;
     for (const box of near(this.level.boxes, circle.x, circle.z)) {
-      if (box.kind !== "wall" && box.kind !== "partition") continue;
+      if (box === mind.off) continue;
       if (box.y + box.height <= tick.y || box.y >= tick.y + TICK_HEIGHT) continue;
       const { dx, dz } = resolveCircleBox(circle, box);
       if (dx !== 0) mind.vx = 0;
@@ -387,6 +410,8 @@ export class Ticks {
       tick.y = ground;
       mind.vx = 0;
       mind.vz = 0;
+      mind.off = undefined;
+      this.stepOut(tick);
       if (mind.landAs === "stunned") {
         tick.state = "stunned";
         mind.timer = TICK.stun;
@@ -399,6 +424,26 @@ export class Ticks {
       tick.z = mind.home.z;
       tick.state = mind.home.box ? "perched" : "wandering";
     }
+  }
+
+  /**
+   * Out of whatever a tick has landed in, to the nearest side: the racking it dropped off, when
+   * something stopped it on the way down. Inside a box it could neither walk nor find a way.
+   */
+  private stepOut(tick: Tick) {
+    const m = this.state.mechanics;
+    const circle = { x: tick.x, z: tick.z, radius: TICK_RADIUS };
+    for (let pass = 0; pass < 2; pass++) {
+      for (const box of near(this.level.boxes, circle.x, circle.z)) {
+        if (box.y + box.height <= tick.y + m.stepUp || box.y >= tick.y + TICK_HEIGHT) continue;
+        resolveCircleBox(circle, box);
+      }
+    }
+    const ground = groundUnder(this.level, circle.x, circle.z, tick.y + m.stepUp);
+    if (!Number.isFinite(ground) || Math.abs(ground - tick.y) > m.stepDown + 0.3) return;
+    tick.x = circle.x;
+    tick.y = ground;
+    tick.z = circle.z;
   }
 
   /** On a player: it rides in front of their face and drains them, until pulled or shone off. */
@@ -419,11 +464,7 @@ export class Ticks {
       this.throwOff(tick, mind, yaw, "hunting");
       return;
     }
-    victim.health = Math.max(0, victim.health - TICK.bite * dt);
-    if (victim.health > 0) return;
-    const sessionId = tick.victim;
-    this.fall(tick, mind);
-    this.drained(sessionId, victim);
+    if (this.hurt(tick.victim, victim, TICK.bite * dt)) this.fall(tick, mind);
   }
 
   /** Lets go and drops to the floor. */
@@ -434,6 +475,7 @@ export class Ticks {
     mind.vz = 0;
     mind.landAs = "hunting";
     mind.rest = TICK.leapRest;
+    mind.off = undefined;
     tick.state = "airborne";
   }
 
@@ -499,23 +541,31 @@ export class Ticks {
       this.turn(tick, dx, dz, dt);
       return;
     }
+    // Not every step when there's no way: a search that fails is the dearest kind.
     mind.repath -= dt;
-    if (mind.repath <= 0 || !mind.path) {
-      mind.repath = REPATH;
+    if (mind.repath <= 0) {
       const feet = { x: player.x, y: player.y, z: player.z };
-      // Straight at them when nothing's between, else the way round.
+      // Straight at them when nothing's between and no fitting lights the way, else the way round.
       const straight =
-        seen && distance < 6 && clearLine(this.level, middle, { ...feet, y: middle.y });
+        seen &&
+        distance < 6 &&
+        clearLine(this.level, middle, { ...feet, y: middle.y }) &&
+        darkWay(this.level, tick, feet);
       mind.path = straight
         ? [feet]
         : findPath(this.level, { x: tick.x, y: tick.y, z: tick.z }, feet, this.state.mechanics);
+      mind.repath = mind.path ? REPATH : REPATH_LOST;
     }
     const path = mind.path;
     while (path && path.length > 1 && Math.hypot(path[0].x - tick.x, path[0].z - tick.z) < 0.35) {
       path.shift();
     }
-    const next = path?.[0] ?? player;
-    this.walk(tick, next.x - tick.x, next.z - tick.z, TICK.hunt * haste, dt);
+    // No way to them it can find: it looks about where it is, rather than walk into what's between.
+    if (!path) {
+      this.wander(tick, mind, dt);
+      return;
+    }
+    this.walk(tick, path[0].x - tick.x, path[0].z - tick.z, TICK.hunt * haste, dt);
   }
 
   /** Away from the light, and sideways along whatever stops it. */

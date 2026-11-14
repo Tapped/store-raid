@@ -12,8 +12,10 @@ import {
   type Hand,
   ITEM_KINDS,
   type ItemKind,
+  MAX_HEALTH,
   MAX_PLAYERS,
   MOVE_SCALE,
+  PITCH_SCALE,
   PLAYER_COLORS,
   PLAYER_HEIGHT,
   PLAYER_RADIUS,
@@ -35,7 +37,6 @@ import {
   START_TIME,
 } from "../../../shared/modes";
 import { stepMover } from "../../../shared/movement";
-import { MAX_HEALTH, PITCH_SCALE } from "../../../shared/ticks";
 import { HATCH_TIME, terrainOf } from "../../../shared/truck";
 import { load, save } from "../persist";
 import { PhysicsWorld } from "../physics";
@@ -224,8 +225,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     });
     // A game begins in the lobby, shut in the truck; the playground's truck stands open.
     this.setHatch(this.state.mode === "game" ? 0 : 1);
-    this.ticks = new Ticks(this.state, this.level, (sessionId, player) =>
-      this.drained(sessionId, player),
+    this.ticks = new Ticks(this.state, this.level, (sessionId, player, amount) =>
+      this.hurt(sessionId, player, amount, "was drained by a tick"),
     );
     // A game's ticks arrive with the raid; the playground's are always about.
     if (this.state.mode === "playground") this.ticks.reset();
@@ -662,14 +663,18 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   }
 
   /**
-   * A tick took the last of their health. In a raid, that's them out until the next round; anywhere
-   * else nobody dies, so they get it back and the tick lets go.
+   * Takes health from a player, whatever hurts them. True if that was the last of it: in a raid
+   * they're out until the next round (`how` is what the log says of it); anywhere else nobody dies,
+   * so they get it all back.
    */
-  private drained(sessionId: string, player: Player) {
+  private hurt(sessionId: string, player: Player, amount: number, how: string): boolean {
+    player.health = Math.max(0, player.health - amount);
+    if (player.health > 0) return false;
     if (this.state.mode === "game" && this.state.phase === "raid") {
       this.setRole(sessionId, player, "dead");
-      console.log(`${player.name} was drained by a tick`);
+      console.log(`${player.name} ${how}`);
     } else player.health = MAX_HEALTH;
+    return true;
   }
 
   /** An item that fell out of the level goes back where it started. */
@@ -886,11 +891,12 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     }
     this.state.loot = loot;
 
-    // Ticks are about in the playground, and during a raid, more eager the nearer dawn is.
+    // Ticks are about in the playground, and during a raid, more eager the nearer dawn is. They
+    // go on through the results, or one in the air as the raid ended would hang there.
     if (this.state.mode === "playground") this.ticks.step(ctx.dt, 0);
     else if (this.state.phase === "raid") {
       this.ticks.step(ctx.dt, 1 - this.state.timeLeft / RAID_SECONDS);
-    }
+    } else if (this.state.phase === "results") this.ticks.step(ctx.dt, 1);
     if (this.state.mode === "game") this.runRound(ctx.dt);
   }
 }

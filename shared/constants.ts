@@ -108,6 +108,12 @@ export const MOVE_SCALE = 100;
  */
 export const YAW_SCALE = 10000;
 
+/** `MoveInput.pitch` is radians times this, a whole number: how far up the player looks. */
+export const PITCH_SCALE = 80;
+
+/** What a player's health starts at. Whatever hurts them takes it through `GameRoom.hurt`. */
+export const MAX_HEALTH = 100;
+
 /** Player colours, assigned by join order. */
 export const PLAYER_COLORS = [
   "#e6194b",

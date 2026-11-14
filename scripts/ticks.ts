@@ -10,8 +10,8 @@
 import { ColyseusSDK } from "@colyseus/sdk";
 import type server from "../server/src/app";
 import type { MoveInput } from "../server/src/rooms/schema";
-import { MOVE_SCALE, TICK_RATE, YAW_SCALE } from "../shared/constants";
-import { MAX_HEALTH, PITCH_SCALE, TICK } from "../shared/ticks";
+import { MAX_HEALTH, MOVE_SCALE, PITCH_SCALE, TICK_RATE, YAW_SCALE } from "../shared/constants";
+import { TICK } from "../shared/ticks";
 
 const port = process.env.SERVER_PORT ?? "2567";
 const client = new ColyseusSDK<typeof server>(`ws://127.0.0.1:${port}`);

@@ -37,7 +37,7 @@ export const Player = schema({
   yaw: t.number(),
   /** How far up they look, in radians, below 0 for down. */
   pitch: t.number(),
-  /** What's left of MAX_HEALTH (shared/ticks.ts): at 0 in a raid, they die. */
+  /** What's left of MAX_HEALTH (shared/constants.ts): at 0 in a raid, they die. */
   health: t.number(),
   /** Id of the item in each hand, or "". A two-handed item is in both. */
   left: t.string(),

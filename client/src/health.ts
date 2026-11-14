@@ -1,4 +1,4 @@
-import { MAX_HEALTH } from "../../shared/ticks";
+import { MAX_HEALTH } from "../../shared/constants";
 import { tunables } from "./tuning";
 
 /**

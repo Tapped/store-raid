@@ -17,8 +17,11 @@ const FACE = tunables("Feel/Tick on your face", {
   shake: { value: 0.012, min: 0, max: 0.05, hint: "How far it jerks about, meters" },
 });
 
-/** A tick on its back lies this high, on its shield. */
-const ON_BACK = 0.34;
+/**
+ * A tick on its back is turned over about its feet's ground, so it's raised by its own height to
+ * lie on its shield: the top of its hump is 0.58 m up in scripts/models/tick.py.
+ */
+const ON_BACK = 0.58;
 
 interface Shown {
   view: TickView;
