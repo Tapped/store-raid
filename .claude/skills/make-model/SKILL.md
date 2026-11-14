@@ -50,7 +50,9 @@ with `pnpm run model <name>`. Read these first. This skill doesn't repeat them:
    its preview for bake problems. To check a model in the game sooner, `--quick` bakes textures at
    a quarter of the size in a fraction of the time. Always build it again without `--quick` before
    you finish.
-6. **Check it in the game** with the `mcp__chrome__*` tools. Put it on show in the playground
+6. **Check it in the game** with the `mcp__chrome__*` tools. First on its own in the model viewer,
+   `/models.html?model=props/<name>` (see **Debugging** in `CLAUDE.md`), which loads it again after
+   every build: L for the flashlight in the dark, E to stand inside it. Then put it on show in the playground
    (`CONCEPTS` in `client/src/playground.ts`, at `?level=playground`) to see it in even light, then
    in the store, which is dark, graded and fogged, so a model that reads in the preview can
    disappear or look flat there.

@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, symlinkSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readdirSync, statSync, symlinkSync } from "node:fs";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 const publicDir = fileURLToPath(new URL("../public", import.meta.url));
 
@@ -32,7 +32,41 @@ const base = process.env.BASE ?? "/";
 const serverPort = Number(process.env.SERVER_PORT ?? 2567);
 const wsPrefix = `${base}ws`;
 
+/**
+ * In dev, `models.json` lists every .glb under assets/models with its size and when it was written,
+ * for the model viewer (models.html): what there is to show, and when one has been built again.
+ */
+function listModels(): Plugin {
+  const root = resolve(publicDir, "assets/models");
+  return {
+    name: "list-models",
+    configureServer(server) {
+      server.middlewares.use(`${base}models.json`, (_request, response) => {
+        const files = existsSync(root)
+          ? readdirSync(root, { recursive: true, encoding: "utf8" }).filter((f) =>
+              f.endsWith(".glb"),
+            )
+          : [];
+        const models = files.sort().map((file) => {
+          const stat = statSync(resolve(root, file));
+          return {
+            path: relative(root, resolve(root, file))
+              .replaceAll("\\", "/")
+              .replace(/\.glb$/, ""),
+            size: stat.size,
+            modified: Math.round(stat.mtimeMs),
+          };
+        });
+        response.setHeader("Content-Type", "application/json");
+        response.setHeader("Cache-Control", "no-store");
+        response.end(JSON.stringify(models));
+      });
+    },
+  };
+}
+
 export default defineConfig({
+  plugins: [listModels()],
   root: fileURLToPath(new URL(".", import.meta.url)),
   base,
   publicDir,

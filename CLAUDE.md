@@ -54,6 +54,7 @@ client/src/variation.ts    addSurfaceVariation(): breaks up tiled textures: hex 
 client/src/surfaces.ts     surface(scene, name, { tint }): the surface library as cached PBR materials: tint, cut-outs, variation
 client/src/surfaceTable.ts SURFACES: every library surface's tile size in meters, texture size, tint and variation
 client/src/surfaceViewer.ts the surface viewer at /surfaces.html: each surface on a floor and walls, by flashlight or grazing light
+client/src/modelViewer.ts  the model viewer at /models.html: one model from assets/models on its own, to turn round and stand in
 client/src/lamps.ts        addStreetLamps(): glowing lamp faces, and lamp light summed in every PBR shader (not scene lights)
 client/src/scene.ts        world, lights and fog, first-person camera, lobby camera
 client/src/screens.ts     addScreens(): the TVs of `tv` tiles, showing static and droning a loop
@@ -242,6 +243,13 @@ You can't see the browser, so check your work from the terminal, with `pnpm run 
 - **Surface viewer:** `http://127.0.0.1:5173/surfaces.html` shows the surface library on a floor and
   a corner of walls, through the game's pipeline, lit by the flashlight or a light low across them
   (L), with tint pickers; `?engine=webgl` for WebGL and `window.__surfaces.show({ floor, wall })`.
+- **Model viewer:** `http://127.0.0.1:5173/models.html?model=level/truck` shows one model from
+  `assets/models` on its own, through the game's pipeline, on a floor of 1 m squares beside a figure
+  1.8 m tall, with its size, triangles, draw calls and textures in video memory. L switches between
+  an even studio light and the flashlight in the dark, F frames it, E stands the camera at eye height
+  inside it. It lists every .glb (Vite serves the list as `models.json`, in dev) and loads a model
+  again when its file is written, so a `pnpm run model` shows up by itself. `window.__models` in the
+  console: `show({ model, light })`, `camera`, `stats()`.
 - **Tile viewer:** `http://127.0.0.1:5173/tiles.html` draws tiles without a server, built and
   drawn by the game's own code: a generated level by seed (`?source=generated&seed=7`, `[`/`]` step
   through seeds), every tile on its own (`?source=catalogue`), the playground's grid, or one written
@@ -311,7 +319,7 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
   second UV set (Cycles, on the GPU if there is one), writes the `.glb` to `assets/` with KTX2
   textures, checks it against `ITEM_KINDS` and its triangle budget, and renders
   `node_modules/.cache/models/<name>/preview.png` from four sides. Look at the preview, then at the
-  model in the game, whose lighting differs. Iterate with `--draft`: only the preview, rendered from
+  model in the model viewer (`/models.html?model=props/<name>`) and in the game, whose lighting differs. Iterate with `--draft`: only the preview, rendered from
   the live materials unbaked, in seconds (`--watch` builds again on every save; `--focus`, `--views`
   and `--ref` for close-ups and a reference beside them). `--quick` bakes at a quarter of the size
   to check in the game, and must be built again in full. Builds go through a Blender kept running
@@ -339,6 +347,13 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
   detail maps, neutral (a colour multiplier as grey, a roughness offset; see `lib/detail.wgsl`), which
   `client/src/detailMap.ts` tiles over the village models up close by material name (its `KINDS`). Meshes using `surface()` need UVs in meters ÷ `SURFACES[name].tile`,
   as `worldBox(…, SURFACES[name].tile)` makes; `upright` ones are a storey tall, v 0 on the floor.
+- **The truck** (`scripts/models/truck.py`, `models/level/truck.glb`): the crew's box truck, 2.5 m
+  wide and 8.2 m long, 11 m with its ramp. Its origin is on the ground at the middle of the cargo
+  box, the cab towards +z. The box's floor is 0.95 m up, 2.38 × 6.1 m and 2.2 m high inside, open at
+  the back (-z) with a ramp 2.1 m wide down to the ground at z -5.9. A bench along each wall seats
+  five a side, facing each other (seats 0.56 m apart from z 0.48 to 2.72, x ±0.97, 1.4 m up); the
+  back half of the floor is clear for loot. `glow-lamp` is the lamp on its ceiling. The constants at
+  the top of the script are what collision should be written from.
 - `loadModel(scene, "models/props/crate.glb", placeholder)` shows the placeholder until the file
   exists, so use the final path from day one. Vite answers a missing asset with `200` and its HTML
   page, so check the content type, not only the status, when testing a URL with curl.
