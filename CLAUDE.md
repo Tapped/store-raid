@@ -80,7 +80,7 @@ scripts/generate.ts        draws a generated level from a seed, or checks the ru
 scripts/village.ts         checks the village without a server: drawn ground against floors, ways through, a map (`--map`)
 scripts/villageWalk.ts     a bot walks the village from the truck to the church door (or over the bridge and back through the river)
 scripts/harbour.ts         the harbour's ground and what's in the way, from its model, into shared/harbour.json (`pnpm run harbour`)
-scripts/characterClips.ts  Mixamo clips from raw/ into the character model, through Blender (`pnpm run clips`)
+scripts/character.ts       the character model and its clips, from Mixamo downloads in raw/, through Blender (`pnpm run character`)
 scripts/hatch.ts           a bot checks the truck's hatch in a game in the harbour: shut in the lobby, down for the raid, both control boxes
 scripts/harbourCheck.ts    checks the harbour level without a server: the warehouse's rules, and a way without jumps between the truck and the loading door, on foot and with a sofa (`--map` draws the yard)
 scripts/unity-import/      prefabs from a Unity .unitypackage → textured .glb in assets/, through Blender
@@ -422,12 +422,15 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
   page, so check the content type, not only the status, when testing a URL with curl.
 - Folders: `models/{characters,props,level,village}`, `textures/`, `audio/{sfx,music}`, `ui/`. Lowercase
   kebab-case. `.glb` from Blender: Y-up, transforms applied, meters. What a model was made from
-  goes in `raw/` next to `assets/`, not in it (`raw/characters/ch17/` has the Mixamo `.fbx` files
-  behind `ch17.glb`, `raw/industrial-harbour/` the Unity package): `raw/` isn't served, built or
+  goes in `raw/` next to `assets/`, not in it (`raw/characters/ch35/` has the Mixamo `.fbx`
+  behind `ch35.glb`, `raw/industrial-harbour/` the Unity package): `raw/` isn't served, built or
   backed up.
-- **Character clips:** `ch17.glb` holds its animation groups `walk`, `carry-walk`, `carry-stop`,
-  `sit-idle`, `sit-idle-2` and `sit-to-stand`. `pnpm run clips` (`scripts/characterClips.ts`) adds or
-  replaces the Mixamo clips listed in its `CLIPS` (downloaded without skin, into `raw/characters/ch17/`)
-  through Blender, keeping only bones' rotations and the hips' translation, and leaving the rest of the
-  model as it is. The seated clips sit 0.45 m behind the origin, so the stand-up ends over it.
+- **The character:** `ch35.glb` is built whole by `pnpm run character` (`scripts/character.ts`,
+  through Blender): the skinned model from the one `.fbx` in `raw/characters/<CHARACTER>/` (the
+  script's `CHARACTER`), its textures at 1024 as WebP, and every clip in `raw/characters/animations/`
+  as an animation group named after its file: `walk`, `carry-walk`, `carry-stop`, `sit-idle`,
+  `sit-idle-2` and `sit-to-stand`. Clips are Mixamo downloads without skin, for any Mixamo character:
+  bones match by name after the rig's prefix, only rotations and the hips' translation are kept, scaled
+  to the model's hips. The walking clips are kept in place. The seated clips sit about 0.5 m behind
+  the origin, so the stand-up ends over it. To add a clip, drop its `.fbx` in `animations/` and build.
 - Anything bundled with the client uses `import.meta.env.BASE_URL`, never a bare `/` path.

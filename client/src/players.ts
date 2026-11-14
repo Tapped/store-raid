@@ -16,7 +16,7 @@ import { surfaceMaterial } from "./graphics";
 import type { World } from "./scene";
 import { tunables } from "./tuning";
 
-const CHARACTER = "models/characters/ch17.glb";
+const CHARACTER = "models/characters/ch35.glb";
 
 /** Slower than this (m/s) counts as standing still. */
 const MOVING_SPEED = 0.5;
@@ -78,6 +78,8 @@ export class PlayerView {
   private readonly capsule: Mesh;
   private readonly tag: Mesh;
   private model: InstantiatedEntries | undefined;
+  /** The model's animation groups by the clip's own name, without the instance's prefix. */
+  private readonly clips = new Map<string, AnimationGroup>();
   private pose: Pose | undefined;
   private lastX: number | undefined;
   private lastZ = 0;
@@ -159,13 +161,14 @@ export class PlayerView {
       group.stop();
       group.enableBlending = true;
       group.blendingSpeed = BLEND_SPEED;
+      this.clips.set(group.name.slice(name.length + 1), group);
     }
     this.model = model;
     this.capsule.setEnabled(false);
   }
 
   private clip(name: string): AnimationGroup | undefined {
-    return this.model?.animationGroups.find((group) => group.name.endsWith(name));
+    return this.clips.get(name);
   }
 
   private setPose(pose: Pose) {
@@ -177,11 +180,11 @@ export class PlayerView {
     else if (pose === "sit-down" && up) {
       up.start(false, clipSeconds(up) / SITTING.sitDownTime, up.to, up.from);
     } else if (pose === "stand-up" && up) up.start(false, clipSeconds(up) / SITTING.standUpTime);
-    else if (pose === "walk") this.clip("-walk")?.start(true, WALK_RATE);
+    else if (pose === "walk") this.clip("walk")?.start(true, WALK_RATE);
     else if (pose === "carry-walk") this.clip("carry-walk")?.start(true, WALK_RATE);
     else if (pose === "carry-stand") this.clip("carry-stop")?.start(false);
     // Looping a sliver of a frame holds the pose; a clip that ends would cut the blend into it short.
-    else this.clip("-walk")?.start(true, 1, STAND_FRAME, STAND_FRAME + 0.01);
+    else this.clip("walk")?.start(true, 1, STAND_FRAME, STAND_FRAME + 0.01);
   }
 
   /**
