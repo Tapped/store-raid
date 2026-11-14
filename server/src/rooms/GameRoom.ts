@@ -215,8 +215,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     this.level = levelNamed(options?.level);
     this.state.mode = modeFor(this.level.name, options?.mode);
     this.state.quota = quotaFor(this.level);
-    // The playground's lights are on the dimmer; a game's are dim.
-    if (this.state.mode === "game") this.state.light = GAME_LIGHT;
+    // The playground's lights are on the dimmer; a game's are dim, or off where the level says.
+    if (this.state.mode === "game") this.state.light = this.level.unlit ? 0 : GAME_LIGHT;
     // The hatch's ramp comes and goes: see `setHatch`.
     const ramp = this.level.truck?.hatch.ramp;
     this.physics = new PhysicsWorld({

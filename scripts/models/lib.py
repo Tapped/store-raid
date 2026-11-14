@@ -234,6 +234,26 @@ def tube(name, points, radii, mat=None, sides=8, weights=None):
     return obj
 
 
+def loft(name, rings, mat=None):
+    """
+    A skin over cross-sections: `rings` is a list of rings of points in meters, each with as many
+    points and going round the same way, and each end is closed to its ring's middle. For bodies
+    whose sections aren't circles, with rings put exactly where the surface steps or creases.
+    """
+    bm = bmesh.new()
+    loops = [[bm.verts.new(Vector(p)) for p in ring] for ring in rings]
+    count = len(loops[0])
+    for a, b in zip(loops, loops[1:]):
+        for s in range(count):
+            bm.faces.new((a[s], a[(s + 1) % count], b[(s + 1) % count], b[s]))
+    for ring in (loops[0], loops[-1]):
+        tip = bm.verts.new(sum((v.co for v in ring), Vector()) / count)
+        for s in range(count):
+            bm.faces.new((ring[s], ring[(s + 1) % count], tip))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return assign(_mesh_object(name, bm), mat)
+
+
 def lathe(name, profile, at=(0, 0, 0), axis="z", mat=None, sides=24, caps=(True, True)):
     """
     A turned shape, like a bottle, a knob or a torch: `profile` is (along, radius) pairs in meters,
@@ -266,11 +286,20 @@ def lathe(name, profile, at=(0, 0, 0), axis="z", mat=None, sides=24, caps=(True,
     return assign(_mesh_object(name, bm), mat)
 
 
-def jointed(name, joints, radii, mat=None, sides=8, bone=None, parent=None):
+# How thick a segment of a jointed() limb is along its length: (how far along, share of its radius).
+SAUSAGE = ((0.18, 1.0), (0.55, 1.08), (0.85, 0.95))
+
+
+def jointed(
+    name, joints, radii, mat=None, sides=8, bone=None, parent=None, profile=SAUSAGE, pinch=0.75
+):
     """
     A jointed limb through `joints`, segment i `radii[i]` thick, swelling a little in the middle
     of each segment and pinched at the joints, so the segments read as separate pieces of shell:
     insect and spider legs, antennae, robot arms. The last segment tapers to a point.
+    `profile` shapes each segment between its joints, as (how far along, share of its radius)
+    pairs, or one such list per segment; `pinch` is how thin the joints are, as a share of the
+    thinner segment meeting there.
 
     With `bone`, the limb gets a bone per segment, "<bone>.0" onwards from joints[i] to
     joints[i + 1], each the child of the one before and the first the child of `parent`, plus a
@@ -285,12 +314,13 @@ def jointed(name, joints, radii, mat=None, sides=8, bone=None, parent=None):
             points.append(a)
             widths.append(r * 0.9)
             weights.append({names[0]: 1.0})
-        for t, k in ((0.18, 1.0), (0.55, 1.08), (0.85, 0.95)):
+        shape = profile[i] if isinstance(profile[0][0], (tuple, list)) else profile
+        for t, k in shape:
             points.append(a.lerp(b, t))
             widths.append(r * k)
             weights.append({names[i]: 1.0})
         points.append(b)
-        widths.append(min(r, radii[i + 1] if i + 1 < len(radii) else r * 0.4) * 0.75)
+        widths.append(min(r, radii[i + 1] if i + 1 < len(radii) else r * 0.4) * pinch)
         # The pinch at a joint bends with both segments.
         last = i + 1 == len(names)
         weights.append({names[i]: 1.0} if last else {names[i]: 0.5, names[i + 1]: 0.5})
@@ -691,6 +721,24 @@ def place_origin(obj, origin):
         raise ValueError(f'ORIGIN must be "bottom", "center" or "model", not {origin!r}')
     obj.data.transform(Matrix.Translation(-centre))
     return [round(v, 4) for v in hi - lo], -centre
+
+
+def keep_coords(obj, offset):
+    """
+    After place_origin() moved the mesh by `offset`, make unbaked procedural materials still see
+    the coordinates the script built in: a draft renders them live, and their patterns would
+    otherwise slide off the geometry they were lined up with.
+    """
+    if not any(offset):
+        return
+    anchor = _link(bpy.data.objects.new("built-origin", None))
+    anchor.location = offset
+    for slot in obj.material_slots:
+        if slot.material is None or "bake" not in slot.material:
+            continue
+        for node in slot.material.node_tree.nodes:
+            if node.type == "TEX_COORD":
+                node.object = anchor
 
 
 def triangles(obj):

@@ -81,14 +81,22 @@ interface Mind {
 export class Ticks {
   private readonly minds = new Map<string, Mind>();
   private readonly perches: Perch[];
+  /** The level with its fittings switched off: no light for a tick to keep out of. */
+  private readonly unlit: Level;
 
   constructor(
     private readonly state: GameState,
-    private readonly level: Level,
+    private readonly lit: Level,
     /** Takes health from a player a tick is on. True if that was the last of it. */
     private readonly hurt: (sessionId: string, player: Player, amount: number) => boolean,
   ) {
-    this.perches = perches(level);
+    this.unlit = { ...lit, lights: [] };
+    this.perches = perches(this.level);
+  }
+
+  /** The level as ticks find it now: its fittings only give light while the room's lights are on. */
+  private get level(): Level {
+    return this.state.light > 0 ? this.lit : this.unlit;
   }
 
   /** Every tick back where a raid starts them: on perches picked at random, waiting. */

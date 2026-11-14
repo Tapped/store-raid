@@ -227,6 +227,8 @@ export interface Level {
   props: PropSpawn[];
   /** Its light fittings. A level with none is lit evenly. */
   lights: LightSpawn[];
+  /** A game here starts with the fittings switched off (`state.light` 0): dark but for flashlights. */
+  unlit?: boolean;
 }
 
 /** Where finished items go. An item whose centre is in here counts as delivered. */
@@ -530,6 +532,7 @@ export function harbourLevel(seed = HARBOUR_SEED): Level {
     ],
     // No dimmer: a raid is as dark as it is.
     dimmer: undefined,
+    unlit: true,
     dock: truck.dock,
     truck,
     yard: { ramps: yard.ramps, lamps: yard.lamps, overview: yard.overview },

@@ -110,6 +110,10 @@ def _build(job, model):
         "quick": lib.QUICK,
     }
     if draft:
+        lib.keep_coords(obj, offset)
+        # The mesh just moved: its bounds, which frame the views, are still where it was.
+        obj.data.update()
+        bpy.context.view_layer.update()
         focus = studio.focus_box(job["focus"], offset) if job.get("focus") else None
         studio.render(os.path.join(out_dir, "views"), job.get("views"), focus)
         clock.step("preview")
