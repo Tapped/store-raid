@@ -8,17 +8,18 @@ The goal is a playable game after every step, with each step shipped separately.
 
 ## Where we are (14 November 2026)
 
-**The round works, and there are two places to play it, but nobody has played it yet.** A game runs
-lobby, raid and results against a quota, with hands, flashlights, running, jumping, stairs and
-ladders, and sound placed in the world. What exists, by place:
+**A whole round can be played from the truck, and there are two places to play it, but nobody has
+played it yet.** A game runs lobby, raid and results against a quota, with hands, flashlights,
+running, jumping, stairs and ladders, and sound placed in the world. What exists, by place:
 
-- **The generated warehouse** (`?level=generated-<seed>`) is the first building: four storeys of
-  halls, cages, workshops and offices, furnished, drawn as a building, lit by its own fittings and
-  darker the further in. Ten cargo models are still boxes.
+- **The harbour** (`?level=harbour`) is the game: the crew starts in the truck on the lot, walks
+  down its ramp and in through the warehouse's loading door, carries loot back up into the truck,
+  and sees how it went on a results screen.
+- **The warehouse** in it is generated (also on its own at `?level=generated-<seed>`): four storeys
+  of halls, cages, workshops and offices, furnished, drawn as a building, lit by its own fittings
+  and darker the further in. Ten cargo models are still boxes.
 - **The village** (`?level=village`) is a second place, outdoors: a valley hamlet at night with all
   36 of its models built, its own night look, and loot lying outside closed buildings.
-- **The harbour** (`?level=harbour`) surrounds the old hand-built store, and still runs as a
-  playground. The generated warehouse doesn't stand in it yet.
 - **The tools** are fast now: surfaces bake on the GPU in a second or two, model drafts render in
   seconds, and scenery is atlased KTX2, which took the village from 7.2 GB of video memory to 2 GB.
 
@@ -30,9 +31,7 @@ sofa). Most of the last two weeks went into how the two places look.
 
 In this order, to get to the first playtest soonest:
 
-1. **One whole round in the warehouse, from the harbour.** Stand the generated warehouse in the
-   harbour, park a real truck outside it, run the harbour as a game, and show results on a proper
-   screen (step 2's Next). Until then the round is played from a dock inside the building.
+1. ~~**One whole round in the warehouse, from the harbour.**~~ Done: see step 2.
 2. **More loot, and the safe.** A handful of new item kinds over the four sizes, so what to carry is
    a choice, and the jackpot safe on the top floor. Try the sofa down a flight of stairs (step 4).
 3. **Proximity voice, then the first playtest** (step 3). The playtest should decide what comes
@@ -136,7 +135,7 @@ screen.
 - **Changed:** one grab (E, RB) and one drop (Q, LB) instead of a button per hand. A grab uses the
   right hand if it's free, else the left; a drop lets go of the last thing grabbed.
 
-### 2. Truck and the round
+### 2. Truck and the round ✓
 
 - Add the truck in the harbour and the route to the building, with collision.
 - Add server-side phases: truck, raid, results. Loot inside the truck counts towards the quota.
@@ -147,14 +146,18 @@ screen.
   round in phases: lobby in the truck until everyone is ready, the raid until everyone alive is in
   the truck and wants to leave or until dawn, then results against the quota. Items have values.
   Falling in a raid kills, dawn leaves those outside the truck behind, and latecomers wait: all of
-  them spectate through the eyes of those still playing. The truck is the level's dock for now, and
-  the overlay is plain text.
-- **Harbour:** `?level=harbour` puts the store in the harbour, with its ground and obstacles worked
-  out from the harbour model (`pnpm run harbour`): players start on the street between the
-  warehouses, drop down from the quay into the store's lot, and drown in the water. It runs as a
-  playground for now.
-- **Next:** a real truck parked in the harbour, the harbour as a game level with the raid starting
-  from the truck, and a proper results screen instead of plain text.
+  them spectate through the eyes of those still playing. The truck was the level's dock, and the
+  overlay plain text.
+- **Harbour:** `?level=harbour` is a game in the harbour, with its ground and obstacles worked out
+  from the harbour model (`pnpm run harbour`): a generated warehouse stands on the lot under the
+  quay, its loading door open, and the crew's truck is backed up to it. Players start between the
+  benches in its cargo space, which is where loot counts, and walk down its ramp. Outside, the sky
+  lights things; inside, only the fittings. The water drowns.
+- **Results:** a screen of its own when the round ends: cleared or failed, the haul against the
+  quota, what's in the truck and what became of each of the crew.
+- **Done.** Left for later: the truck doesn't drive in or away, the lot is bare and unlit but for
+  the truck's lamp, the sun casts no shadows round the warehouse, and the village still has a bare
+  dock where its truck should be.
 - **Village:** `?level=village` is a second outdoor environment, an abandoned farm hamlet in a
   Norwegian valley, run as a game: the truck at the south end of a gravel track, loot in the
   farmyards, at the boathouse and by the stave church on its knoll, a wadeable river with a

@@ -19,6 +19,8 @@ client/src/main.ts         render loop: input → player → views and items; jo
 client/src/input.ts        Device: the keyboard and mouse, controllers (Gamepad API), and `input`, all of them at once
 client/src/localPlayer.ts  LocalPlayer: the player at this screen: device + first-person camera + connection
 client/src/round.ts        roundLines(): the overlay at the top in a game: the phase, the clock, loot and quota, who we watch
+client/src/results.ts      showResults(): the results screen of a round: cleared or failed, the haul against the quota, the crew's fates
+client/src/truck.ts        addTruck(): the crew's truck where a level parks it, a box stand-in until its model loads, and its ceiling lamp
 client/src/tired.ts        TiredEffect: the screen closes in, drains of colour and heaves with breaths as stamina runs out
 client/src/tuning.ts       the registry of tunables: tunables() turns a module's constants into live settings; addSetting()
 client/src/tuningPanel.ts  the tuning panel, `__game.tune()`: every registered setting as a slider or checkbox
@@ -43,7 +45,7 @@ client/src/audio.ts        sound on Web Audio, heard from the active camera: One
 client/src/occlusion.ts    how many walls' worth lie between two points, and how muffled that makes a sound
 client/src/store.ts        addShelves(): stocked shelving over the shelf collision boxes; storeSurface(): textured walls and floor
 client/src/environment.ts  ENVIRONMENTS: what surrounds a level outdoors, as `Level.environment` names it: sky, fog, light, lobby spot, what draws it
-client/src/harbour.ts      addHarbour(): the harbour around the store, as instanced scenery with no collision
+client/src/harbour.ts      addHarbour(): the harbour around the warehouse, as instanced scenery with no collision
 client/src/village.ts      addVillage(): the valley round the village: ground from `villageGround`, track, river, bridge, models in culled chunks, mountains; its ambience
 client/src/groundCover.ts  GroundCover: grass, heather and fern cards toned to the ground they stand in, darker at the base, thinned out by distance
 client/src/heightFog.ts    addHeightFog(): mist lying in low ground, thinning upward, over every PBR surface (the village's)
@@ -73,6 +75,7 @@ scripts/generate.ts        draws a generated level from a seed, or checks the ru
 scripts/village.ts         checks the village without a server: drawn ground against floors, ways through, a map (`--map`)
 scripts/villageWalk.ts     a bot walks the village from the truck to the church door (or over the bridge and back through the river)
 scripts/harbour.ts         the harbour's ground and what's in the way, from its model, into shared/harbour.json (`pnpm run harbour`)
+scripts/harbourCheck.ts    checks the harbour level without a server: the warehouse's rules, and the walk from the truck in through the loading door and back
 scripts/unity-import/      prefabs from a Unity .unitypackage → textured .glb in assets/, through Blender
 scripts/models/            models made in code: one Python script per model, built in Blender (`pnpm run model`)
 scripts/surfaces/          the surface library's baker, on the GPU: one WGSL recipe per surface over a noise library (`pnpm run surface`)
@@ -128,9 +131,9 @@ scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`p
   `LIGHT_PRIORITY` (`client/src/scene.ts`): the sky and sun, then our own, then others'.
 - Lasting state goes through `server/src/persist.ts`, keyed by player name, never `sessionId`.
 - **Modes** (`shared/modes.ts`, `state.mode`): `?mode=playground` or `?mode=game`, else the
-  level's own: the playground level is playground, the store and generated levels are game. Each
+  level's own: the playground level is playground, the store, the harbour and generated levels are game. Each
   level and mode has its own rooms, so clients and bots always send the mode they resolved with
-  `modeFor()`, which falls back on the level's own `Level.mode`; the harbour level is playground by default too. The **playground** has no rounds,
+  `modeFor()`, which falls back on the level's own `Level.mode`. The **playground** has no rounds,
   nobody dies (falling respawns), the lights are on the dimmer and players come back where they left. A **game** runs rounds in `state.phase`:
   `lobby` (everyone in the truck, R / X to ready; all ready starts a short countdown), `raid`
   (`RAID_TIME` to dawn; ends when everyone alive stands in the truck and has pressed R / X to leave,
@@ -142,8 +145,11 @@ scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`p
   during a raid `waiting`. They all spectate until the next round: the camera looks through the
   eyes of someone still playing, E / Q (RB / LB) step through them, and that player's character is
   hidden on their screen.
-- **The truck** is the level's `dock` for now. Loot is whatever's in it, even still in someone's
-  hands; `ITEM_KINDS[kind].value` is what each sells for.
+- **The truck** is the level's `dock`. Loot is whatever's in it, even still in someone's
+  hands; `ITEM_KINDS[kind].value` is what each sells for. A level with a real truck has `Level.truck`
+  (`parkTruck()` in `shared/truck.ts`, at the model's measures, in quarter turns): its cargo space is
+  the dock, with boxes for its walls, cab and benches, a floor and a ramp, and the places players
+  start between the benches. The harbour has one; the village and the halls still have a bare dock.
 
 ## Running
 
@@ -157,15 +163,21 @@ This is a solo, local project. Start everything with **`pnpm run dev`** (require
 - **Levels** are in `shared/level.ts`. The playground is the default: a brick hall with each item
   kind, a dock, a pit with a plank across, stairs and ladders up two storeys and down to a
   basement, and a dimmer for the lights, to try things out in. The store is at `http://127.0.0.1:5173/?level=store`.
-  The **harbour** (`?level=harbour`) is the store with the harbour around it to walk on: players
-  start on the street between the warehouses, the store's lot is a jump down from the quay, and the
-  water drowns. The harbour model draws it; `pnpm run harbour` works out its floors (`ground`) and
-  boxes (`scenery`) from that model into `shared/harbour.json`, which is in git: run it again when
-  the harbour changes. Lookups in big levels go through a grid (`near()` in `shared/spatial.ts`).
+  The **harbour** (`?level=harbour`, a game; `harbour-<seed>` for another building) is a generated
+  warehouse on the lot in the harbour's north-west corner (`HARBOUR_SITE` in `shared/harbourSite.ts`),
+  with the truck backed up to its loading door: players start in the truck, and walk down its ramp
+  and in. The door is a `gate` edge (`g`) in the outer wall, cut after generating, so the building
+  is the same as `generated-<seed>`. The lot is a jump down from the quay, and the water drowns. The
+  harbour model draws what's round it; `pnpm run harbour` works out its floors (`ground`) and boxes
+  (`scenery`) from that model into `shared/harbour.json`, which is in git, leaving the building's
+  footprint out: run it again when the harbour or the site changes, and
+  `pnpm exec tsx scripts/harbourCheck.ts` after either. A building outdoors is lit by the sky
+  outside its footprint and by its fittings inside, both in the interior light's shader
+  (`interiorLight.ts`), so the sun casts no shadows there; its outside is `shell()` in `building.ts`. Lookups in big levels go through a grid (`near()` in `shared/spatial.ts`).
   New models go on show in the playground through `CONCEPTS` in `client/src/playground.ts`. Each level has its own
   rooms; bots join the playground unless `LEVEL` says otherwise.
 - **Environments:** a level outdoors names what surrounds it, `Level.environment` (`"harbour"` for the store
-  and harbour, `"village"`), and `ENVIRONMENTS` in `client/src/environment.ts` gives each its sky, fog
+  and the harbour's warehouse, `"village"`), and `ENVIRONMENTS` in `client/src/environment.ts` gives each its sky, fog
   colour, outdoor light (tunable under its own group), lobby spot, `draw()` and ambience. Halls have none.
   An environment's `sun` can set its direction and make its one shadow map follow the camera
   (`Rendering/Near shadows`), for scenery spread wide; `overrideGrade()` in graphics.ts lets it grade

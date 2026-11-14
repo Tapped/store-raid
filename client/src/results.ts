@@ -79,7 +79,7 @@ let shown = "";
  * frame with the room's state, or nothing when there is no room.
  */
 export function showResults(state: State | undefined, dock: Parameters<typeof inside>[0]): void {
-  if (!state || state.mode !== "game" || (state.phase as Phase) !== "results") {
+  if (state?.mode !== "game" || (state.phase as Phase) !== "results") {
     panel?.remove();
     panel = undefined;
     shown = "";
