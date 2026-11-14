@@ -6,6 +6,45 @@ Between rounds they spend the money in a shop. Each level is a new building with
 
 The goal is a playable game after every step, with each step shipped separately.
 
+## Where we are (14 November 2026)
+
+**The round works, and there are two places to play it, but nobody has played it yet.** A game runs
+lobby, raid and results against a quota, with hands, flashlights, running, jumping, stairs and
+ladders, and sound placed in the world. What exists, by place:
+
+- **The generated warehouse** (`?level=generated-<seed>`) is the first building: four storeys of
+  halls, cages, workshops and offices, furnished, drawn as a building, lit by its own fittings and
+  darker the further in. Ten cargo models are still boxes.
+- **The village** (`?level=village`) is a second place, outdoors: a valley hamlet at night with all
+  36 of its models built, its own night look, and loot lying outside closed buildings.
+- **The harbour** (`?level=harbour`) surrounds the old hand-built store, and still runs as a
+  playground. The generated warehouse doesn't stand in it yet.
+- **The tools** are fast now: surfaces bake on the GPU in a second or two, model drafts render in
+  seconds, and scenery is atlased KTX2, which took the village from 7.2 GB of video memory to 2 GB.
+
+**What's missing is everything that makes it a game with friends:** voice, enemies, health and
+death by anything but falling, the shop, money, and more than four kinds of loot (phone, TV, box,
+sofa). Most of the last two weeks went into how the two places look.
+
+### Suggested next steps
+
+In this order, to get to the first playtest soonest:
+
+1. **One whole round in the warehouse, from the harbour.** Stand the generated warehouse in the
+   harbour, park a real truck outside it, run the harbour as a game, and show results on a proper
+   screen (step 2's Next). Until then the round is played from a dock inside the building.
+2. **More loot, and the safe.** A handful of new item kinds over the four sizes, so what to carry is
+   a choice, and the jackpot safe on the top floor. Try the sofa down a flight of stairs (step 4).
+3. **Proximity voice, then the first playtest** (step 3). The playtest should decide what comes
+   after: whether carrying and the dawn timer are fun without enemies.
+4. **The tick on the server** (step 5): health, latching on, backing off from light, dropping from
+   racking. It's modelled and walks on the client already, so it's the shortest way to a first scare.
+5. **Money and a first shop** (step 6), once rounds are worth repeating.
+
+Kept for later, on purpose: the ten cargo models and calmer offices (step 4's Next), which only
+change the look, and the village's interiors. The village is ahead of the plan: it should wait as
+the second building's setting until the first building has been playtested.
+
 ## The round
 
 1. **Truck:** the crew starts in a large truck parked in the harbour, with no equipment the first
@@ -121,6 +160,10 @@ screen.
   farmyards, at the boathouse and by the stave church on its knoll, a wadeable river with a
   footbridge. Levels now declare what surrounds them (`Level.environment`), each with its own sky,
   fog and light, and their default mode (`Level.mode`). Its buildings are closed for now.
+- **The village's models and look:** all 36 models are built in code (stave church, barn,
+  farmhouses, boathouse, stabbur, fences, walls, trees, rocks and yard clutter), under a moon with
+  shadows, valley mist, a night grade of its own, rock on the valley sides, ground cover toned to
+  the ground and detail maps up close.
 
 ### 3. The dark building and proximity voice
 
@@ -138,8 +181,9 @@ screen.
 - **Sound** is in, on Web Audio and placed in the world: footsteps for everyone, in step with the
   hand bob, TVs showing static and droning, a vent ambience, and walls between a sound and the
   listener muffling it (`client/src/occlusion.ts`).
-- **Next:** lighting that falls off with depth into the building rather than one level for all of
-  it, then proximity voice.
+- **Depth:** generated warehouses are lit by their own fittings, fewer and deader the further in,
+  with some deep rooms dark (step 4). The store and playground still have one level for all of it.
+- **Next:** proximity voice, then the playtest.
 
 ### 4. Floors
 
@@ -201,15 +245,19 @@ What we build the game with, besides the game itself:
 - **Tile viewer** (`/tiles.html`) for levels and tiles, and `scripts/generate.ts` to check seeds.
 - **Bots** (`scripts/bot.ts`, `hands.ts`, `playground.ts`) to check movement, hands and the round
   from the terminal, and a headless Chrome to check the picture.
-- **Models in code** (`pnpm run model`, Blender), **images** from Nano Banana Pro
-  (`pnpm run image`), Unity asset packs imported to `.glb`, and the Sonniss sound library.
+- **Models in code** (`pnpm run model`, Blender), with drafts in seconds from a Blender kept
+  running, and scenery merged over atlases as KTX2 that the GPU keeps compressed.
+- **Surfaces in code** (`pnpm run surface`): WGSL recipes baked on the GPU into tiling PBR
+  textures, with a viewer at `/surfaces.html`.
+- **Images** from Nano Banana Pro (`pnpm run image`), Unity asset packs imported to `.glb`, and
+  the Sonniss sound library.
 
 ## Decisions
 
 - **First person:** each player sees through their own character's eyes. Grabbing takes what's in
   front of you, and carried things stay in view.
-- **The walled store in `shared/level.ts` is temporary,** so don't polish it. It becomes the first
-  building's ground floor.
+- **The walled store in `shared/level.ts` is temporary,** so don't polish it. The generated
+  warehouse is the first building and takes its place in the harbour.
 - **Online only, one player per screen.** Splitscreen has been removed.
 - **Custom movement stays:** players keep using `stepMover`, not Havok, because that protects
   prediction.
