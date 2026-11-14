@@ -90,6 +90,8 @@ export const GameState = schema({
   items: t.map(Item),
   /** How bright the lights are, from 0 (off) to 1, as the dimmer leaves them. */
   light: t.number(),
+  /** The truck's hatch, from 0 (up, shut) to 1 (down, the ramp): only at 1 can it be walked on. */
+  hatch: t.number(),
   /** The rules players move by. Tuned live in dev, through the `tune` message. */
   mechanics: Mechanics,
 });

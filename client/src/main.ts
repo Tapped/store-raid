@@ -50,7 +50,7 @@ if (!playground) void addShelves(world);
 // (client/src/environment.ts). It brings its own ambience, else the vent hums at the entrance.
 const environment = world.environment;
 if (environment) void environment.draw(world);
-void addTruck(world);
+const truck = addTruck(world);
 occludeIn(world.level);
 if (environment?.ambience) void environment.ambience(world);
 else void addAmbience(world);
@@ -246,6 +246,7 @@ engine.runRenderLoop(() => {
   syncItems();
   const light = player?.session?.room.state.light;
   if (light !== undefined) playground?.setLight(light);
+  truck?.update(player?.session?.room.state.hatch, dt);
   player?.updateHands(dt, items);
   showStatus();
   world.scene.render();

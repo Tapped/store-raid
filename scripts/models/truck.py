@@ -1,11 +1,14 @@
 """
 The crew's truck: an old cab-over box truck, a removal firm's once, its name half gone from the
-sides. The cargo box is open at the back, its roller door run up, with a ramp down to the ground.
-Inside, a bench along each wall behind the cab seats five a side, facing each other, ten in all;
-the back half of the floor is clear for loot. A caged lamp on the ceiling glows (glow-lamp).
+sides. Inside the cargo box, a bench along each wall behind the cab seats five a side, facing each
+other, ten in all; the back half of the floor is clear for loot. A caged lamp on the ceiling glows
+(glow-lamp). The back is closed by a hatch hinged at the floor, which folds down into the ramp: it
+is a model of its own (truck-hatch.py builds it from hatch() here), so the game can turn it. A
+control box for it is on the wall inside by the opening, and another outside on the same side, each
+with a green and a red button that glow (glow-button-down, glow-button-up).
 
 The origin is on the ground at the middle of the cargo box. The cab is the front (-y here, +z in the
-game); the ramp runs out behind. The game's collision is written from the constants below.
+game). shared/truck.ts has these measures for the game's collision: change them together.
 """
 
 import math
@@ -40,9 +43,13 @@ SEAT_DEPTH = 0.45
 SEAT_HEIGHT = 0.45  # above the floor
 BENCH = (-3.0, -0.1)  # along y
 
-# The ramp, from the floor's edge to the ground.
-RAMP_END = 5.9
-RAMP_HALF = 1.05
+# The hatch: hinged along the floor's edge, as long as the opening is high, the ramp when it's down.
+HINGE_Y, HINGE_Z = REAR + 0.045, FLOOR - 0.03
+HATCH_LENGTH = 2.3
+HATCH_HALF = 1.13
+# Its control boxes: inside on the wall, outside on the skin, both on the +x side by the opening.
+PANEL_IN = (IN_X, REAR - 0.5, FLOOR + 1.25)
+PANEL_OUT = (W / 2, REAR - 0.4, 1.4)
 
 # The cab.
 CAB_X = 1.15
@@ -64,8 +71,8 @@ def prism(name, points, x0, x1, mat, bevel=0.0, segments=2):
     return lib._bevel(obj, bevel, segments)
 
 
-def build():
-    mats = {
+def materials():
+    return {
         "panel": panel_material(),
         "cab": cab_material(),
         "steel": steel_material(),
@@ -78,19 +85,28 @@ def build():
         "rubber": lib.material("rubber", (0.012, 0.012, 0.012), roughness=0.85),
         "plastic": lib.material("plastic", (0.028, 0.028, 0.03), roughness=0.6),
         "belt": lib.material("belt", (0.02, 0.022, 0.024), roughness=0.75),
+        "strap": lib.material("strap", (0.3, 0.1, 0.01), roughness=0.8),
         "rivet": lib.material("rivet", (0.3, 0.3, 0.29), roughness=0.45, metallic=0.3),
         "red": lib.material("lens-red", (0.22, 0.008, 0.006), roughness=0.25),
         "amber": lib.material("lens-amber", (0.45, 0.16, 0.01), roughness=0.25),
         "lens": lib.material("lens-clear", (0.45, 0.45, 0.4), roughness=0.12, metallic=0.2),
         "plate": lib.material("plate", (0.38, 0.38, 0.34), roughness=0.5),
+        "control": lib.material("control-box", (0.42, 0.27, 0.015), roughness=0.55),
         "glow": lib.material("glow-lamp", (0.8, 0.6, 0.3), roughness=0.3,
                              emission=(1.0, 0.72, 0.38), strength=4.0),
+        "down": lib.material("glow-button-down", (0.02, 0.3, 0.05), roughness=0.4,
+                             emission=(0.1, 1.0, 0.25), strength=1.5),
+        "up": lib.material("glow-button-up", (0.35, 0.02, 0.01), roughness=0.4,
+                           emission=(1.0, 0.12, 0.05), strength=1.5),
     }
+
+
+def build():
+    mats = materials()
     cargo_box(mats)
-    shutter(mats)
     benches(mats)
     lamp(mats)
-    ramp(mats)
+    controls(mats)
     chassis(mats)
     cab(mats)
 
@@ -155,24 +171,46 @@ def cargo_box(m):
     lib.box("sill", (W - 0.02, 0.11, 0.13), (0, REAR - 0.05, FLOOR - 0.066), m["steel"], bevel=0.006,
             segments=1)
     for x in (-0.95, 0.95):
-        lib.box("marker", (0.1, 0.02, 0.035), (x, REAR + 0.012, TOP - 0.1), m["red"])
         lib.box("marker", (0.1, 0.02, 0.035), (x, FRONT - 0.045, TOP - 0.06), m["amber"])
-
-
-def shutter(m):
-    """The roller door, run up: its last slats hang in the top of the opening, in their tracks."""
-    y = REAR - 0.14
-    for i in range(5):
-        lib.box("slat", (2 * OPENING - 0.04, 0.018, 0.064), (0, y, 3.13 - i * 0.066), m["alu"],
-                bevel=0.006, segments=1)
-    lib.box("bottom-bar", (2 * OPENING - 0.04, 0.035, 0.05), (0, y, 2.81), m["alu"], bevel=0.005,
-            segments=1)
-    lib.box("seal", (2 * OPENING - 0.04, 0.02, 0.02), (0, y, 2.777), m["rubber"])
-    lib.box("latch", (0.16, 0.02, 0.04), (0, y + 0.025, 2.81), m["steel"])
-    lib.box("strap", (0.035, 0.004, 0.3), (0.5, y + 0.02, 2.64), m["belt"])
     for s in (-1, 1):
-        lib.box("track", (0.035, 0.05, 2.96 - FLOOR), (s * (OPENING - 0.017), y, (2.96 + FLOOR) / 2),
-                m["alu"])
+        lib.box("marker", (0.07, 0.02, 0.035), (s * (W / 2 - 0.05), REAR + 0.012, TOP - 0.1), m["red"])
+        # What the hatch shuts against: a rubber seal up each post, and across under the header.
+        lib.box("seal", (0.03, 0.012, 2.96 - FLOOR), (s * (OPENING + 0.02), REAR + 0.008, (2.96 + FLOOR) / 2),
+                m["rubber"])
+        # Marker lamps along the bottom rail.
+        for y in (FRONT + 0.4, -1.0, 1.0, REAR - 0.4):
+            lib.box("side-marker", (0.014, 0.09, 0.035), (s * (W / 2 + 0.012), y, 0.89), m["amber"])
+    lib.box("seal", (2 * OPENING + 0.07, 0.012, 0.03), (0, REAR + 0.008, 2.975), m["rubber"])
+    # The hatch's hinge, on the sill.
+    for x in (-0.9, -0.3, 0.3, 0.9):
+        lib.box("hinge-bracket", (0.26, 0.07, 0.09), (x, REAR + 0.02, HINGE_Z - 0.02), m["steel"], bevel=0.008,
+                segments=1)
+    # Ratchet straps hung over the lashing rail, and a pile of moving blankets under them.
+    for y, drop in ((0.6, 0.55), (0.72, 0.42), (2.2, 0.6)):
+        lib.box("hung-strap", (0.006, 0.04, drop), (-IN_X + 0.02, y, FLOOR + 1.35 - drop / 2), m["strap"])
+        lib.box("ratchet", (0.03, 0.07, 0.1), (-IN_X + 0.03, y, FLOOR + 1.35 - drop), m["rivet"])
+    for i, (w, d) in enumerate(((0.62, 0.5), (0.6, 0.52), (0.64, 0.48), (0.58, 0.5))):
+        lib.box("blanket", (d, w, 0.06), (-IN_X + 0.3 + 0.01 * i, 0.55 + 0.015 * i, FLOOR + 0.03 + i * 0.06),
+                m["seat"], bevel=0.025, segments=2)
+
+
+def control_box(m, at, out):
+    """A hatch control box centred on `at` on a wall, facing `out` (±1) along x, its cable above."""
+    x, y, z = at
+    lib.box("control-box", (0.07, 0.15, 0.26), (x + out * 0.035, y, z), m["control"], bevel=0.01,
+            segments=1)
+    lib.box("control-plate", (0.004, 0.11, 0.2), (x + out * 0.072, y, z), m["plastic"])
+    for name, dz in (("down", 0.045), ("up", -0.045)):
+        lib.cylinder("button", 0.026, 0.02, (x + out * 0.08, y, z + dz), axis="x", mat=m[name], sides=10)
+        lib.cylinder("button-collar", 0.034, 0.008, (x + out * 0.076, y, z + dz), axis="x", mat=m["rivet"],
+                     sides=10)
+    lib.tube("control-cable", [(x + out * 0.03, y, z + 0.13), (x + out * 0.03, y, z + 0.6)], [0.011] * 2,
+             mat=m["rubber"], sides=5)
+
+
+def controls(m):
+    control_box(m, PANEL_IN, -1)
+    control_box(m, PANEL_OUT, 1)
 
 
 def benches(m):
@@ -224,29 +262,40 @@ def lamp(m):
              sides=4)
 
 
-def ramp(m):
-    """A loading ramp hooked on the sill, down to the ground behind."""
-    y0 = REAR + 0.01
-    slope = (FLOOR - 0.03) / (RAMP_END - y0)
-
-    def at(y, lift=0.0):
-        return (y, FLOOR - (y - y0) * slope + lift)
-
-    deck = [at(y0), at(RAMP_END), (RAMP_END, 0.0), (RAMP_END - 0.25, 0.0), at(y0, -0.07)]
-    prism("ramp", deck, -RAMP_HALF, RAMP_HALF, m["alu"])
+def hatch():
+    """
+    The hatch, as truck-hatch.py builds it: lying flat out behind its hinge, which is the origin, x
+    along it. Its deck, ribbed for grip, is up; what's underneath is the truck's back when it's
+    shut, with hazard stripes down both edges.
+    """
+    alu = alu_material(deck_from=0.0)
+    skin = hatch_skin_material()
+    steel = lib.material("hinge", (0.03, 0.03, 0.032), roughness=0.6, metallic=0.3)
+    rubber = lib.material("rubber", (0.012, 0.012, 0.012), roughness=0.85)
+    body = HATCH_LENGTH - 0.15
+    half = HATCH_HALF
+    lib.box("deck", (2 * half, body - 0.03, 0.012), (0, 0.03 + (body - 0.03) / 2, 0.024), alu)
+    lib.box("skin", (2 * half, body - 0.03, 0.012), (0, 0.03 + (body - 0.03) / 2, -0.034), skin)
     for s in (-1, 1):
-        kerb = [at(y0, 0.05), at(RAMP_END - 0.15, 0.05), at(RAMP_END - 0.1), at(y0)]
-        prism("ramp-kerb", kerb, s * RAMP_HALF, s * (RAMP_HALF - 0.04), m["alu"])
-        # Beams under each edge, and a trestle half way down.
-        beam = [at(y0 + 0.05, -0.07), at(RAMP_END - 0.5, -0.07), at(RAMP_END - 0.5, -0.15),
-                at(y0 + 0.05, -0.19)]
-        prism("ramp-beam", beam, s * (RAMP_HALF - 0.1), s * (RAMP_HALF - 0.16), m["alu"])
-        ym = (y0 + RAMP_END) / 2 - 0.2
-        zm = at(ym, -0.15)[1]
-        lib.box("trestle", (0.05, 0.05, zm), (s * (RAMP_HALF - 0.13), ym, zm / 2), m["steel"])
-        lib.box("trestle-foot", (0.16, 0.16, 0.012), (s * (RAMP_HALF - 0.13), ym, 0.006), m["steel"])
-        lib.box("ramp-hook", (0.12, 0.07, 0.03), (s * (RAMP_HALF - 0.2), REAR - 0.02, FLOOR + 0.012), m["steel"])
-    lib.box("trestle-bar", (2 * RAMP_HALF - 0.26, 0.04, 0.04), (0, ym, zm * 0.55), m["steel"])
+        lib.box("frame", (0.05, body, 0.06), (s * (half - 0.025), body / 2, -0.005), alu, bevel=0.006,
+                segments=1)
+        lib.box("kerb", (0.035, body - 0.25, 0.045), (s * (OPENING - 0.05), 0.12 + (body - 0.25) / 2, 0.05),
+                alu, bevel=0.008, segments=1)
+        lib.box("stop", (0.1, 0.06, 0.02), (s * 0.8, body - 0.1, 0.04), rubber)
+        lib.box("latch", (0.05, 0.16, 0.03), (s * (half - 0.03), body - 0.25, -0.055), steel, bevel=0.006,
+                segments=1)
+    lib.box("frame", (2 * half - 0.1, 0.05, 0.06), (0, 0.025, -0.005), alu)
+    # The toe, tapering to the ground.
+    toe = [(body - 0.01, 0.03), (HATCH_LENGTH, -0.03), (HATCH_LENGTH, -0.04), (body - 0.01, -0.04)]
+    prism("toe", toe, -half, half, alu)
+    # Ribs across the outside, and a grab rail.
+    for y in (0.45, 1.05, 1.65):
+        lib.box("rib", (2 * half - 0.5, 0.06, 0.022), (0, y, -0.05), skin, bevel=0.006, segments=1)
+    lib.tube("hatch-rail", [(-0.35, 1.32, -0.045), (-0.35, 1.32, -0.09), (0.35, 1.32, -0.09),
+                            (0.35, 1.32, -0.045)], [0.013] * 4, mat=steel, sides=6)
+    for x in (-0.9, -0.3, 0.3, 0.9):
+        lib.cylinder("knuckle", 0.03, 0.2, (x, 0, 0), axis="x", mat=steel, sides=8)
+        lib.box("hinge-arm", (0.14, 0.12, 0.03), (x, 0.06, -0.04), steel)
 
 
 # --- Chassis and wheels -------------------------------------------------------------------------
@@ -332,6 +381,7 @@ def chassis(m):
     for s in (-1, 1):
         lib.box("underrun-arm", (0.07, 0.08, 0.3), (s * RAIL_X, REAR - 0.1, 0.62), steel)
     lib.box("number-plate", (0.5, 0.008, 0.11), (0, REAR + 0.004, 0.66), m["plate"])
+    lib.text("plate-text", "NV 48213", 0.075, (0, REAR + 0.009, 0.66), depth=0.002, mat=m["rubber"], facing="y")
 
 
 # --- The cab -------------------------------------------------------------------------------------
@@ -416,6 +466,11 @@ def cab(m):
     lib.box("bumper", (2 * CAB_X + 0.02, 0.16, 0.26), (0, CAB_FRONT - 0.05, 0.58), m["steel"], bevel=0.03,
             segments=2)
     lib.box("number-plate", (0.5, 0.008, 0.11), (0, CAB_FRONT - 0.133, 0.6), m["plate"])
+    lib.text("plate-text", "NV 48213", 0.075, (0, CAB_FRONT - 0.138, 0.6), depth=0.002, mat=m["rubber"])
+    # Air and power lines from the cab to the box.
+    for x, sag in ((-0.25, 0.12), (-0.15, 0.16), (0.3, 0.1)):
+        lib.tube("line", [(x, CAB_REAR - 0.02, 2.3), (x, (CAB_REAR + FRONT) / 2, 2.3 - sag),
+                          (x, FRONT + 0.01, 2.35)], [0.012] * 3, mat=m["rubber"], sides=5)
     for s in (-1, 1):
         lib.box("fog-light", (0.16, 0.012, 0.08), (s * 0.85, CAB_FRONT - 0.131, 0.58), m["lens"])
     # A sun visor over the windscreen.
@@ -458,7 +513,7 @@ def panel_material():
 
     # Sheets 1.24 m wide, lapped: a seam down each.
     seam = n.math("MULTIPLY", n.stripes(n.math("ADD", f.y, 3.1 + 0.006), 1.24, 0.012 / 1.24), side)
-    out = lib.weathered(n, paint, rough=0.5, chips=0.25, rust=0.35, dirt=0.75, dust=0.5,
+    out = lib.weathered(n, paint, rough=0.5, chips=0.25, rust=0.35, dirt=0.55, dust=0.5,
                         edge_wear=0.3, dents=1.6, floor=0.9, height=n.math("MULTIPLY", seam, -1.0),
                         bump=0.005, scale=1.6, seed=3.0)
     color = n.mix(n.math("MULTIPLY", seam, 0.6), out["Base Color"], (0.05, 0.045, 0.04))
@@ -467,6 +522,22 @@ def panel_material():
     out["Base Color"] = n.mix(n.math("MULTIPLY", spray, 0.5), color, (0.06, 0.05, 0.04))
     out["Roughness"] = n.lerp(spray, out["Roughness"], 0.9)
     n.out(**out)
+    return mat
+
+
+def hatch_skin_material():
+    """The hatch's outside: the box's off-white, red and white hazard stripes down both edges."""
+    mat, n = lib.procedural("hatch-skin", 1024)
+    f = Field(n, 91)
+    _, _, nz = normal(n)
+    ax = n.math("ABSOLUTE", f.x)
+    under = smooth(n, nz, -0.5, -0.8)
+    band = n.math("MULTIPLY", under, n.math("GREATER_THAN", ax, HATCH_HALF - 0.2))
+    stripe = n.stripes(n.math("ADD", ax, f.y), 0.24, 0.5)
+    hazard = n.mix(stripe, (0.4, 0.38, 0.33), (0.3, 0.014, 0.01))
+    paint = n.mix(band, (0.36, 0.35, 0.32), hazard)
+    n.out(**lib.weathered(n, paint, rough=0.5, chips=0.45, rust=0.4, dirt=0.7, dust=0.0, edge_wear=0.6,
+                          dents=1.4, bump=0.004, scale=1.3, seed=5.0))
     return mat
 
 
@@ -497,12 +568,16 @@ def steel_material():
     return mat
 
 
-def alu_material():
-    """Bare aluminium: rails, posts, the roller door and the ramp, whose deck is ribbed for grip."""
+def alu_material(deck_from=None):
+    """
+    Bare aluminium: rails and posts. On the hatch, where y is past `deck_from`, the faces turned up
+    are its deck: ribbed for grip, worn bright down the middle, dirt between the ribs.
+    """
     mat, n = lib.procedural("alu", 1024)
     x, y, z = n.xyz()
     _, _, nz = normal(n)
-    on_ramp = n.math("MULTIPLY", n.math("GREATER_THAN", y, REAR + 0.02), smooth(n, nz, 0.5, 0.8))
+    on_ramp = 0.0 if deck_from is None else n.math(
+        "MULTIPLY", n.math("GREATER_THAN", y, deck_from), smooth(n, nz, 0.5, 0.8))
     ribs = n.math("MULTIPLY", n.stripes(y, 0.05, 0.45), on_ramp)
     # Worn bright down the middle where boots and trolley wheels go.
     tread = n.math("MULTIPLY", on_ramp, smooth(n, n.math("ABSOLUTE", x), 0.9, 0.3))

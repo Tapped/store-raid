@@ -6,28 +6,45 @@ import {
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
-import { TRUCK } from "../../shared/truck";
+import { HATCH_DOWN, HATCH_TIME, TRUCK } from "../../shared/truck";
 import { loadContainer } from "./assets";
+import { OneShots } from "./audio";
 import { surfaceMaterial } from "./graphics";
 import { LIGHT_PRIORITY, type World } from "./scene";
 import { tunables } from "./tuning";
 
 const MODEL = "models/level/truck.glb";
+const HATCH_MODEL = "models/level/truck-hatch.glb";
+const MOTOR = "audio/sfx/hatch-motor.wav";
+const LATCH = "audio/sfx/hatch-latch.wav";
 
 const LAMP = tunables("Look/Truck", {
   lamp: { value: 2.2, min: 0, max: 20, hint: "The lamp on the cargo space's ceiling" },
   reach: { value: 9, min: 1, max: 30, hint: "Meters until its light has faded out" },
 });
 
+const SOUND = tunables("Sound/Truck", {
+  motor: { value: 0.7, min: 0, max: 2, hint: "The hatch's motor as it starts to move" },
+  motorRate: { value: 0.45, min: 0.2, max: 2, hint: "Slower is deeper, and lasts longer" },
+  latch: { value: 0.9, min: 0, max: 2, hint: "The hatch coming to rest, up or down" },
+});
+
+/** The truck on screen: what the page keeps of it. */
+export interface TruckView {
+  /** Each frame: where the room says the hatch is, 0 up to 1 down, if we're in one. */
+  update(hatch: number | undefined, dt: number): void;
+}
+
 /**
  * The crew's truck where the level parks it (`Level.truck`, shared/truck.ts): its model, or a plain
  * box truck of the same measures until that exists, and the lamp on its ceiling, which lights the
- * cargo space and a little of the ground behind it.
+ * cargo space and a little of the ground behind it. Its hatch is a model of its own on a hinge,
+ * turned to where the room says it is: up it shuts the back, down it's the ramp.
  */
-export async function addTruck(world: World): Promise<void> {
+export function addTruck(world: World): TruckView | undefined {
   const { scene, level } = world;
   const truck = level.truck;
-  if (!truck) return;
+  if (!truck) return undefined;
   const holder = new TransformNode("truck", scene);
   holder.position.set(truck.place.x, truck.place.y, truck.place.z);
   holder.rotation.y = (truck.place.turns * Math.PI) / 2;
@@ -49,22 +66,83 @@ export async function addTruck(world: World): Promise<void> {
   light();
   scene.onBeforeRenderObservable.add(light);
 
-  const standIn = addStandIn(world, holder);
-  const container = await loadContainer(scene, MODEL);
-  if (!container) return;
-  for (const root of container.instantiateModelsToScene().rootNodes) root.parent = holder;
-  for (const mesh of standIn) mesh.dispose();
-  for (const mesh of holder.getChildMeshes()) {
-    mesh.receiveShadows = true;
-    mesh.isPickable = false;
-    world.shadows.addShadowCaster(mesh);
-  }
+  // The hatch turns about its hinge, along the floor's edge.
+  const hinge = new TransformNode("truck-hatch", scene);
+  hinge.parent = holder;
+  hinge.position.set(0, TRUCK.hatch.hingeY, TRUCK.hatch.hingeZ);
+
+  /** Shows the model at `path` under `parent` in place of its stand-in, once it has loaded. */
+  const show = async (path: string, parent: TransformNode, standIn: Mesh[]) => {
+    const container = await loadContainer(scene, path);
+    if (!container) return;
+    for (const root of container.instantiateModelsToScene().rootNodes) root.parent = parent;
+    for (const mesh of standIn) mesh.dispose();
+    for (const mesh of parent.getChildMeshes(false)) {
+      mesh.receiveShadows = true;
+      mesh.isPickable = false;
+      world.shadows.addShadowCaster(mesh);
+    }
+  };
+  void show(MODEL, holder, addStandIn(world, holder));
+  void show(HATCH_MODEL, hinge, [addHatchStandIn(world, hinge)]);
+
+  const motor = OneShots.load(scene, [MOTOR]);
+  const latch = OneShots.load(scene, [LATCH]);
+  /** Where the hatch is drawn, 0 up to 1 down; undefined until a room has said. */
+  let shown: number | undefined;
+  let moving = false;
+  const turn = (at: number) => {
+    // Eased at both ends, as a ram starts and stops.
+    const eased = at * at * (3 - 2 * at);
+    hinge.rotation.x = Math.PI / 2 + (-HATCH_DOWN - Math.PI / 2) * eased;
+  };
+  turn(1);
+  return {
+    update(hatch, dt) {
+      if (hatch === undefined) return;
+      if (shown === undefined) shown = hatch;
+      const was = shown;
+      // A little faster than the room moves it, to catch up with it between its updates.
+      const step = (dt / HATCH_TIME) * 1.5;
+      shown = hatch > shown ? Math.min(hatch, shown + step) : Math.max(hatch, shown - step);
+      turn(shown);
+      const now = shown !== was;
+      if (now && !moving) {
+        void motor.then((sound) =>
+          sound?.play({ volume: SOUND.motor, at: hinge }, { rate: SOUND.motorRate, pitch: 0.04 }),
+        );
+      }
+      if (!now && moving && (shown === 0 || shown === 1)) {
+        void latch.then((sound) => sound?.play({ volume: SOUND.latch, at: hinge }, { rate: 0.7 }));
+      }
+      moving = now;
+    },
+  };
+}
+
+/** The hatch as a plain slab on its hinge, lying out behind it as the model does. */
+function addHatchStandIn(world: World, hinge: TransformNode): Mesh {
+  const { length, halfWidth } = TRUCK.hatch;
+  const slab = MeshBuilder.CreateBox(
+    "truck-stand-in",
+    { width: 2 * halfWidth + 0.16, height: 0.07, depth: length },
+    world.scene,
+  );
+  slab.position.set(0, -0.005, -length / 2);
+  slab.material = surfaceMaterial("truck-hatch", world.scene, new Color3(0.5, 0.5, 0.5), {
+    roughness: 0.6,
+  });
+  slab.parent = hinge;
+  slab.receiveShadows = true;
+  slab.isPickable = false;
+  world.shadows.addShadowCaster(slab);
+  return slab;
 }
 
 /** A box truck in plain colours, at the model's measures: what the collision is, drawn. */
 function addStandIn(world: World, holder: TransformNode): Mesh[] {
   const { scene } = world;
-  const { inside, ramp, bench, cab } = TRUCK;
+  const { inside, bench, cab } = TRUCK;
   const body = surfaceMaterial("truck-body", scene, new Color3(0.62, 0.62, 0.6), {
     roughness: 0.6,
   });
@@ -113,12 +191,6 @@ function addStandIn(world: World, holder: TransformNode): Mesh[] {
     [-inside.halfWidth, inside.ceiling, TRUCK.back],
     [inside.halfWidth, TRUCK.top, inside.front],
   );
-  // The roller door, rolled up into the top of the opening.
-  box(
-    dark,
-    [-inside.halfWidth, inside.ceiling - 0.3, TRUCK.back],
-    [inside.halfWidth, inside.ceiling, TRUCK.back + 0.25],
-  );
   // The benches.
   for (const side of [-1, 1]) {
     const [a, b] = [side * inside.halfWidth, side * (inside.halfWidth - bench.depth)];
@@ -145,19 +217,5 @@ function addStandIn(world: World, holder: TransformNode): Mesh[] {
       meshes.push(wheel);
     }
   }
-  // The ramp, a slab from the floor's edge down to the ground.
-  const run = TRUCK.back - ramp.foot;
-  const slab = MeshBuilder.CreateBox(
-    "truck-stand-in",
-    { width: 2 * ramp.halfWidth, height: 0.06, depth: Math.hypot(run, inside.floor) },
-    scene,
-  );
-  slab.position.set(0, inside.floor / 2 - 0.03, (TRUCK.back + ramp.foot) / 2);
-  slab.rotation.x = -Math.atan2(inside.floor, run);
-  slab.material = dark;
-  slab.parent = holder;
-  slab.receiveShadows = true;
-  slab.isPickable = false;
-  meshes.push(slab);
   return meshes;
 }

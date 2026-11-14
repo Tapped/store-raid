@@ -20,7 +20,7 @@ client/src/input.ts        Device: the keyboard and mouse, controllers (Gamepad 
 client/src/localPlayer.ts  LocalPlayer: the player at this screen: device + first-person camera + connection
 client/src/round.ts        roundLines(): the overlay at the top in a game: the phase, the clock, loot and quota, who we watch
 client/src/results.ts      showResults(): the results screen of a round: cleared or failed, the haul against the quota, the crew's fates
-client/src/truck.ts        addTruck(): the crew's truck where a level parks it, a box stand-in until its model loads, and its ceiling lamp
+client/src/truck.ts        addTruck(): the crew's truck where a level parks it, a box stand-in until its model loads, its ceiling lamp, and its hatch on a hinge
 client/src/tired.ts        TiredEffect: the screen closes in, drains of colour and heaves with breaths as stamina runs out
 client/src/tuning.ts       the registry of tunables: tunables() turns a module's constants into live settings; addSetting()
 client/src/tuningPanel.ts  the tuning panel, `__game.tune()`: every registered setting as a slider or checkbox
@@ -75,6 +75,7 @@ scripts/generate.ts        draws a generated level from a seed, or checks the ru
 scripts/village.ts         checks the village without a server: drawn ground against floors, ways through, a map (`--map`)
 scripts/villageWalk.ts     a bot walks the village from the truck to the church door (or over the bridge and back through the river)
 scripts/harbour.ts         the harbour's ground and what's in the way, from its model, into shared/harbour.json (`pnpm run harbour`)
+scripts/hatch.ts           a bot checks the truck's hatch in a game in the harbour: shut in the lobby, down for the raid, both control boxes
 scripts/harbourCheck.ts    checks the harbour level without a server: the warehouse's rules, and the walk from the truck in through the loading door and back
 scripts/unity-import/      prefabs from a Unity .unitypackage → textured .glb in assets/, through Blender
 scripts/models/            models made in code: one Python script per model, built in Blender (`pnpm run model`)
@@ -150,6 +151,15 @@ scripts/image.ts           images from Nano Banana Pro (Gemini) into assets/ (`p
   (`parkTruck()` in `shared/truck.ts`, at the model's measures, in quarter turns): its cargo space is
   the dock, with boxes for its walls, cab and benches, a floor and a ramp, and the places players
   start between the benches. The harbour has one; the village and the halls still have a bare dock.
+- **The hatch** closes the back of the truck and is its ramp: `state.hatch` goes from 0 (up, shut)
+  to 1 (down) in `HATCH_TIME`. Grab (E, RB) at a control box, one on the wall inside by the opening
+  and one outside on the same side (`ParkedTruck.hatch.panels`), sends it the other way, unless a
+  player stands where it comes down or on it. A level's own floors and boxes are with the hatch
+  down; `terrainOf(level, state.hatch >= 1)` (`shared/truck.ts`) is what movers get, on the server
+  and in prediction: until it's fully down there's no ramp and a wall across the back. In a game
+  it's up through the lobby, where the buttons do nothing, so the crew is shut in until the raid
+  starts and it comes down by itself; in the playground it starts down. The client turns the hatch's
+  own model on its hinge (`client/src/truck.ts`). `scripts/hatch.ts` checks all of it with a bot.
 
 ## Running
 
@@ -360,12 +370,17 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
   `client/src/detailMap.ts` tiles over the village models up close by material name (its `KINDS`). Meshes using `surface()` need UVs in meters ÷ `SURFACES[name].tile`,
   as `worldBox(…, SURFACES[name].tile)` makes; `upright` ones are a storey tall, v 0 on the floor.
 - **The truck** (`scripts/models/truck.py`, `models/level/truck.glb`): the crew's box truck, 2.5 m
-  wide and 8.2 m long, 11 m with its ramp. Its origin is on the ground at the middle of the cargo
-  box, the cab towards +z. The box's floor is 0.95 m up, 2.38 × 6.1 m and 2.2 m high inside, open at
-  the back (-z) with a ramp 2.1 m wide down to the ground at z -5.9. A bench along each wall seats
-  five a side, facing each other (seats 0.56 m apart from z 0.48 to 2.72, x ±0.97, 1.4 m up); the
-  back half of the floor is clear for loot. `glow-lamp` is the lamp on its ceiling. The constants at
-  the top of the script are what collision should be written from.
+  wide and 8.4 m long. Its origin is on the ground at the middle of the cargo box, the cab towards
+  +z. The box's floor is 0.95 m up, 2.38 × 6.1 m and 2.2 m high inside. A bench along each wall
+  seats five a side, facing each other (seats 0.56 m apart from z 0.48 to 2.72, x ±0.97, 1.4 m up);
+  the back half of the floor is clear for loot. `glow-lamp` is the lamp on its ceiling. Its back
+  (-z) is the hatch, a model of its own, `models/level/truck-hatch.glb` (`truck-hatch.py`, which
+  builds `hatch()` of `truck.py`): 2.3 m long, lying flat behind its origin, the hinge, deck up; the
+  game hinges it at y 0.92, z -3.145, upright when shut and tipped 22.6° down as the ramp, its foot
+  at z -5.27. Two control boxes on the -x side by the opening, inside and outside, each have a green
+  and a red button (`glow-button-down`, `glow-button-up`). The constants at the top of the script
+  are mirrored in `shared/truck.ts`: change them together, build both models, and run
+  `scripts/harbourCheck.ts` and `scripts/hatch.ts`.
 - `loadModel(scene, "models/props/crate.glb", placeholder)` shows the placeholder until the file
   exists, so use the final path from day one. Vite answers a missing asset with `200` and its HTML
   page, so check the content type, not only the status, when testing a URL with curl.

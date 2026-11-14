@@ -1,15 +1,17 @@
 import type { Box } from "./collision";
-import type { Floor, LevelBox } from "./level";
+import type { Floor, Level, LevelBox } from "./level";
+import type { Terrain } from "./movement";
 import type { Side } from "./tiles";
 
 /**
- * The crew's truck: a box truck with benches along the walls of its cargo space, open at the back,
- * with a ramp down to the ground. It's where a round starts and ends, and whatever lies in its
- * cargo space is the crew's loot.
+ * The crew's truck: a box truck with benches along the walls of its cargo space. Its back is a
+ * hatch hinged at the floor: up, it shuts the cargo space; down, it's the ramp to the ground. A
+ * control box inside and another outside work it. It's where a round starts and ends, and whatever
+ * lies in its cargo space is the crew's loot.
  *
- * The numbers are the model's (scripts/models/truck.py, models/level/truck.glb): meters from its
- * origin on the ground under the middle of the cargo box, the cab towards +z and the ramp towards
- * -z. Change them together.
+ * The numbers are the model's (scripts/models/truck.py, models/level/truck.glb and
+ * truck-hatch.glb): meters from its origin on the ground under the middle of the cargo box, the cab
+ * towards +z and the hatch towards -z. Change them together.
  */
 export const TRUCK = {
   /** The cargo box, outside: half its width, its ends and its top. */
@@ -19,8 +21,16 @@ export const TRUCK = {
   top: 3.3,
   /** The cargo space inside: half its width, its ends, its floor and ceiling. */
   inside: { halfWidth: 1.19, back: -3.07, front: 3.03, floor: 0.95, ceiling: 3.15 },
-  /** The ramp from the floor's edge down to the ground: half its width and where it lands. */
-  ramp: { halfWidth: 1.05, foot: -5.9 },
+  /**
+   * The hatch: where its hinge is, how long it is from there, half the width to walk on, and how
+   * far its underside is below the hinge's line where it meets the ground.
+   */
+  hatch: { hingeY: 0.92, hingeZ: -3.145, length: 2.3, halfWidth: 1.05, toe: 0.037 },
+  /** Its control boxes, both by the opening on the -x side: on the wall inside, on the skin outside. */
+  panels: [
+    { x: -1.11, y: 2.2, z: -2.6 },
+    { x: -1.33, y: 1.4, z: -2.7 },
+  ],
   /** A bench along each side wall, from the bulkhead back. */
   bench: { depth: 0.45, back: 0.1, front: 3.0, height: 0.45 },
   /** The cab, which nobody gets into: half its width, its front and its top. */
@@ -28,6 +38,15 @@ export const TRUCK = {
   /** The caged lamp on the ceiling. */
   lamp: { x: 0, y: 3.05, z: 1.6 },
 } as const;
+
+/** Seconds the hatch takes to go up or down. */
+export const HATCH_TIME = 3;
+
+/** How far the hatch is tipped below level when it's down, in radians. */
+export const HATCH_DOWN = Math.asin((TRUCK.hatch.hingeY - TRUCK.hatch.toe) / TRUCK.hatch.length);
+
+/** Where the hatch meets the ground when it's down. */
+const HATCH_FOOT = TRUCK.hatch.hingeZ - TRUCK.hatch.length * Math.cos(HATCH_DOWN);
 
 /** How thick the cargo box's walls are to walk into: more than the model's, so nobody slips through. */
 const WALL = 0.25;
@@ -45,8 +64,19 @@ export interface ParkedTruck {
   place: TruckPlace;
   /** What stops players: the chassis, walls, bulkhead and cab, the benches and the roof. */
   boxes: LevelBox[];
-  /** What they stand on: the cargo floor and the ramp. */
+  /** What they stand on: the cargo floor, and the hatch as a ramp, as it is when it's down. */
   floors: Floor[];
+  /** The hatch: see `terrainOf` for what a level is with it up. */
+  hatch: {
+    /** The ramp it makes when it's down: one of `floors`. */
+    ramp: Floor;
+    /** What closes the back while it isn't down. */
+    wall: LevelBox;
+    /** The ground it comes down on: nobody may stand here when it starts to move. */
+    footprint: Box;
+    /** Its control boxes, to reach for. */
+    panels: { x: number; y: number; z: number }[];
+  };
   /** The cargo space: loot in here counts, and so do the players in it when the truck leaves. */
   dock: Box;
   /** Where the index-th player stands when a round begins, between the benches. */
@@ -59,15 +89,18 @@ export interface ParkedTruck {
 
 const SIDES: readonly Side[] = ["n", "e", "s", "w"];
 
+/** Where a point of the truck's own space (x across, z towards the cab) is in the level. */
+export function placed(place: TruckPlace, x: number, z: number): { x: number; z: number } {
+  let [px, pz] = [x, z];
+  // A quarter turn clockwise takes the model's +z to +x.
+  for (let i = 0; i < place.turns; i++) [px, pz] = [pz, -px];
+  return { x: place.x + px, z: place.z + pz };
+}
+
 /** A truck parked at `place`, in the level's space. */
 export function parkTruck(place: TruckPlace): ParkedTruck {
-  const { inside, ramp, bench, cab } = TRUCK;
-  // A quarter turn clockwise takes the model's +z to +x.
-  const point = (x: number, z: number) => {
-    let [px, pz] = [x, z];
-    for (let i = 0; i < place.turns; i++) [px, pz] = [pz, -px];
-    return { x: place.x + px, z: place.z + pz };
-  };
+  const { inside, hatch, bench, cab } = TRUCK;
+  const point = (x: number, z: number) => placed(place, x, z);
   const box = (minX: number, maxX: number, minZ: number, maxZ: number): Box => {
     const a = point(minX, minZ);
     const b = point(maxX, maxZ);
@@ -116,6 +149,14 @@ export function parkTruck(place: TruckPlace): ParkedTruck {
       ),
     ),
   ];
+  const ramp: Floor = {
+    ...box(-hatch.halfWidth, hatch.halfWidth, HATCH_FOOT, TRUCK.back),
+    y: place.y,
+    thickness: 0.1,
+    kind: "ground",
+    // Up towards the cab, whichever way that faces.
+    rise: { toward: SIDES[place.turns], height: inside.floor },
+  };
   const floors: Floor[] = [
     {
       ...box(-inside.halfWidth, inside.halfWidth, TRUCK.back, inside.front),
@@ -123,14 +164,7 @@ export function parkTruck(place: TruckPlace): ParkedTruck {
       thickness: 0.1,
       kind: "ground",
     },
-    {
-      ...box(-ramp.halfWidth, ramp.halfWidth, ramp.foot, TRUCK.back),
-      y: place.y,
-      thickness: 0.1,
-      kind: "ground",
-      // Up towards the cab, whichever way that faces.
-      rise: { toward: SIDES[place.turns], height: inside.floor },
-    },
+    ramp,
   ];
   return {
     place,
@@ -144,6 +178,37 @@ export function parkTruck(place: TruckPlace): ParkedTruck {
       return { ...at, y: place.y + inside.floor };
     },
     lamp: { ...point(TRUCK.lamp.x, TRUCK.lamp.z), y: place.y + TRUCK.lamp.y },
-    rampFoot: point(0, ramp.foot),
+    rampFoot: point(0, HATCH_FOOT),
+    hatch: {
+      ramp,
+      wall: solid(-wide, wide, TRUCK.back - WALL, TRUCK.back, inside.floor - 0.05, TRUCK.top),
+      footprint: box(-TRUCK.halfWidth, TRUCK.halfWidth, HATCH_FOOT - 0.3, TRUCK.back),
+      panels: TRUCK.panels.map((panel) => ({ ...point(panel.x, panel.z), y: place.y + panel.y })),
+    },
   };
+}
+
+const shut = new WeakMap<object, Terrain>();
+
+/**
+ * What players walk on and bump into in a level, with its truck's hatch down or not. The level's
+ * own floors and boxes are with it down; while it's up or moving, the ramp is gone and the back is
+ * closed. The same arrays every time, so lookups in them stay quick (shared/spatial.ts).
+ */
+export function terrainOf(
+  level: Pick<Level, "boxes" | "floors" | "ladders" | "truck">,
+  hatchDown: boolean,
+): Terrain {
+  const hatch = level.truck?.hatch;
+  if (!hatch || hatchDown) return level;
+  let terrain = shut.get(level);
+  if (!terrain) {
+    terrain = {
+      boxes: [...level.boxes, hatch.wall],
+      floors: level.floors.filter((floor) => floor !== hatch.ramp),
+      ladders: level.ladders,
+    };
+    shut.set(level, terrain);
+  }
+  return terrain;
 }

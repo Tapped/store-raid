@@ -35,6 +35,7 @@ import {
   START_TIME,
 } from "../../../shared/modes";
 import { stepMover } from "../../../shared/movement";
+import { HATCH_TIME, terrainOf } from "../../../shared/truck";
 import { load, save } from "../persist";
 import { PhysicsWorld } from "../physics";
 import { GameState, Item, Mechanics, MoveInput, Player } from "./schema";
@@ -62,7 +63,7 @@ const MAX_CARRY_SLACK = 2;
 /** Items can be grabbed from this far below a player's feet to this far above them. */
 const GRAB_BELOW = 0.6;
 const GRAB_ABOVE = 2.2;
-/** How far from a dimmer a player can reach it, and how high their hand is. */
+/** How far from a dimmer or a control box a player can reach it, and how high their hand is. */
 const DIMMER_REACH = 1.6;
 const DIMMER_HAND = 1.3;
 /** Seconds a dropped item falls through players before it can be bumped into again. */
@@ -92,6 +93,7 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     quota: 0,
     cleared: false,
     light: 1,
+    hatch: 1,
     mechanics: new Mechanics({ ...MECHANICS }),
   });
 
@@ -109,6 +111,10 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
   /** Players holding the dimmer, and which way it fades: 1 brighter, -1 darker. */
   private readonly dimming = new Set<string>();
   private dimDirection = 1;
+  /** Where the truck's hatch is going: 0 up, 1 down. `state.hatch` follows it. */
+  private hatchGoal: 0 | 1 = 1;
+  /** What the hatch is to things, and its body: a ramp when it's down, else a wall. */
+  private hatchSolid: { as: "ramp" | "wall"; body: HP_BodyId } | undefined;
 
   private level!: Level;
   private physics!: PhysicsWorld;
@@ -132,6 +138,10 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     grab: (client: Client) => {
       const player = this.playing(client.sessionId);
       if (!player) return;
+      if (this.atHatchPanel(player)) {
+        this.pressHatch();
+        return;
+      }
       if (this.atDimmer(player)) {
         // Each push fades the other way from the last.
         this.dimDirection = -this.dimDirection;
@@ -191,7 +201,14 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
     this.state.quota = quotaFor(this.level);
     // The playground's lights are on the dimmer; a game's are dim.
     if (this.state.mode === "game") this.state.light = GAME_LIGHT;
-    this.physics = new PhysicsWorld(this.level);
+    // The hatch's ramp comes and goes: see `setHatch`.
+    const ramp = this.level.truck?.hatch.ramp;
+    this.physics = new PhysicsWorld({
+      boxes: this.level.boxes,
+      floors: this.level.floors.filter((floor) => floor !== ramp),
+    });
+    // A game begins in the lobby, shut in the truck; the playground's truck stands open.
+    this.setHatch(this.state.mode === "game" ? 0 : 1);
     for (const [i, { kind, x, y, z }] of this.level.items.entries()) {
       const id = `item${i}`;
       this.state.items.set(
@@ -368,6 +385,8 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       else if (this.state.timeLeft === 0) this.state.timeLeft = START_TIME;
       else if (runsOut()) {
         this.resetRound();
+        // There: the hatch comes down.
+        this.hatchGoal = 1;
         this.state.phase = "raid";
         this.state.timeLeft = RAID_SECONDS;
         console.log("The raid begins");
@@ -393,21 +412,71 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       }
     } else if (runsOut()) {
       this.resetRound();
+      this.setHatch(0);
       this.state.phase = "lobby";
       this.state.cleared = false;
     }
   }
 
-  /** Whether the player is in reach of the dimmer and looking at it: only in the playground. */
-  private atDimmer(player: Player): boolean {
-    const target = this.level.dimmer;
-    if (!target || this.state.mode !== "playground") return false;
+  /** Whether the player reaches one of the hatch's control boxes: in a raid, or the playground. */
+  private atHatchPanel(player: Player): boolean {
+    if (this.state.mode === "game" && this.state.phase !== "raid") return false;
+    return (this.level.truck?.hatch.panels ?? []).some((panel) => this.reaches(player, panel));
+  }
+
+  /** A button on a control box: the hatch goes the other way, unless someone stands in its way. */
+  private pressHatch() {
+    const hatch = this.level.truck?.hatch;
+    if (!hatch) return;
+    for (const [, player] of this.state.players) {
+      if (player.role === "playing" && inside(hatch.footprint, player.x, player.z)) return;
+    }
+    this.hatchGoal = this.hatchGoal === 1 ? 0 : 1;
+  }
+
+  /** Put the hatch somewhere at once: 0 up, 1 down. */
+  private setHatch(at: 0 | 1) {
+    this.hatchGoal = at;
+    this.state.hatch = at;
+    this.solidHatch();
+  }
+
+  /** Move the hatch towards where it's going. */
+  private moveHatch(dt: number) {
+    const from = this.state.hatch;
+    if (from === this.hatchGoal) return;
+    const step = dt / HATCH_TIME;
+    this.state.hatch = this.hatchGoal > from ? Math.min(1, from + step) : Math.max(0, from - step);
+    this.solidHatch();
+  }
+
+  /** Things lie on the hatch as a ramp only when it's down; otherwise it's a wall to them. */
+  private solidHatch() {
+    const hatch = this.level.truck?.hatch;
+    if (!hatch) return;
+    const as = this.state.hatch >= 1 ? "ramp" : "wall";
+    if (this.hatchSolid?.as === as) return;
+    if (this.hatchSolid) this.physics.removeBody(this.hatchSolid.body);
+    const body =
+      as === "ramp" ? this.physics.addFloor(hatch.ramp) : this.physics.addBox(hatch.wall);
+    this.hatchSolid = { as, body };
+  }
+
+  /** Whether the player is close to something on a wall, at the height of their hand, and looking at it. */
+  private reaches(player: Player, target: { x: number; y: number; z: number }): boolean {
     const dx = target.x - player.x;
     const dz = target.z - player.z;
     const distance = Math.hypot(dx, dz);
     if (distance > DIMMER_REACH || Math.abs(target.y - player.y - DIMMER_HAND) > 1) return false;
     const ahead = dx * Math.sin(player.yaw) + dz * Math.cos(player.yaw);
     return ahead >= distance * Math.cos(GRAB_CONE);
+  }
+
+  /** Whether the player is in reach of the dimmer and looking at it: only in the playground. */
+  private atDimmer(player: Player): boolean {
+    const target = this.level.dimmer;
+    if (!target || this.state.mode !== "playground") return false;
+    return this.reaches(player, target);
   }
 
   /** Fade the lights while someone holds the dimmer, turning round at fully on and off. */
@@ -632,13 +701,15 @@ export class GameRoom extends Room<{ state: GameState; input: MoveInput }> {
       if (!channel) continue;
       for (const input of channel) {
         if (player.role !== "playing") continue;
-        stepMover(player, input, ctx.dt, this.level, this.state.mechanics, canClimb(player));
+        const terrain = terrainOf(this.level, this.state.hatch >= 1);
+        stepMover(player, input, ctx.dt, terrain, this.state.mechanics, canClimb(player));
         player.yaw = input.yaw / YAW_SCALE;
       }
       if (player.role === "playing" && player.y < this.level.killY) this.fell(sessionId, player);
     }
 
     this.dim(ctx.dt);
+    this.moveHatch(ctx.dt);
 
     // 2. Push overlapping players apart (server-only; clients get corrected).
     const players = [...this.state.players.values()].filter((p) => p.role === "playing");

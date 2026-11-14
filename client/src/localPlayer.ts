@@ -20,6 +20,7 @@ import {
 import { MECHANICS, MECHANICS_KEYS, MECHANICS_RANGE, type Mechanics } from "../../shared/mechanics";
 import type { Mode } from "../../shared/modes";
 import { stepMover } from "../../shared/movement";
+import { terrainOf } from "../../shared/truck";
 import { Gait, playOwnFootstep } from "./footsteps";
 import { addCameraEffects } from "./graphics";
 import { FirstPersonHands, type Held } from "./hands";
@@ -213,7 +214,7 @@ export class LocalPlayer {
           predicted,
           command,
           ctx.dt,
-          this.world.level,
+          terrainOf(this.world.level, room.state.hatch >= 1),
           room.state.mechanics,
           canClimb(self),
         ),
@@ -269,7 +270,7 @@ export class LocalPlayer {
       this.watchNext(1);
       return;
     }
-    // Sent even with both hands full: it may be a dimmer they reach for.
+    // Sent even with both hands full: it may be a dimmer or the hatch's buttons they reach for.
     const hand = grabbingHand(self);
     if (hand) this.hands.reach(hand);
     this.session?.room.send("grab");
