@@ -16,6 +16,7 @@ import { occludeIn } from "./occlusion";
 import { PlayerView } from "./players";
 import { addPlayground } from "./playground";
 import { reloadOnNewBuild } from "./reload";
+import { showResults } from "./results";
 import { roundLines } from "./round";
 import { createWorld } from "./scene";
 import { addScreens } from "./screens";
@@ -190,6 +191,7 @@ function showStatus() {
         watched ? session.room.state.players.get(watched) : undefined,
       )
     : [];
+  showResults(session?.room.state, world.level.dock);
   const text = lines.join("\n");
   if (round.textContent !== text) round.textContent = text;
   round.style.display = text ? "" : "none";

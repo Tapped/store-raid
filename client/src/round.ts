@@ -21,7 +21,8 @@ const OUT: Record<Exclude<Role, "playing">, string> = {
 
 /**
  * The lines of the round overlay at the top of the screen, for a game: where the round is, the loot
- * against the quota, and what we can do about it. Nothing in the playground, which has no rounds.
+ * against the quota, and what we can do about it. Nothing in the playground, which has no rounds,
+ * nor while the results show.
  */
 export function roundLines(
   state: State,
@@ -56,12 +57,8 @@ export function roundLines(
       );
     }
   } else {
-    lines.push(state.cleared ? `Cleared! ${loot}` : `Failed · ${loot}`);
-    const lost = [...state.players.values()].filter((p) => p.role === "lost").length;
-    const dead = [...state.players.values()].filter((p) => p.role === "dead").length;
-    const losses = [dead && `${dead} dead`, lost && `${lost} left behind`].filter(Boolean);
-    if (losses.length) lines.push(losses.join(" · "));
-    lines.push(`Next round in ${Math.ceil(state.timeLeft)}`);
+    // The results have a screen of their own (results.ts).
+    return [];
   }
 
   if (self.role !== "playing") {
