@@ -15,5 +15,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["client", "server", "shared", "scripts"]
+  "include": ["client", "server", "shared", "scripts", "unreal/Tools"]
 }
