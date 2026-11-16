@@ -8,12 +8,13 @@
  *   server                only the headless dedicated server
  *   client [name]         a client rendering off screen on the GPU, joined to the server
  *   bot [name]            a client with no rendering, joined to the server
+ *   window [name]         a client in a window on the desktop, with sound, joined to the server
  *   exec <who> <command>  run a console command in a running process (`server`, `client`, `client2`, `bot`…)
  *   shot <who> [file]     save a screenshot of a running client (default node_modules/.cache/ue/<who>.png)
  *   ping <who>            whether a process is up, and its net mode and map
  *
  * Every process gets a dev port (see DevServer.h) for exec and shot: the server 8700, clients 8711 on,
- * bots 8731 on. The game listens on 7777. UE_ROOT points at the engine (the Angelscript fork's checkout).
+ * bots 8731 on, the window 8721. The game listens on 7777. UE_ROOT points at the engine (the Angelscript fork's checkout).
  * Logs go to unreal/Saved/Logs/<who>.log as well as this terminal, prefixed with who said it.
  */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
@@ -30,6 +31,7 @@ const GAME_PORT = Number(process.env.UE_GAME_PORT ?? 7777);
 const SERVER_DEV_PORT = 8700;
 const CLIENT_DEV_PORT = 8711;
 const BOT_DEV_PORT = 8731;
+const WINDOW_DEV_PORT = 8721;
 const MAP = process.env.UE_MAP ?? "/Engine/Maps/Entry";
 
 /** What script logs when a change needs a full reload that a running game can't do. */
@@ -39,6 +41,8 @@ interface Role {
   who: string;
   devPort: number;
   args: string[];
+  /** Shown on the desktop: not hidden like the off-screen processes. */
+  onScreen?: boolean;
 }
 
 function common(who: string, devPort: number): string[] {
@@ -90,6 +94,23 @@ function clientRole(index: number, name?: string): Role {
   };
 }
 
+function windowRole(name?: string): Role {
+  return {
+    who: "window",
+    devPort: WINDOW_DEV_PORT,
+    onScreen: true,
+    args: [
+      PROJECT,
+      `127.0.0.1:${GAME_PORT}?Name=${name ?? "window"}`,
+      "-game",
+      "-windowed",
+      "-ResX=1280",
+      "-ResY=720",
+      ...common("window", WINDOW_DEV_PORT),
+    ],
+  };
+}
+
 function botRole(index: number, name?: string): Role {
   const who = index === 0 ? "bot" : `bot${index + 1}`;
   const devPort = BOT_DEV_PORT + index;
@@ -109,8 +130,9 @@ function botRole(index: number, name?: string): Role {
 }
 
 function devPortOf(who: string): number {
+  if (who === "window") return WINDOW_DEV_PORT;
   const match = /^(server|client|bot)(\d*)$/.exec(who);
-  if (!match) throw new Error(`who is server, client, client2…, bot, bot2…: not ${who}`);
+  if (!match) throw new Error(`who is server, client, client2…, bot, bot2…, window: not ${who}`);
   const index = match[2] ? Number(match[2]) - 1 : 0;
   return match[1] === "server"
     ? SERVER_DEV_PORT
@@ -124,7 +146,7 @@ const COLOURS = [36, 33, 35, 32, 34, 31];
 /** Runs a role, prints its output prefixed, and calls onLine for every line. */
 function start(role: Role, colour: number, onLine: (line: string) => void): ChildProcess {
   mkdirSync(join(ROOT, "Saved/Logs"), { recursive: true });
-  const child = spawn(EDITOR, role.args, { cwd: ROOT, windowsHide: true });
+  const child = spawn(EDITOR, role.args, { cwd: ROOT, windowsHide: !role.onScreen });
   const prefix = `\x1b[${colour}m${role.who.padEnd(8)}\x1b[0m`;
   let rest = "";
   const take = (chunk: Buffer) => {
@@ -337,6 +359,9 @@ switch (command) {
     break;
   case "bot":
     single(botRole(0, rest[0]));
+    break;
+  case "window":
+    single(windowRole(rest[0]));
     break;
   case "test":
     test(rest[0] ?? "Angelscript.UnitTests");

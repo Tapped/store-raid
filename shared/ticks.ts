@@ -122,7 +122,52 @@ export function perches(level: Level): Perch[] {
       found.push({ x, y, z, box });
     }
   }
-  return found;
+  return found.length > 0 ? found : groundSpots(level);
+}
+
+/** Ticks with no racking to wait on start on the ground, this far from the truck and each other. */
+const GROUND_CLEAR = 20;
+const GROUND_SPACING = 15;
+
+/**
+ * Places on the ground for ticks to start, wandering, in a level without racking they could wait
+ * on (the village): spread over its floors, clear of the truck, of fittings' light and of what
+ * stands on them. Never empty in a level with a floor: at worst it's the spot furthest from the truck.
+ */
+function groundSpots(level: Level): Perch[] {
+  const found: Perch[] = [];
+  let furthest: Perch | undefined;
+  let furthestAway = -1;
+  for (const floor of level.floors) {
+    const columns = Math.max(1, Math.round((floor.maxX - floor.minX) / GROUND_SPACING));
+    const rows = Math.max(1, Math.round((floor.maxZ - floor.minZ) / GROUND_SPACING));
+    for (let column = 0; column < columns; column++) {
+      for (let row = 0; row < rows; row++) {
+        const x = floor.minX + ((column + 0.5) / columns) * (floor.maxX - floor.minX);
+        const z = floor.minZ + ((row + 0.5) / rows) * (floor.maxZ - floor.minZ);
+        const y = floorHeight(floor, x, z);
+        const blocked = near(level.boxes, x, z).some(
+          (box) =>
+            x > box.minX - TICK_RADIUS &&
+            x < box.maxX + TICK_RADIUS &&
+            z > box.minZ - TICK_RADIUS &&
+            z < box.maxZ + TICK_RADIUS &&
+            y < box.y + box.height &&
+            y + TICK_HEIGHT > box.y,
+        );
+        if (blocked || headroom(level, x, y, z) < TICK_HEIGHT) continue;
+        const away = level.dock ? distanceToBox(level.dock, x, z) : Number.POSITIVE_INFINITY;
+        if (away > furthestAway) {
+          furthestAway = away;
+          furthest = { x, y, z };
+        }
+        if (away < GROUND_CLEAR || litByFittings(level, x, y, z)) continue;
+        if (found.some((spot) => Math.hypot(spot.x - x, spot.z - z) < GROUND_SPACING)) continue;
+        found.push({ x, y, z });
+      }
+    }
+  }
+  return found.length > 0 || !furthest ? found : [furthest];
 }
 
 /**
