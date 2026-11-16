@@ -18,6 +18,15 @@ What has tripped up work here before:
 - `TeleportTo` isn't bound: use `SetActorLocation(Location, false, Hit, true)`, with the last
   argument as the teleport.
 - Dividing ints warns about truncation: use `Math::IntegerDivisionTrunc(A, B)`.
+- `GameState.PlayerArray` holds `TObjectPtr`s script can't take from it: go through
+  `Gameplay::GetNumPlayerStates()` and `Gameplay::GetPlayerState(Index)` (`AStoreRaidGameState.Players()`).
+- Not every engine RPC is callable: `AController::ClientSetRotation` isn't, so the controller has its
+  own `ClientFace`.
+- A member named like a namespace hides it inside the class (`Truck` the actor and `Truck::Park`):
+  name them apart.
+- UMG from script: subclass `UUserWidget`, `CreateWidget` it, build the tree with
+  `ConstructWidget(UTextBlock)` (a type is a value; `::StaticClass()` is deprecated) and
+  `SetRootWidget` before `AddToViewport` (`UI/Overlay.as`).
 - A running game only soft-reloads: changing function bodies applies in milliseconds, but a new
   `UPROPERTY` or `UFUNCTION` logs `Full Reload is required`, and `pnpm run ue dev` restarts every
   process (about 15 s).
@@ -62,6 +71,15 @@ What has tripped up work here before:
   never be stopped by them. So the player's capsule ignores `PhysicsBody`, and a second capsule
   (`Shover`) blocks only physics bodies and pushes them. Keep that split when adding things players
   bump into.
+- Anything players stand on that every machine builds for itself (not replicated) must be Static:
+  the character movement treats a movable floor as a moving base, the server's corrections then name
+  it, the client can't resolve it ("could not resolve the new relative movement base actor, ignoring
+  server correction") and drifts apart from the server for good. The truck's solids are instances on
+  static instanced meshes for this; only its drawn parts move.
+- Only those playing have a character: the dead, lost and waiting have a player state and a
+  controller but no pawn. Round state that outlives the pawn (role, ready, seat) is on
+  `AStoreRaidPlayerState`, which calls `ForceNetUpdate()` on every change, as the engine sends
+  player states only now and then.
 - A character's capsule rests about 2 cm above the floor: `sr.where` reports `y 0.02` standing on
   the ground, so checks compare heights within a tolerance.
 
@@ -73,4 +91,7 @@ What has tripped up work here before:
 - Bots stop within 0.15 m of a goal, so stand them where the thing to grab is clearly nearest, not
   at the edge of reach.
 - The small round a `-bot` walks has to stay clear of railings near the spawn points: it gives up
-  on a corner after 5 s.
+  on a corner after 5 s. It also gets a seated bot up: `sr.goal` (with nothing) stops it, before
+  anything that seats players.
+- Replicated round state reaches clients a moment after the server has it: wait for a client's
+  overlay or results to change rather than reading them right after the server's phase moves on.

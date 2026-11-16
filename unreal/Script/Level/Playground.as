@@ -7,7 +7,13 @@
 // a mezzanine along the north wall, and stairs on to a platform above that; stairs and a ladder go
 // down to a basement under the middle, where a TV shows static.
 //
-// Still to come with the `Level` type: its dock and entrance.
+// Unlike the web game's, the port's playground has the crew's truck, as the harbour has: parked in
+// the south-east corner against the south wall, the cab to the east and the ramp towards the hall,
+// with a way past its side to the plank across the pit, so the round, the hatch and the seats can be
+// tried before the harbour is ported. Its cargo space is the dock. With
+// `-mode=game` (or `sr.mode game` on the server) the playground runs rounds, as `?mode=game` did.
+//
+// Still to come with the `Level` type: its entrance.
 
 namespace Playground
 {
@@ -19,6 +25,16 @@ namespace Playground
 	const float WALL = 0.5;
 	/** A storey below the basement (-STOREY - 4): in the pit, and nowhere else. Falling below it respawns. */
 	const float KILL_Y = -7.0;
+
+	/** Where the truck stands: south of the pit, along the south wall, its cab to the east. */
+	FTruckPlace TruckPlace()
+	{
+		FTruckPlace Place;
+		Place.X = 10.5;
+		Place.Z = -10.6;
+		Place.Turns = 1;
+		return Place;
+	}
 
 	/** The dimmer for the lights, on the south wall behind where players start, facing north. */
 	const FVector DIMMER = FVector(-6, 1.3, -12);

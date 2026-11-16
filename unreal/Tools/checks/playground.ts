@@ -231,7 +231,9 @@ const lowest = await walk([
   [2, -2],
   [-2, -2],
   [-2, -10],
-  [10, -10],
+  // North of the truck, parked along the south wall.
+  [3, -8.6],
+  [10, -8.6],
   [10, -4.5],
   [10, 10],
 ]);

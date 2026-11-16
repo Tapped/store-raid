@@ -37,6 +37,14 @@ export interface Where {
   /** The kind of item in each hand, or "-". */
   left: string;
   right: string;
+  /** Who they are this round, whether they're ready, and the truck's seat they sit on (-1 standing). */
+  role: string;
+  ready: boolean;
+  seat: number;
+  /** Where they look, in degrees: 0 north, 90 east. */
+  yaw: number;
+  /** False while they have no character: out of the building, watching. */
+  inside: boolean;
 }
 
 export async function where(who: string): Promise<Where> {
@@ -50,6 +58,24 @@ export async function where(who: string): Promise<Where> {
   const values: Record<string, string> = {};
   for (let i = 0; i + 1 < words.length; i += 2) values[words[i]] = words[i + 1];
   const flag = (key: string) => values[key] === "true";
+  if (words[0] === "none") {
+    const role = words[words.indexOf("role") + 1];
+    const none = { x: NaN, y: NaN, z: NaN, speed: 0, stamina: 0, yaw: 0 };
+    return {
+      ...none,
+      winded: false,
+      running: false,
+      climbing: false,
+      falling: false,
+      goal: false,
+      left: "-",
+      right: "-",
+      role,
+      ready: false,
+      seat: -1,
+      inside: false,
+    };
+  }
   return {
     x: Number(values.x),
     y: Number(values.y),
@@ -63,6 +89,11 @@ export async function where(who: string): Promise<Where> {
     goal: flag("goal"),
     left: values.left,
     right: values.right,
+    role: values.role,
+    ready: flag("ready"),
+    seat: Number(values.seat),
+    yaw: Number(values.yaw),
+    inside: true,
   };
 }
 
@@ -107,4 +138,101 @@ export async function items(who: string): Promise<ItemState[]> {
         on: values.on === "true",
       };
     });
+}
+
+export const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** What sr.room says: the lamps, what the room is for, a game's round, the loot and the hatch. */
+export interface Room {
+  light: number;
+  mode: string;
+  phase: string;
+  time: number;
+  loot: number;
+  quota: number;
+  cleared: boolean;
+  hatch: number;
+}
+
+export async function room(who: string): Promise<Room> {
+  const text = await exec(who, "sr.room");
+  const line = text.split("\n").find((l) => l.includes("StoreRaid room:"));
+  if (!line) throw new Error(`${who} has no room yet: ${text.trim()}`);
+  const words = line
+    .slice(line.indexOf("StoreRaid room:") + 15)
+    .trim()
+    .split(/\s+/);
+  const values: Record<string, string> = {};
+  for (let i = 0; i + 1 < words.length; i += 2) values[words[i]] = words[i + 1];
+  return {
+    light: Number(values.light),
+    mode: values.mode,
+    phase: values.phase,
+    time: Number(values.time),
+    loot: Number(values.loot),
+    quota: Number(values.quota),
+    cleared: values.cleared === "true",
+    hatch: Number(values.hatch),
+  };
+}
+
+/** What a process's overlay says, a line each, and its results while they show. */
+export async function overlay(
+  who: string,
+): Promise<{ lines: string[]; results: string[]; watching?: string }> {
+  const text = (await exec(who, "sr.overlay")).split("\n");
+  const after = (marker: string) =>
+    text
+      .filter((l) => l.includes(marker))
+      .map((l) => l.slice(l.indexOf(marker) + marker.length).trim());
+  return {
+    lines: after("StoreRaid overlay:"),
+    results: after("StoreRaid results:"),
+    watching: after("StoreRaid watching:")[0],
+  };
+}
+
+/**
+ * Walks a player to a point, by sr.goal, for up to `seconds`: true if they got within 0.45 m of it.
+ * One that's stopped short (by a wall, a shut hatch) gives up once it hasn't moved for a second.
+ */
+export async function walk(who: string, [x, z]: [number, number], seconds = 20): Promise<boolean> {
+  await exec(who, `sr.goal ${x} ${z}`);
+  let last = await where(who);
+  let still = 0;
+  for (let t = 0; t < seconds * 10; t++) {
+    await wait(100);
+    const p = await where(who);
+    if (!p.goal) break;
+    still = Math.hypot(p.x - last.x, p.z - last.z) < 0.01 ? still + 1 : 0;
+    last = p;
+    if (still >= 10) break;
+  }
+  await exec(who, "sr.goal");
+  await wait(300);
+  const p = await where(who);
+  const short = Math.hypot(x - p.x, z - p.z);
+  if (short > 0.45) {
+    console.log(
+      `  ${who} stopped ${short.toFixed(2)} m short, at ${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}`,
+    );
+  }
+  return short <= 0.45;
+}
+
+/**
+ * A point of the playground's truck, in its own space (x across, z towards the cab, y up from the
+ * ground), in the level: it's parked at TRUCK with its cab east (Playground::TruckPlace).
+ */
+export function truckPoint(x: number, z: number, y = 0): [number, number, number] {
+  return [TRUCK.x + z, y, TRUCK.z - x];
+}
+
+/** Where the playground's truck stands, its cab east: Playground::TruckPlace. */
+export const TRUCK = { x: 10.5, z: -10.6 };
+
+/** Whether a point is in the playground's truck's cargo space: x -3.07..3.03 and z ±1.19 of its own. */
+export function inTruck(p: { x: number; z: number }): boolean {
+  const [x, z] = [p.x - TRUCK.x, p.z - TRUCK.z];
+  return x > -3.07 && x < 3.03 && Math.abs(z) < 1.19;
 }

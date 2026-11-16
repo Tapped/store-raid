@@ -1,7 +1,22 @@
 // The player at this screen: reads the Device every frame and turns it into looking and moving for
-// the character it possesses, which the movement component predicts and sends to the server.
+// the character it possesses, which the movement component predicts and sends to the server. Seated
+// in the truck, it moves nobody and asks to stand when the player moves. Out of the building (dead,
+// lost or waiting), it has no character and watches someone still playing, E / Q stepping through
+// them. It also keeps the round's overlay up to date on this screen.
 class AStoreRaidPlayerController : APlayerController
 {
+	/** The overlay on this screen; none on a bot, which draws nothing. */
+	UStoreRaidOverlay Hud;
+	bool bDrawsNothing = false;
+
+	/** Who we watch while out of the building, and which of those playing that is. */
+	AStoreRaidCharacter Watched;
+	int Watching = 0;
+
+	/** Whether we sat last frame, and whether we've asked to stand since. */
+	bool bWasSeated = false;
+	bool bAskedToStand = false;
+
 	/** What the sr.* console commands ask for, added to the devices: for bots and the dev tools. */
 	FControls Virtual;
 
@@ -23,6 +38,7 @@ class AStoreRaidPlayerController : APlayerController
 		TArray<FString> Switches;
 		FCommandLine::Parse(FCommandLine::Get(), Tokens, Switches);
 		bWander = Switches.Contains("bot");
+		bDrawsNothing = Switches.Contains("nullrhi");
 
 		// The player's name, from ?Name= on the address it joined (the engine's own login names
 		// players after the machine): what lasting state is kept by, as in the web game.
@@ -67,6 +83,29 @@ class AStoreRaidPlayerController : APlayerController
 			NextWanderCorner(Character);
 
 		FControls Controls = Device::ReadControls(this, DeltaSeconds);
+		Controls.bGrabPressed = Controls.bGrabPressed || Virtual.bGrabPressed;
+		Controls.bDropPressed = Controls.bDropPressed || Virtual.bDropPressed;
+		Controls.bReadyPressed = Controls.bReadyPressed || Virtual.bReadyPressed;
+		Virtual.bGrabPressed = false;
+		Virtual.bDropPressed = false;
+		Virtual.bReadyPressed = false;
+		UpdateOverlay();
+
+		AStoreRaidPlayerState Me = Cast<AStoreRaidPlayerState>(PlayerState);
+		if (Controls.bReadyPressed)
+			ServerReady();
+
+		// Out of the building: watch someone who's in it. E / Q (RB / LB) step through them.
+		if (Me != nullptr && !Me.IsPlaying())
+		{
+			if (Controls.bGrabPressed)
+				Watching++;
+			if (Controls.bDropPressed)
+				Watching--;
+			Watch();
+			return;
+		}
+		Watch();
 		Controls.Move += Virtual.Move;
 		if (bHasGoal && Character != nullptr)
 			Controls.Move += TowardGoal(Character);
@@ -94,8 +133,135 @@ class AStoreRaidPlayerController : APlayerController
 		Rotation.Roll = 0;
 		SetControlRotation(Rotation);
 
+		// Seated, nobody moves: moving or jumping asks to get up.
+		const bool bSeated = Me != nullptr && Me.Seat >= 0;
+		if (Character != nullptr)
+			Sit(Character, Me, bSeated);
+		if (bSeated)
+		{
+			if (!bAskedToStand && (Controls.Move.Size() > 0.2 || Controls.bJump))
+			{
+				bAskedToStand = true;
+				ServerStand();
+			}
+			return;
+		}
+		bAskedToStand = false;
 		if (Character != nullptr)
 			Character.Drive(Controls, Rotation.Yaw);
+	}
+
+	/**
+	 * Seated, the character doesn't move, the eye is lower, and on sitting down it looks the way the
+	 * seat faces, across the truck; standing, it walks. The server does the same: this keeps the
+	 * prediction with it.
+	 */
+	void Sit(AStoreRaidCharacter Character, AStoreRaidPlayerState Me, bool bSeated)
+	{
+		if (bSeated && Character.Movement.MovementMode != EMovementMode::MOVE_None)
+			Character.Movement.SetMovementMode(EMovementMode::MOVE_None);
+		if (!bSeated && Character.Movement.MovementMode == EMovementMode::MOVE_None)
+			Character.Movement.SetMovementMode(EMovementMode::MOVE_Walking);
+		Character.Camera.SetRelativeLocation(bSeated ? FVector(-SEATED_EYE_BACK, 0, SEATED_EYE) : FVector(0, 0, 75));
+		AStoreRaidGameState Room = Cast<AStoreRaidGameState>(Gameplay::GetGameState());
+		if (bSeated && !bWasSeated && Room != nullptr && Room.Parked.Seats.IsValidIndex(Me.Seat))
+			SetControlRotation(FRotator(0, Room.Parked.Seats[Me.Seat].Yaw, 0));
+		bWasSeated = bSeated;
+	}
+
+	/**
+	 * Out of the building, looks through the eyes of one of those still playing, whose character is
+	 * then hidden on this screen; in it, back to our own.
+	 */
+	void Watch()
+	{
+		TArray<AStoreRaidCharacter> Characters;
+		GetAllActorsOfClass(Characters);
+		AStoreRaidCharacter Was = Watched;
+		Watched = nullptr;
+		const AStoreRaidPlayerState Me = Cast<AStoreRaidPlayerState>(PlayerState);
+		if (Me != nullptr && !Me.IsPlaying() && ControlledPawn == nullptr)
+		{
+			// In the order they joined, so stepping through is steady.
+			TArray<AStoreRaidCharacter> Playing;
+			AStoreRaidGameState Room = Cast<AStoreRaidGameState>(Gameplay::GetGameState());
+			for (AStoreRaidPlayerState Player : Room.Players())
+			{
+				for (AStoreRaidCharacter Character : Characters)
+				{
+					if (Character.PlayerState == Player)
+						Playing.Add(Character);
+				}
+			}
+			if (Playing.Num() > 0)
+			{
+				Watching = ((Watching % Playing.Num()) + Playing.Num()) % Playing.Num();
+				Watched = Playing[Watching];
+			}
+		}
+		for (AStoreRaidCharacter Character : Characters)
+		{
+			const AStoreRaidPlayerState Player = Cast<AStoreRaidPlayerState>(Character.PlayerState);
+			Character.ShowSeated(Player != nullptr && Player.Seat >= 0);
+			const bool bWatched = Character == Watched;
+			Character.Body.SetHiddenInGame(bWatched);
+			// A watched character's camera looks where they do, as the server last said.
+			Character.Camera.bUsePawnControlRotation = !bWatched;
+			if (bWatched)
+				Character.Camera.SetWorldRotation(Character.GetBaseAimRotation());
+		}
+		if (Watched != nullptr && GetViewTarget() != Watched)
+			SetViewTargetWithBlend(Watched, 0);
+		if (Watched == nullptr && Was != nullptr && ControlledPawn != nullptr)
+			SetViewTargetWithBlend(ControlledPawn, 0);
+	}
+
+	/** The overlay on this screen, made the first time it's needed. */
+	void UpdateOverlay()
+	{
+		if (bDrawsNothing)
+			return;
+		if (Hud == nullptr)
+		{
+			Hud = Cast<UStoreRaidOverlay>(WidgetBlueprint::CreateWidget(UStoreRaidOverlay, this));
+			if (Hud == nullptr)
+				return;
+			Hud.Build();
+			Hud.AddToViewport();
+		}
+		Hud.Update(OverlayLines(), Cast<AStoreRaidGameState>(Gameplay::GetGameState()));
+	}
+
+	/** What the overlay at the top says on this screen now. */
+	TArray<FString> OverlayLines()
+	{
+		AStoreRaidGameState Room = Cast<AStoreRaidGameState>(Gameplay::GetGameState());
+		AStoreRaidPlayerState Me = Cast<AStoreRaidPlayerState>(PlayerState);
+		AStoreRaidCharacter Character = OwnCharacter();
+		const bool bInTruck = Room != nullptr && Character != nullptr && Room.InTruck(GameFeet(Character));
+		const FString WatchedName = Watched != nullptr && Watched.PlayerState != nullptr ? Watched.PlayerState.PlayerName : "";
+		return Overlay::RoundLines(Room, Me, bInTruck, WatchedName);
+	}
+
+	UFUNCTION(Server)
+	void ServerReady()
+	{
+		if (Mode() != nullptr)
+			Mode().Ready(Cast<AStoreRaidPlayerState>(PlayerState));
+	}
+
+	/** The server put our character somewhere: look the way it faces. */
+	UFUNCTION(Client)
+	void ClientFace(float Yaw)
+	{
+		SetControlRotation(FRotator(0, Yaw, 0));
+	}
+
+	UFUNCTION(Server)
+	void ServerStand()
+	{
+		if (OwnCharacter() != nullptr && Mode() != nullptr)
+			Mode().Stand(OwnCharacter());
 	}
 
 	AStoreRaidCharacter OwnCharacter() const
@@ -195,6 +361,19 @@ class AStoreRaidPlayerController : APlayerController
 
 /** How close sr.goal has to get to count as there, in meters. */
 const float GOAL_REACHED = 0.15;
+/**
+ * Where the eye is while seated, as SITTING in client/src/players.ts: 1.22 m over the feet (32 cm over
+ * the capsule's middle) and 30 cm behind them, over the seat.
+ */
+const float SEATED_EYE = 32.0;
+const float SEATED_EYE_BACK = 30.0;
+
+/** Where a character's feet are, in game meters. */
+FVector GameFeet(AStoreRaidCharacter Character)
+{
+	const FVector Feet = Character.ActorLocation - FVector(0, 0, 90);
+	return FVector(Feet.Y / 100, Feet.Z / 100, Feet.X / 100);
+}
 
 AStoreRaidPlayerController LocalController()
 {
@@ -257,7 +436,7 @@ const FConsoleCommand GrabCommand("sr.grab", n"OnGrabCommand");
 void OnGrabCommand(TArray<FString> Arguments)
 {
 	if (LocalController() != nullptr)
-		LocalController().ServerGrab();
+		LocalController().Virtual.bGrabPressed = true;
 }
 
 const FConsoleCommand ReleaseCommand("sr.release", n"OnReleaseCommand");
@@ -271,7 +450,39 @@ const FConsoleCommand DropCommand("sr.drop", n"OnDropCommand");
 void OnDropCommand(TArray<FString> Arguments)
 {
 	if (LocalController() != nullptr)
-		LocalController().ServerDrop();
+		LocalController().Virtual.bDropPressed = true;
+}
+
+// sr.ready: the ready button (R, X): ready to start in the lobby, wanting to leave in the truck.
+const FConsoleCommand ReadyCommand("sr.ready", n"OnReadyCommand");
+void OnReadyCommand(TArray<FString> Arguments)
+{
+	if (LocalController() != nullptr)
+		LocalController().Virtual.bReadyPressed = true;
+}
+
+// sr.stand: get up from a seat in the truck, as moving does.
+const FConsoleCommand StandCommand("sr.stand", n"OnStandCommand");
+void OnStandCommand(TArray<FString> Arguments)
+{
+	if (LocalController() != nullptr)
+		LocalController().ServerStand();
+}
+
+// sr.overlay: logs what this screen's overlay says, a line each, the results while they show, and
+// whom we watch.
+const FConsoleCommand OverlayCommand("sr.overlay", n"OnOverlayCommand");
+void OnOverlayCommand(TArray<FString> Arguments)
+{
+	AStoreRaidPlayerController Controller = LocalController();
+	if (Controller == nullptr)
+		return;
+	for (const FString& Line : Controller.OverlayLines())
+		Log(f"StoreRaid overlay: {Line}");
+	for (const FString& Line : Overlay::ResultLines(Cast<AStoreRaidGameState>(Gameplay::GetGameState())))
+		Log(f"StoreRaid results: {Line}");
+	if (Controller.Watched != nullptr && Controller.Watched.PlayerState != nullptr)
+		Log(f"StoreRaid watching: {Controller.Watched.PlayerState.PlayerName}");
 }
 
 const FConsoleCommand LightCommand("sr.light", n"OnLightCommand");
@@ -345,28 +556,43 @@ void OnWhereCommand(TArray<FString> Arguments)
 	if (Controller == nullptr)
 		return;
 	AStoreRaidCharacter Character = Cast<AStoreRaidCharacter>(Controller.ControlledPawn);
+	AStoreRaidPlayerState Me = Cast<AStoreRaidPlayerState>(Controller.PlayerState);
+	const FString Role = Me != nullptr ? Modes::RoleName(Me.Role) : "?";
+	const bool bReady = Me != nullptr && Me.bReady;
+	const int Seat = Me != nullptr ? Me.Seat : -1;
 	if (Character == nullptr)
 	{
-		Log("StoreRaid where: no character");
+		Log(f"StoreRaid where: none role {Role} ready {bReady} seat {Seat}");
 		return;
 	}
 	const FVector Feet = Character.ActorLocation - FVector(0, 0, 90);
 	UStoreRaidMovement Movement = Character.Movement;
-	Log(f"StoreRaid where: x {Feet.Y / 100 :.3} y {Feet.Z / 100 :.3} z {Feet.X / 100 :.3} speed {Movement.Velocity.Size2D() / 100 :.2} stamina {Movement.Stamina :.3} winded {Movement.bWinded} running {Movement.bRunning} climbing {Movement.IsClimbing()} falling {Movement.IsFalling()} goal {Controller.bHasGoal} left {HandName(Character.Left)} right {HandName(Character.Right)}");
+	const float Yaw = FRotator::NormalizeAxis(Controller.ControlRotation.Yaw);
+	Log(f"StoreRaid where: x {Feet.Y / 100 :.3} y {Feet.Z / 100 :.3} z {Feet.X / 100 :.3} speed {Movement.Velocity.Size2D() / 100 :.2} stamina {Movement.Stamina :.3} winded {Movement.bWinded} running {Movement.bRunning} climbing {Movement.IsClimbing()} falling {Movement.IsFalling()} goal {Controller.bHasGoal} left {HandName(Character.Left)} right {HandName(Character.Right)} role {Role} ready {bReady} seat {Seat} yaw {Yaw :.1}");
 }
 
-// sr.players: logs every player in this world, where their feet are (game meters) and how they move.
-// On the server, that's what the server says; on a client, what it predicts or was last told.
+// sr.players: logs every player in this world: who they are this round, and where their feet are
+// (game meters) and how fast they move, if they're in the building. On the server, that's what the
+// server says; on a client, what it predicts or was last told.
 const FConsoleCommand PlayersCommand("sr.players", n"OnPlayersCommand");
 void OnPlayersCommand(TArray<FString> Arguments)
 {
+	AStoreRaidGameState Room = Cast<AStoreRaidGameState>(Gameplay::GetGameState());
+	if (Room == nullptr)
+		return;
 	TArray<AStoreRaidCharacter> Characters;
 	GetAllActorsOfClass(Characters);
-	for (AStoreRaidCharacter Character : Characters)
+	for (AStoreRaidPlayerState Player : Room.Players())
 	{
-		const FVector Feet = Character.ActorLocation - FVector(0, 0, 90);
-		const FString Name = Character.PlayerState != nullptr ? Character.PlayerState.PlayerName : "?";
-		Log(f"StoreRaid player: {Name} x {Feet.Y / 100 :.2} y {Feet.Z / 100 :.2} z {Feet.X / 100 :.2} speed {Character.Movement.Velocity.Size2D() / 100 :.2}");
+		FString Line = f"StoreRaid player: {Player.PlayerName} role {Modes::RoleName(Player.Role)} ready {Player.bReady} seat {Player.Seat}";
+		for (AStoreRaidCharacter Character : Characters)
+		{
+			if (Character.PlayerState != Player)
+				continue;
+			const FVector Feet = GameFeet(Character);
+			Line += f" x {Feet.X :.2} y {Feet.Y :.2} z {Feet.Z :.2} speed {Character.Movement.Velocity.Size2D() / 100 :.2} moving {Character.Movement.MovementMode}";
+		}
+		Log(Line);
 	}
 }
 
@@ -375,11 +601,16 @@ FString HandName(const AStoreRaidItem Item)
 	return Item == nullptr ? "-" : Items::KindName(Item.Kind);
 }
 
-// sr.room: logs what the room says: for now how bright the lamps are, on the dimmer.
+// sr.room: logs what the room says: how bright the lamps are, what it's for, where a game's round is
+// and its clock, the loot in the truck against the quota, whether the last raid cleared it, and where
+// the truck's hatch is (0 up, 1 down).
 const FConsoleCommand RoomCommand("sr.room", n"OnRoomCommand");
 void OnRoomCommand(TArray<FString> Arguments)
 {
 	AStoreRaidGameState State = Cast<AStoreRaidGameState>(Gameplay::GetGameState());
-	if (State != nullptr)
-		Log(f"StoreRaid room: light {State.Light :.3}");
+	if (State == nullptr)
+		return;
+	const FString Mode = Modes::ModeName(State.Mode);
+	const FString Phase = Modes::PhaseName(State.Phase);
+	Log(f"StoreRaid room: light {State.Light :.3} mode {Mode} phase {Phase} time {State.TimeLeft :.2} loot {State.Loot} quota {State.Quota} cleared {State.bCleared} hatch {State.Hatch :.3}");
 }

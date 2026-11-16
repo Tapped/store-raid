@@ -74,20 +74,30 @@ class ALevelGeometry : AActor
 	/** A box from its extents in game meters. */
 	void AddBlock(float MinX, float MaxX, float MinY, float MaxY, float MinZ, float MaxZ)
 	{
-		const FVector Centre = World::ToWorld((MinX + MaxX) / 2, (MinY + MaxY) / 2, (MinZ + MaxZ) / 2);
-		// The engine's cube is 1 m on a side.
-		const FVector Scale(MaxZ - MinZ, MaxX - MinX, MaxY - MinY);
-		Blocks.AddInstance(FTransform(FRotator::ZeroRotator, Centre, Scale), true);
+		Blocks.AddInstance(Shapes::BoxTransform(MinX, MaxX, MinY, MaxY, MinZ, MaxZ), true);
 	}
 
 	void AddFloor(FFloor Floor)
 	{
 		if (!Floor.bHasRise)
-		{
 			AddBlock(Floor.MinX, Floor.MaxX, Floor.Y - Floor.Thickness, Floor.Y, Floor.MinZ, Floor.MaxZ);
-			return;
-		}
-		// A ramp: a slab whose top runs from Y at the low end to Y + RiseHeight at the side it rises towards.
+		else
+			Blocks.AddInstance(Shapes::RampTransform(Floor), true);
+	}
+}
+
+namespace Shapes
+{
+	/** The engine's cube (1 m on a side) as a box from its extents in game meters. */
+	FTransform BoxTransform(float MinX, float MaxX, float MinY, float MaxY, float MinZ, float MaxZ)
+	{
+		const FVector Centre = World::ToWorld((MinX + MaxX) / 2, (MinY + MaxY) / 2, (MinZ + MaxZ) / 2);
+		return FTransform(FRotator::ZeroRotator, Centre, FVector(MaxZ - MinZ, MaxX - MinX, MaxY - MinY));
+	}
+
+	/** The engine's cube as a ramp: a slab whose top runs from Y at the low end to Y + RiseHeight at the side it rises towards. */
+	FTransform RampTransform(FFloor Floor)
+	{
 		const bool bAlongZ = Floor.RiseToward == ESide::N || Floor.RiseToward == ESide::S;
 		const float Across = bAlongZ ? Floor.MaxZ - Floor.MinZ : Floor.MaxX - Floor.MinX;
 		const float Width = bAlongZ ? Floor.MaxX - Floor.MinX : Floor.MaxZ - Floor.MinZ;
@@ -99,6 +109,6 @@ class ALevelGeometry : AActor
 		const FRotator Rotation(Math::RadiansToDegrees(Slope), Toward.ToOrientationRotator().Yaw, 0);
 		const FVector TopMiddle = World::ToWorld((Floor.MinX + Floor.MaxX) / 2, Floor.Y + Floor.RiseHeight / 2, (Floor.MinZ + Floor.MaxZ) / 2);
 		const FVector Centre = TopMiddle - Rotation.UpVector * Floor.Thickness * 50.0;
-		Blocks.AddInstance(FTransform(Rotation, Centre, FVector(Length, Width, Floor.Thickness)), true);
+		return FTransform(Rotation, Centre, FVector(Length, Width, Floor.Thickness));
 	}
 }

@@ -54,10 +54,19 @@ running game can't take in place, or after one stops (script that doesn't compil
 `ping`. Console commands for bots and checks, in `Script/Player/StoreRaidPlayerController.as`:
 `sr.move`, `sr.look`, `sr.face <yaw> [pitch]`, `sr.run`, `sr.jump`, `sr.goal <x> <z>` (walk to a
 point), `sr.grab`, `sr.release`, `sr.drop`, `sr.light`, `sr.respawn`, `sr.reset` (every item back),
-`sr.where` (this player, as `key value` pairs), `sr.players`, `sr.items` and `sr.room`. A process
-started with `-bot` walks a small round until given a goal. `pnpm run ue check <name>` runs a check
-in `Tools/checks/` against running players: `playground` (a bot; the port of
-`scripts/playground.ts`) and `items` (a bot and a client; hands, the flashlight, the sofa).
+`sr.where` (this player, as `key value` pairs), `sr.players`, `sr.items` and `sr.room`; for the
+round, `sr.ready`, `sr.stand` and `sr.overlay` (what this screen's overlay and results say), and on
+the server `sr.mode playground|game`, `sr.clock <seconds>` (what's left of the phase) and
+`sr.raidtime <seconds>`. A process started with `-bot` walks a small round until given a goal.
+`pnpm run ue check <name>` runs a check in `Tools/checks/` against running players: `playground` (a
+bot; the port of `scripts/playground.ts`), `items` (a bot and a client; hands, the flashlight, the
+sofa), `hatch` (the port of `scripts/hatch.ts`) and `round` (a bot and a client: seats, ready, loot,
+leaving, results, death and watching, dawn). The last two make the room a game and put it back.
+
+**Modes:** the server's room is the playground unless `UE_MODE=game` (`-mode=game` on its command
+line), or `pnpm run ue exec server sr.mode game` on a running one; `UE_RAID_TIME=<seconds>` shortens
+raids. The port's playground has the crew's truck, which the web game's doesn't, parked along the
+south wall (`Playground::TruckPlace()`), so the round can be played before the harbour is ported.
 
 **Models:** `pnpm run ue import [filter…]` brings models from `../assets/models` into `Content/`, all
 of them or those whose path (`props/tv`, `village/`) contains a filter, in about a minute for all 117.
@@ -90,8 +99,14 @@ Each step ends playable, with the web game as the reference for how it should be
    `Script/Items/` (`Hands.as` is GameRoom's grab, drop and carry), the dimmer, and `check items`.
    Players' own capsules pass through items and a second capsule, the shover, pushes loose
    two-handed ones, as players were kinematic bodies in Havok.
-3. **The round.** Modes, phases, the truck with its hatch and seats, roles and spectating, loot and
+3. ✅ **The round.** Modes, phases, the truck with its hatch and seats, roles and spectating, loot and
    quota, the overlay and results (UMG from script).
+   Done in the playground, with the truck in it: `Script/Game/` (`Modes.as`, the player state with
+   role, ready and seat), `Level/Truck.as` (`parkTruck()`) and `TruckActor.as`, the round in
+   `StoreRaidGameMode.as`, `UI/Overlay.as`. Those out of the building have no character and watch
+   someone who has. Still to come: the seated character's clips (the stand-in sits as a short
+   cylinder), standing up taking `SITTING.standUpTime`, stamina put back when a round resets players
+   who keep their character, and the overlay's look beyond plain text.
 4. **The warehouse.** `generate.ts`, `furnish.ts`, `props.ts`, `levelCheck.ts` in script; the building
    drawn by room kind, dressing, fittings and their light.
 5. **Ticks and health.**

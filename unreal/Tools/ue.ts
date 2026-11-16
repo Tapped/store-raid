@@ -19,7 +19,9 @@
  *                         filter (`props/tv`, `village/`), else all. Content/ can be deleted and rebuilt
  *
  * Every process gets a dev port (see DevServer.h) for exec and shot: the server 8700, clients 8711 on,
- * bots 8731 on, the window 8721. The game listens on 7777. UE_ROOT points at the engine (the Angelscript fork's checkout).
+ * bots 8731 on, the window 8721. The game listens on 7777. UE_MODE=game makes the server's room a game
+ * (rounds in the truck) rather than the playground, and UE_RAID_TIME=<seconds> shortens its raids;
+ * `exec server sr.mode game` switches a running one. UE_ROOT points at the engine (the Angelscript fork's checkout).
  * Logs go to unreal/Saved/Logs/<who>.log as well as this terminal, prefixed with who said it.
  */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
@@ -78,6 +80,9 @@ function serverRole(): Role {
       "-nullrhi",
       "-nosound",
       `-port=${GAME_PORT}`,
+      // What the room is for, and how long a raid lasts (Script/StoreRaidGameMode.as).
+      ...(process.env.UE_MODE ? [`-mode=${process.env.UE_MODE}`] : []),
+      ...(process.env.UE_RAID_TIME ? [`-raidtime=${process.env.UE_RAID_TIME}`] : []),
       ...common("server", SERVER_DEV_PORT),
     ],
   };

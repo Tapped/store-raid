@@ -1,8 +1,66 @@
 // What every machine knows about the room: its mechanics, owned by the server and synced, which
-// every character's movement is given, so the server and each client's prediction agree. It also
-// builds the level on every machine from the same data, as shared/ did: for now the playground.
+// every character's movement is given, so the server and each client's prediction agree; what the
+// room is for and where a game's round is (GameState in server/src/rooms/schema.ts). It also builds
+// the level on every machine from the same data, as shared/ did: for now the playground, with the
+// crew's truck.
 class AStoreRaidGameState : AGameStateBase
 {
+	/** What the room is for: the playground has no rounds. */
+	UPROPERTY(Replicated)
+	EMode Mode = EMode::Playground;
+
+	/** Where a game's round is. */
+	UPROPERTY(Replicated)
+	EPhase Phase = EPhase::Lobby;
+
+	/** Seconds left: to the raid starting, to dawn, or to the next round. 0 while waiting in the lobby. */
+	UPROPERTY(Replicated)
+	float TimeLeft = 0;
+
+	/** What the loot in the truck sells for, and what it must reach to clear the level. */
+	UPROPERTY(Replicated)
+	int Loot = 0;
+	UPROPERTY(Replicated)
+	int Quota = 0;
+
+	/** After a raid: whether the truck held the quota. */
+	UPROPERTY(Replicated)
+	bool bCleared = false;
+
+	/** The truck's hatch, from 0 (up, shut) to 1 (down, the ramp): only at 1 can it be walked on. */
+	UPROPERTY(ReplicatedUsing = OnRep_Hatch)
+	float Hatch = 1.0;
+
+	/** The truck, as the level has it, and drawn on this machine. */
+	FParkedTruck Parked;
+	ATruck TruckActor;
+
+	UFUNCTION()
+	void OnRep_Hatch()
+	{
+		if (TruckActor != nullptr)
+			TruckActor.Show(Hatch);
+	}
+
+	/** Whether a point (game meters) is in the truck's cargo space. */
+	bool InTruck(FVector GamePoint) const
+	{
+		return Modes::Inside(Parked.Dock, GamePoint.X, GamePoint.Z);
+	}
+
+	/** The players in the room, as their player states. */
+	TArray<AStoreRaidPlayerState> Players() const
+	{
+		TArray<AStoreRaidPlayerState> Result;
+		// PlayerArray holds pointers script can't take, so through the gameplay statics, which read it.
+		for (int Index = 0; Index < Gameplay::GetNumPlayerStates(); Index++)
+		{
+			AStoreRaidPlayerState State = Cast<AStoreRaidPlayerState>(Gameplay::GetPlayerState(Index));
+			if (State != nullptr)
+				Result.Add(State);
+		}
+		return Result;
+	}
 	UPROPERTY(ReplicatedUsing = OnRep_Mechanics)
 	FStoreRaidMechanics Mechanics;
 
@@ -77,6 +135,13 @@ class AStoreRaidGameState : AGameStateBase
 
 		// The dimmer: a plate on the wall with a knob, for everyone to see.
 		Geometry.AddBlock(Playground::DIMMER.X - 0.12, Playground::DIMMER.X + 0.12, Playground::DIMMER.Y - 0.15, Playground::DIMMER.Y + 0.15, Playground::DIMMER.Z, Playground::DIMMER.Z + 0.04);
+
+		// The crew's truck, with its hatch where the room has it.
+		Parked = Truck::Park(Playground::TruckPlace());
+		TruckActor = Cast<ATruck>(SpawnActor(ATruck));
+		TruckActor.Build(Parked);
+		TruckActor.Show(Hatch);
+		Quota = Modes::QuotaFor(Playground::Items());
 
 		// Where players come in, as spawnPoint() in shared/level.ts: facing north; and the items.
 		if (HasAuthority())

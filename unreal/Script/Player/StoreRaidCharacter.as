@@ -56,6 +56,16 @@ class AStoreRaidCharacter : AStoreRaidCharacterBase
 			State.Prepare(this);
 	}
 
+	/**
+	 * The stand-in body sitting back on the bench behind the feet, as the seated clips sit, and
+	 * shorter; or standing over them.
+	 */
+	void ShowSeated(bool bSeated)
+	{
+		Body.SetRelativeLocation(bSeated ? FVector(-45, 0, -25) : FVector::ZeroVector);
+		Body.SetRelativeScale3D(FVector(0.6, 0.6, bSeated ? 1.3 : 1.8));
+	}
+
 	/** Called by the local controller every frame with what the player asks for and where they look. */
 	void Drive(FControls Controls, float Yaw)
 	{
