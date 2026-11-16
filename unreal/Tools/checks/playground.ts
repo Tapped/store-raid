@@ -1,13 +1,14 @@
 /**
- * Checks the playground with a bot, as scripts/playground.ts did in the web game: stairs up to the
- * mezzanine and on to the platform, the railing at its edge, stairs down to the basement, ladders up
- * and down, the plank across the pit, falling in respawns; and running until winded, and jumping.
- * Exits non-zero if any of that doesn't happen. Grabbing and the dimmer come with hands and items.
+ * Checks the playground with a bot, as scripts/playground.ts did in the web game: the dimmer fades
+ * the lights while held, stairs up to the mezzanine and on to the platform, the railing at its edge,
+ * stairs down to the basement, ladders up and down but not with full hands, the plank across the
+ * pit, falling in respawns; and running until winded, and jumping. Exits non-zero if any of that
+ * doesn't happen.
  *
  * Needs a server and a bot running (`pnpm run ue dev 0 1`, or `pnpm run ue server` and
  * `pnpm run ue bot`): `pnpm run ue check playground [who]`, `bot` by default.
  */
-import { exec, where } from "./dev";
+import { exec, light, where } from "./dev";
 
 const who = process.argv[2] ?? "bot";
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -53,6 +54,7 @@ await exec(who, "sr.goal");
 await exec(who, "sr.run 0");
 await exec(who, "sr.jump 0");
 await exec(who, "sr.respawn");
+await exec(who, "sr.reset");
 await wait(1000);
 const start = await self();
 check(
@@ -73,6 +75,26 @@ check(
   highest > 0.5 && near((await self()).y, 0),
   `a jump goes up ${highest.toFixed(2)} m and lands`,
 );
+
+// The dimmer, on the south wall at x = -6.
+await walk([[-6, -10.9]]);
+await exec(who, "sr.face 180");
+await wait(300);
+const before = await light(who);
+await exec(who, "sr.grab");
+await wait(1000);
+const during = await light(who);
+await exec(who, "sr.release");
+await wait(500);
+const after = await light(who);
+await wait(500);
+// Each push fades the other way from the last, and the room keeps its light between runs.
+check(
+  Math.abs(during - before) > 0.2,
+  `holding the dimmer fades the lights (${before} to ${during.toFixed(2)})`,
+);
+check((await light(who)) === after, "letting go leaves them there");
+await exec(who, "sr.face 0");
 
 // Running along the south side until winded, then resting.
 await walk([[-12, -10]]);
@@ -166,6 +188,43 @@ await push(2, 6, 4);
 }
 await push(2, 0, 3);
 check(near((await self()).y, 0), `and back down (${await at()})`);
+
+// The box from the west wall, in both arms, is too much to climb with. Stopping well inside REACH of
+// it: right at the edge, a grab works or not by rounding.
+await walk([
+  [2, -2],
+  [-2, -2],
+  [-2, -10],
+  [-12.5, -10],
+  [-12.5, -6],
+]);
+await exec(who, "sr.face 270");
+await wait(300);
+await exec(who, "sr.grab");
+await wait(500);
+{
+  const p = await self();
+  check(
+    p.left === "box" && p.right === "box",
+    `the bot picks up the box in both arms (${p.left}, ${p.right})`,
+  );
+}
+await walk([
+  [-12.5, -10],
+  [-2, -10],
+  [-2, -2],
+  [2, -2],
+]);
+await push(2, 6, 3);
+{
+  const p = await self();
+  check(near(p.y, 0) && p.z < 4, `with both hands full it can't climb (${await at()})`);
+}
+await exec(who, "sr.drop");
+await wait(300);
+await push(2, 6, 4);
+check(near((await self()).y, 3), `with them empty it can (${await at()})`);
+await push(2, 0, 3);
 
 // Across the pit on the plank at x = 10, from z -4 to 8.
 const lowest = await walk([

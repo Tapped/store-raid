@@ -9,6 +9,21 @@ class AStoreRaidGameState : AGameStateBase
 	/** The level as built on this machine. */
 	ALevelGeometry Geometry;
 
+	/** How bright the playground's lamps are, 0 to 1: on the dimmer. */
+	UPROPERTY(ReplicatedUsing = OnRep_Light)
+	float Light = 1.0;
+
+	/** The lamps and how bright each is at full, to dim them by Light. */
+	TArray<UPointLightComponent> Lamps;
+	TArray<float> LampLumens;
+
+	UFUNCTION()
+	void OnRep_Light()
+	{
+		for (int Index = 0; Index < Lamps.Num(); Index++)
+			Lamps[Index].SetIntensity(LampLumens[Index] * Light);
+	}
+
 	UFUNCTION(BlueprintOverride)
 	void BeginPlay()
 	{
@@ -60,9 +75,19 @@ class AStoreRaidGameState : AGameStateBase
 		if (!System::IsDedicatedServer())
 			AddHallLights();
 
-		// Where players come in, as spawnPoint() in shared/level.ts: facing north.
+		// The dimmer: a plate on the wall with a knob, for everyone to see.
+		Geometry.AddBlock(Playground::DIMMER.X - 0.12, Playground::DIMMER.X + 0.12, Playground::DIMMER.Y - 0.15, Playground::DIMMER.Y + 0.15, Playground::DIMMER.Z, Playground::DIMMER.Z + 0.04);
+
+		// Where players come in, as spawnPoint() in shared/level.ts: facing north; and the items.
 		if (HasAuthority())
 		{
+			for (const FItemSpawn& Spawn : Playground::Items())
+			{
+				AStoreRaidItem Item = Cast<AStoreRaidItem>(SpawnActor(AStoreRaidItem, World::ToWorld(Spawn.X, Spawn.Y, Spawn.Z)));
+				Item.Kind = Spawn.Kind;
+				Item.Spawn = FVector(Spawn.X, Spawn.Y, Spawn.Z);
+				Item.OnRep_Kind();
+			}
 			for (int Index = 0; Index < 8; Index++)
 			{
 				const FVector2D Spawn = Playground::SpawnPoint(Index);
@@ -89,12 +114,14 @@ class AStoreRaidGameState : AGameStateBase
 	void AddLamp(float X, float Y, float Z, float Lumens, float Radius)
 	{
 		APointLight Lamp = Cast<APointLight>(SpawnActor(APointLight, World::ToWorld(X, Y, Z)));
-		UPointLightComponent Light = Lamp.PointLightComponent;
-		Light.SetMobility(EComponentMobility::Movable);
-		Light.SetIntensityUnits(ELightUnits::Lumens);
-		Light.SetIntensity(Lumens);
-		Light.SetAttenuationRadius(Radius);
-		Light.SetLightColor(FLinearColor(1.0, 0.9, 0.75));
-		Light.SetCastShadows(true);
+		UPointLightComponent Bulb = Lamp.PointLightComponent;
+		Bulb.SetMobility(EComponentMobility::Movable);
+		Bulb.SetIntensityUnits(ELightUnits::Lumens);
+		Bulb.SetIntensity(Lumens);
+		Bulb.SetAttenuationRadius(Radius);
+		Bulb.SetLightColor(FLinearColor(1.0, 0.9, 0.75));
+		Bulb.SetCastShadows(true);
+		Lamps.Add(Bulb);
+		LampLumens.Add(Lumens);
 	}
 }

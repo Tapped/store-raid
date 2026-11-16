@@ -34,6 +34,9 @@ export interface Where {
   climbing: boolean;
   falling: boolean;
   goal: boolean;
+  /** The kind of item in each hand, or "-". */
+  left: string;
+  right: string;
 }
 
 export async function where(who: string): Promise<Where> {
@@ -58,5 +61,50 @@ export async function where(who: string): Promise<Where> {
     climbing: flag("climbing"),
     falling: flag("falling"),
     goal: flag("goal"),
+    left: values.left,
+    right: values.right,
   };
+}
+
+/** How bright the room's lamps are, 0 to 1, as a process knows it. */
+export async function light(who: string): Promise<number> {
+  const text = await exec(who, "sr.room");
+  const match = /StoreRaid room: light ([\d.]+)/.exec(text);
+  if (!match) throw new Error(`${who} has no room yet: ${text.trim()}`);
+  return Number(match[1]);
+}
+
+/** What sr.items says of every item: its kind, where it is, who holds it and whether it's on. */
+export interface ItemState {
+  name: string;
+  kind: string;
+  x: number;
+  y: number;
+  z: number;
+  held: string[];
+  on: boolean;
+}
+
+export async function items(who: string): Promise<ItemState[]> {
+  const text = await exec(who, "sr.items");
+  return text
+    .split("\n")
+    .filter((line) => line.includes("StoreRaid item:"))
+    .map((line) => {
+      const [name, ...words] = line
+        .slice(line.indexOf("StoreRaid item:") + 15)
+        .trim()
+        .split(/\s+/);
+      const values: Record<string, string> = {};
+      for (let i = 0; i + 1 < words.length; i += 2) values[words[i]] = words[i + 1];
+      return {
+        name,
+        kind: values.kind,
+        x: Number(values.x),
+        y: Number(values.y),
+        z: Number(values.z),
+        held: values.held === "-" ? [] : values.held.split(","),
+        on: values.on === "true",
+      };
+    });
 }

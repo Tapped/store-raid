@@ -13,6 +13,7 @@ struct FControls
 	bool bRun = false;
 	bool bJump = false;
 	bool bGrabPressed = false;
+	bool bGrabReleased = false;
 	bool bDropPressed = false;
 	bool bLightPressed = false;
 	bool bReadyPressed = false;
@@ -60,6 +61,7 @@ namespace Device
 		Controls.bRun = Controller.IsInputKeyDown(EKeys::LeftShift) || Controller.IsInputKeyDown(EKeys::Gamepad_LeftThumbstick);
 		Controls.bJump = Controller.IsInputKeyDown(EKeys::SpaceBar) || Controller.IsInputKeyDown(EKeys::Gamepad_FaceButton_Bottom);
 		Controls.bGrabPressed = Controller.WasInputKeyJustPressed(EKeys::E) || Controller.WasInputKeyJustPressed(EKeys::Gamepad_RightShoulder);
+		Controls.bGrabReleased = Controller.WasInputKeyJustReleased(EKeys::E) || Controller.WasInputKeyJustReleased(EKeys::Gamepad_RightShoulder);
 		Controls.bDropPressed = Controller.WasInputKeyJustPressed(EKeys::Q) || Controller.WasInputKeyJustPressed(EKeys::Gamepad_LeftShoulder);
 		Controls.bLightPressed = Controller.WasInputKeyJustPressed(EKeys::F) || Controller.WasInputKeyJustPressed(EKeys::Gamepad_FaceButton_Top);
 		Controls.bReadyPressed = Controller.WasInputKeyJustPressed(EKeys::R) || Controller.WasInputKeyJustPressed(EKeys::Gamepad_FaceButton_Left);

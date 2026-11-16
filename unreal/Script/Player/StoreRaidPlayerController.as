@@ -77,6 +77,16 @@ class AStoreRaidPlayerController : APlayerController
 		Controls.bRun = Controls.bRun || Virtual.bRun;
 		Controls.bJump = Controls.bJump || Virtual.bJump;
 
+		// Grab (E, RB), drop (Q, LB) and the flashlight (F, Y): messages to the server, as in the web game.
+		if (Controls.bGrabPressed)
+			ServerGrab();
+		if (Controls.bGrabReleased)
+			ServerRelease();
+		if (Controls.bDropPressed)
+			ServerDrop();
+		if (Controls.bLightPressed)
+			ServerLight();
+
 		// Look: yaw all round, pitch short of straight up and down.
 		FRotator Rotation = ControlRotation;
 		Rotation.Yaw = Rotation.Yaw + Controls.Look.X;
@@ -86,6 +96,51 @@ class AStoreRaidPlayerController : APlayerController
 
 		if (Character != nullptr)
 			Character.Drive(Controls, Rotation.Yaw);
+	}
+
+	AStoreRaidCharacter OwnCharacter() const
+	{
+		return Cast<AStoreRaidCharacter>(ControlledPawn);
+	}
+
+	AStoreRaidGameMode Mode() const
+	{
+		return Cast<AStoreRaidGameMode>(Gameplay::GetGameMode());
+	}
+
+	UFUNCTION(Server)
+	void ServerGrab()
+	{
+		if (OwnCharacter() != nullptr && Mode() != nullptr)
+			Mode().Grab(OwnCharacter());
+	}
+
+	UFUNCTION(Server)
+	void ServerRelease()
+	{
+		if (OwnCharacter() != nullptr && Mode() != nullptr)
+			Mode().Release(OwnCharacter());
+	}
+
+	UFUNCTION(Server)
+	void ServerDrop()
+	{
+		if (OwnCharacter() != nullptr)
+			Hands::DropLast(OwnCharacter());
+	}
+
+	/** Puts every item back where it started (for the checks; a raid starting will do the same). */
+	UFUNCTION(Server)
+	void ServerReset()
+	{
+		Hands::PutAllBack();
+	}
+
+	UFUNCTION(Server)
+	void ServerLight()
+	{
+		if (OwnCharacter() != nullptr)
+			Hands::Light(OwnCharacter());
 	}
 
 	/** Asks the server to put this player back where they came in, as falling out of the level does. */
@@ -197,6 +252,78 @@ void OnGoalCommand(TArray<FString> Arguments)
 		Controller.Goal = FVector2D(String::Conv_StringToDouble(Arguments[0]), String::Conv_StringToDouble(Arguments[1]));
 }
 
+// sr.grab, sr.release, sr.drop and sr.light: the grab button down and up, drop, and the flashlight.
+const FConsoleCommand GrabCommand("sr.grab", n"OnGrabCommand");
+void OnGrabCommand(TArray<FString> Arguments)
+{
+	if (LocalController() != nullptr)
+		LocalController().ServerGrab();
+}
+
+const FConsoleCommand ReleaseCommand("sr.release", n"OnReleaseCommand");
+void OnReleaseCommand(TArray<FString> Arguments)
+{
+	if (LocalController() != nullptr)
+		LocalController().ServerRelease();
+}
+
+const FConsoleCommand DropCommand("sr.drop", n"OnDropCommand");
+void OnDropCommand(TArray<FString> Arguments)
+{
+	if (LocalController() != nullptr)
+		LocalController().ServerDrop();
+}
+
+const FConsoleCommand LightCommand("sr.light", n"OnLightCommand");
+void OnLightCommand(TArray<FString> Arguments)
+{
+	if (LocalController() != nullptr)
+		LocalController().ServerLight();
+}
+
+// sr.reset: every item back where it started, switched off, out of everyone's hands.
+const FConsoleCommand ResetCommand("sr.reset", n"OnResetCommand");
+void OnResetCommand(TArray<FString> Arguments)
+{
+	if (LocalController() != nullptr)
+		LocalController().ServerReset();
+}
+
+// sr.face <degrees> [pitch]: look this way, 0 north, 90 east, and up (positive) or down.
+const FConsoleCommand FaceCommand("sr.face", n"OnFaceCommand");
+void OnFaceCommand(TArray<FString> Arguments)
+{
+	AStoreRaidPlayerController Controller = LocalController();
+	if (Controller == nullptr || Arguments.Num() < 1)
+		return;
+	const float Pitch = Arguments.Num() >= 2 ? String::Conv_StringToDouble(Arguments[1]) : 0.0;
+	Controller.SetControlRotation(FRotator(Pitch, String::Conv_StringToDouble(Arguments[0]), 0));
+}
+
+// sr.items: logs every item in this world: its kind, where it is (game meters), who holds it, and
+// whether it's on. On a client, as far as it knows.
+const FConsoleCommand ItemsCommand("sr.items", n"OnItemsCommand");
+void OnItemsCommand(TArray<FString> Arguments)
+{
+	TArray<AStoreRaidItem> All;
+	GetAllActorsOfClass(All);
+	TArray<AStoreRaidCharacter> Characters;
+	GetAllActorsOfClass(Characters);
+	for (AStoreRaidItem Item : All)
+	{
+		const FVector At = Item.GamePosition();
+		FString Holders = "";
+		for (AStoreRaidCharacter Character : Characters)
+		{
+			if ((Character.Left == Item || Character.Right == Item) && Character.PlayerState != nullptr)
+				Holders += (Holders.IsEmpty() ? "" : ",") + Character.PlayerState.PlayerName;
+		}
+		if (Holders.IsEmpty())
+			Holders = "-";
+		Log(f"StoreRaid item: {Item.Name} kind {Items::KindName(Item.Kind)} x {At.X :.2} y {At.Y :.2} z {At.Z :.2} held {Holders} on {Item.bOn}");
+	}
+}
+
 // sr.respawn: back where this player came in, by the server (for the checks).
 const FConsoleCommand RespawnCommand("sr.respawn", n"OnRespawnCommand");
 void OnRespawnCommand(TArray<FString> Arguments)
@@ -225,7 +352,7 @@ void OnWhereCommand(TArray<FString> Arguments)
 	}
 	const FVector Feet = Character.ActorLocation - FVector(0, 0, 90);
 	UStoreRaidMovement Movement = Character.Movement;
-	Log(f"StoreRaid where: x {Feet.Y / 100 :.3} y {Feet.Z / 100 :.3} z {Feet.X / 100 :.3} speed {Movement.Velocity.Size2D() / 100 :.2} stamina {Movement.Stamina :.3} winded {Movement.bWinded} running {Movement.bRunning} climbing {Movement.IsClimbing()} falling {Movement.IsFalling()} goal {Controller.bHasGoal}");
+	Log(f"StoreRaid where: x {Feet.Y / 100 :.3} y {Feet.Z / 100 :.3} z {Feet.X / 100 :.3} speed {Movement.Velocity.Size2D() / 100 :.2} stamina {Movement.Stamina :.3} winded {Movement.bWinded} running {Movement.bRunning} climbing {Movement.IsClimbing()} falling {Movement.IsFalling()} goal {Controller.bHasGoal} left {HandName(Character.Left)} right {HandName(Character.Right)}");
 }
 
 // sr.players: logs every player in this world, where their feet are (game meters) and how they move.
@@ -241,4 +368,18 @@ void OnPlayersCommand(TArray<FString> Arguments)
 		const FString Name = Character.PlayerState != nullptr ? Character.PlayerState.PlayerName : "?";
 		Log(f"StoreRaid player: {Name} x {Feet.Y / 100 :.2} y {Feet.Z / 100 :.2} z {Feet.X / 100 :.2} speed {Character.Movement.Velocity.Size2D() / 100 :.2}");
 	}
+}
+
+FString HandName(const AStoreRaidItem Item)
+{
+	return Item == nullptr ? "-" : Items::KindName(Item.Kind);
+}
+
+// sr.room: logs what the room says: for now how bright the lamps are, on the dimmer.
+const FConsoleCommand RoomCommand("sr.room", n"OnRoomCommand");
+void OnRoomCommand(TArray<FString> Arguments)
+{
+	AStoreRaidGameState State = Cast<AStoreRaidGameState>(Gameplay::GetGameState());
+	if (State != nullptr)
+		Log(f"StoreRaid room: light {State.Light :.3}");
 }

@@ -52,10 +52,12 @@ headless server with off-screen clients and bots, restarting them for C++ change
 running game can't take in place, or after one stops (script that doesn't compile at startup exits);
 `window [name]` joins in a window on the desktop. Every process has a dev port for `exec`, `shot` and
 `ping`. Console commands for bots and checks, in `Script/Player/StoreRaidPlayerController.as`:
-`sr.move`, `sr.look`, `sr.run`, `sr.jump`, `sr.goal <x> <z>` (walk to a point), `sr.respawn`,
-`sr.where` (this player, as `key value` pairs) and `sr.players` (everyone). A process started with
-`-bot` walks a small round until given a goal. `pnpm run ue check playground` runs
-`Tools/checks/playground.ts` against a running bot, the port of `scripts/playground.ts`.
+`sr.move`, `sr.look`, `sr.face <yaw> [pitch]`, `sr.run`, `sr.jump`, `sr.goal <x> <z>` (walk to a
+point), `sr.grab`, `sr.release`, `sr.drop`, `sr.light`, `sr.respawn`, `sr.reset` (every item back),
+`sr.where` (this player, as `key value` pairs), `sr.players`, `sr.items` and `sr.room`. A process
+started with `-bot` walks a small round until given a goal. `pnpm run ue check <name>` runs a check
+in `Tools/checks/` against running players: `playground` (a bot; the port of
+`scripts/playground.ts`) and `items` (a bot and a client; hands, the flashlight, the sofa).
 
 ## Order
 
@@ -68,10 +70,13 @@ Each step ends playable, with the web game as the reference for how it should be
    on a predicted movement component: walk, run and stamina, jump, step up and down, stairs' pace,
    ladders, falling and respawn. Two players see each other through a dedicated server.
    Done but for the look: the hall is the engine's cubes, lit by lamps under the roof, until models
-   are imported. `check playground` passes all of `scripts/playground.ts` but the dimmer and
-   climbing with full hands, which come with step 2.
+   are imported. `check playground` passes all of `scripts/playground.ts`.
 2. **Hands and items.** Grab and drop, one- and two-handed, two-person carrying, physics items on the
    server (Chaos instead of Havok, replicated), flashlights, first-person hands.
+   Done but for the first-person hands, and items are boxes of their size until models are imported:
+   `Script/Items/` (`Hands.as` is GameRoom's grab, drop and carry), the dimmer, and `check items`.
+   Players' own capsules pass through items and a second capsule, the shover, pushes loose
+   two-handed ones, as players were kinematic bodies in Havok.
 3. **The round.** Modes, phases, the truck with its hatch and seats, roles and spectating, loot and
    quota, the overlay and results (UMG from script).
 4. **The warehouse.** `generate.ts`, `furnish.ts`, `props.ts`, `levelCheck.ts` in script; the building

@@ -7,7 +7,7 @@
 // a mezzanine along the north wall, and stairs on to a platform above that; stairs and a ladder go
 // down to a basement under the middle, where a TV shows static.
 //
-// Still to come with the `Level` type: its items, dimmer, dock and entrance.
+// Still to come with the `Level` type: its dock and entrance.
 
 namespace Playground
 {
@@ -19,6 +19,24 @@ namespace Playground
 	const float WALL = 0.5;
 	/** A storey below the basement (-STOREY - 4): in the pit, and nowhere else. Falling below it respawns. */
 	const float KILL_Y = -7.0;
+
+	/** The dimmer for the lights, on the south wall behind where players start, facing north. */
+	const FVector DIMMER = FVector(-6, 1.3, -12);
+
+	/** The items, waiting in a row along the west wall, and a box up on the mezzanine to carry down. */
+	TArray<FItemSpawn> Items()
+	{
+		TArray<FItemSpawn> Result;
+		Result.Add(Level::MakeItemSpawn(EItemKind::Phone, -14, 0.1, -9));
+		Result.Add(Level::MakeItemSpawn(EItemKind::Phone, -14, 0.1, -8));
+		Result.Add(Level::MakeItemSpawn(EItemKind::Flashlight, -14, 0.05, -10));
+		Result.Add(Level::MakeItemSpawn(EItemKind::Flashlight, -13.4, 0.05, -10));
+		Result.Add(Level::MakeItemSpawn(EItemKind::Box, -14, 0.6, -6));
+		Result.Add(Level::MakeItemSpawn(EItemKind::Tv, -14, 0.5, -3));
+		Result.Add(Level::MakeItemSpawn(EItemKind::Sofa, -13.5, 0.5, 1));
+		Result.Add(Level::MakeItemSpawn(EItemKind::Box, -6, 3 + 0.6, 6));
+		return Result;
+	}
 
 	/** Where the index'th player comes in: in the middle of the south side, facing north. */
 	FVector2D SpawnPoint(int Index)

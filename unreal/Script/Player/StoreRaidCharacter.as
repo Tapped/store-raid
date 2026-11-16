@@ -16,9 +16,38 @@ class AStoreRaidCharacter : AStoreRaidCharacterBase
 	default Body.bOwnerNoSee = true;
 	default Body.RelativeScale3D = FVector(0.6, 0.6, 1.8);
 
+	/**
+	 * What shoves loose items: a capsule like the player's own, which blocks only physics bodies. The
+	 * player's own capsule passes through items, so they never stop a player; this one pushes
+	 * two-handed ones aside as it moves with them, as players were kinematic bodies in physics.ts.
+	 */
+	UPROPERTY(DefaultComponent, Attach = CollisionCylinder)
+	UCapsuleComponent Shover;
+	default Shover.CapsuleRadius = 30;
+	default Shover.CapsuleHalfHeight = 90;
+
+	/** What's in each hand: the same item in both for a two-handed one. Set by Hands.as on the server. */
+	UPROPERTY(ReplicatedUsing = OnHandsChanged)
+	AStoreRaidItem Left;
+	UPROPERTY(ReplicatedUsing = OnHandsChanged)
+	AStoreRaidItem Right;
+
+	/** Climbing a ladder takes a free hand: a phone in the other is fine, a TV or two phones aren't. */
+	UFUNCTION()
+	void OnHandsChanged()
+	{
+		Movement.bCanClimb = Left == nullptr || Right == nullptr;
+	}
+
 	UFUNCTION(BlueprintOverride)
 	void BeginPlay()
 	{
+		CapsuleComponent.SetCollisionResponseToChannel(ECollisionChannel::PhysicsBody, ECollisionResponse::ECR_Ignore);
+		Shover.SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		Shover.SetCollisionObjectType(ECollisionChannel::Pawn);
+		Shover.SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Ignore);
+		Shover.SetCollisionResponseToChannel(ECollisionChannel::PhysicsBody, ECollisionResponse::ECR_Block);
+
 		// The engine's cylinder is 1 m tall about its middle, like the capsule.
 		Body.SetStaticMesh(Cast<UStaticMesh>(LoadObject(nullptr, "/Engine/BasicShapes/Cylinder.Cylinder")));
 		Body.SetCollisionEnabled(ECollisionEnabled::NoCollision);
