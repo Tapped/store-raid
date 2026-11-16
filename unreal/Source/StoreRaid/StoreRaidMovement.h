@@ -124,6 +124,13 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "StoreRaid|Movement")
 	bool bRunning = false;
 
+	/**
+	 * Rested again: full stamina, not winded, as a player put back in the building is. Call on the
+	 * server and on the owning client: a seated player sends no moves, so no correction would bring it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "StoreRaid|Movement")
+	void Rest();
+
 	UFUNCTION(BlueprintPure, Category = "StoreRaid|Movement")
 	bool IsClimbing() const;
 

@@ -57,13 +57,19 @@ class AStoreRaidCharacter : AStoreRaidCharacterBase
 	}
 
 	/**
-	 * The stand-in body sitting back on the bench behind the feet, as the seated clips sit, and
-	 * shorter; or standing over them.
+	 * Seated or standing, on every machine, from the replicated seat. The stand-in body sits back on
+	 * the bench behind the feet, as the seated clips sit, and shorter; or stands over them. The
+	 * capsule narrows to SEATED_RADIUS: seats are 0.56 m apart, closer than two players, and one
+	 * getting up mustn't start inside the one beside them, or neither moves (the web game let those
+	 * seated overlap and pushed walkers out of them).
 	 */
 	void ShowSeated(bool bSeated)
 	{
 		Body.SetRelativeLocation(bSeated ? FVector(-45, 0, -25) : FVector::ZeroVector);
 		Body.SetRelativeScale3D(FVector(0.6, 0.6, bSeated ? 1.3 : 1.8));
+		const float Radius = bSeated ? SEATED_RADIUS : 30;
+		if (CapsuleComponent.CapsuleRadius != Radius)
+			CapsuleComponent.SetCapsuleRadius(Radius, true);
 	}
 
 	/** Called by the local controller every frame with what the player asks for and where they look. */
@@ -79,3 +85,6 @@ class AStoreRaidCharacter : AStoreRaidCharacterBase
 			StopJumping();
 	}
 }
+
+/** A seated player's capsule, in cm: with the 0.3 m of one standing, short of the 0.56 m between seats. */
+const float SEATED_RADIUS = 25.0;

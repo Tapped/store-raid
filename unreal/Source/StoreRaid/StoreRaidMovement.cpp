@@ -126,6 +126,13 @@ void UStoreRaidMovement::SetMechanics(const FStoreRaidMechanics& InMechanics)
 	MaxStepHeight = Mechanics.StepUp * CM;
 }
 
+void UStoreRaidMovement::Rest()
+{
+	Stamina = 1.f;
+	bWinded = false;
+	bRunning = false;
+}
+
 bool UStoreRaidMovement::IsClimbing() const
 {
 	return MovementMode == MOVE_Custom && CustomMovementMode == static_cast<uint8>(EStoreRaidMove::Climb);

@@ -41,6 +41,8 @@ export interface Where {
   role: string;
   ready: boolean;
   seat: number;
+  /** Seconds left getting up from a seat, during which they stay put. */
+  rising: number;
   /** Where they look, in degrees: 0 north, 90 east. */
   yaw: number;
   /** False while they have no character: out of the building, watching. */
@@ -60,7 +62,7 @@ export async function where(who: string): Promise<Where> {
   const flag = (key: string) => values[key] === "true";
   if (words[0] === "none") {
     const role = words[words.indexOf("role") + 1];
-    const none = { x: NaN, y: NaN, z: NaN, speed: 0, stamina: 0, yaw: 0 };
+    const none = { x: NaN, y: NaN, z: NaN, speed: 0, stamina: 0, rising: 0, yaw: 0 };
     return {
       ...none,
       winded: false,
@@ -92,6 +94,7 @@ export async function where(who: string): Promise<Where> {
     role: values.role,
     ready: flag("ready"),
     seat: Number(values.seat),
+    rising: Number(values.rising),
     yaw: Number(values.yaw),
     inside: true,
   };
@@ -194,7 +197,8 @@ export async function overlay(
 
 /**
  * Walks a player to a point, by sr.goal, for up to `seconds`: true if they got within 0.45 m of it.
- * One that's stopped short (by a wall, a shut hatch) gives up once it hasn't moved for a second.
+ * One that's stopped short (by a wall, a shut hatch) gives up once it hasn't moved for a second,
+ * not counting the time getting up from a seat takes.
  */
 export async function walk(who: string, [x, z]: [number, number], seconds = 20): Promise<boolean> {
   await exec(who, `sr.goal ${x} ${z}`);
@@ -204,7 +208,8 @@ export async function walk(who: string, [x, z]: [number, number], seconds = 20):
     await wait(100);
     const p = await where(who);
     if (!p.goal) break;
-    still = Math.hypot(p.x - last.x, p.z - last.z) < 0.01 ? still + 1 : 0;
+    const gettingUp = p.seat >= 0 || p.rising > 0;
+    still = !gettingUp && Math.hypot(p.x - last.x, p.z - last.z) < 0.01 ? still + 1 : 0;
     last = p;
     if (still >= 10) break;
   }

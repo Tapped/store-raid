@@ -21,7 +21,7 @@ What has tripped up work here before:
 - `GameState.PlayerArray` holds `TObjectPtr`s script can't take from it: go through
   `Gameplay::GetNumPlayerStates()` and `Gameplay::GetPlayerState(Index)` (`AStoreRaidGameState.Players()`).
 - Not every engine RPC is callable: `AController::ClientSetRotation` isn't, so the controller has its
-  own `ClientFace`.
+  own `ClientBrought`.
 - A member named like a namespace hides it inside the class (`Truck` the actor and `Truck::Park`):
   name them apart.
 - UMG from script: subclass `UUserWidget`, `CreateWidget` it, build the tree with
@@ -80,6 +80,9 @@ What has tripped up work here before:
   controller but no pawn. Round state that outlives the pawn (role, ready, seat) is on
   `AStoreRaidPlayerState`, which calls `ForceNetUpdate()` on every change, as the engine sends
   player states only now and then.
+- Pawns block pawns, and the engine can't free two capsules that start inside each other: neither
+  moves. The truck's seats are 0.56 m apart, closer than two players, so a seated player's capsule
+  is narrower (`ShowSeated`), set on every machine from the replicated seat.
 - A character's capsule rests about 2 cm above the floor: `sr.where` reports `y 0.02` standing on
   the ground, so checks compare heights within a tolerance.
 
@@ -93,5 +96,7 @@ What has tripped up work here before:
 - The small round a `-bot` walks has to stay clear of railings near the spawn points: it gives up
   on a corner after 5 s. It also gets a seated bot up: `sr.goal` (with nothing) stops it, before
   anything that seats players.
+- Getting up from a seat keeps a player still for 1.4 s (`rising` in `sr.where`): `walk()` waits
+  it out, but a check that moves a seated player by hand has to as well.
 - Replicated round state reaches clients a moment after the server has it: wait for a client's
   overlay or results to change rather than reading them right after the server's phase moves on.

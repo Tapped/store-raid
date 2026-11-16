@@ -106,9 +106,10 @@ Each step ends playable, with the web game as the reference for how it should be
    Done in the playground, with the truck in it: `Script/Game/` (`Modes.as`, the player state with
    role, ready and seat), `Level/Truck.as` (`parkTruck()`) and `TruckActor.as`, the round in
    `StoreRaidGameMode.as`, `UI/Overlay.as`. Those out of the building have no character and watch
-   someone who has. Still to come: the seated character's clips (the stand-in sits as a short
-   cylinder), standing up taking `SITTING.standUpTime`, stamina put back when a round resets players
-   who keep their character, and the overlay's look beyond plain text.
+   someone who has. Getting up takes `SITTING.standUpTime` and sitting down eases the eye in, a
+   player put back in the truck is rested, and a seated player's capsule is narrower, so one getting
+   up doesn't start inside the one beside them. Still to come: the seated character's clips (the
+   stand-in sits as a short cylinder) and the overlay's look beyond plain text.
 4. **The warehouse.** `generate.ts`, `furnish.ts`, `props.ts`, `levelCheck.ts` in script; the building
    drawn by room kind, dressing, fittings and their light.
 5. **Ticks and health.**

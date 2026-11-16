@@ -1,10 +1,11 @@
 /**
  * Checks a game's round in the playground with two players, as GameRoom.ts ran it: the lobby seats
- * everyone in the truck, where they stand up and sit down again; all ready starts the raid, which
- * stands them up and puts the hatch down; loot carried into the truck counts; everyone in the truck
- * wanting to go ends the raid, and the results show the haul and the crew; then the next lobby puts it
- * all back. In a second raid the bot falls into the pit and watches the client, and dawn ends it; in a
- * third it's outside the truck at dawn and left behind.
+ * everyone in the truck, where they stand up, staying put while they do, and sit down again; all
+ * ready starts the raid, which stands them up and puts the hatch down; loot carried into the truck
+ * counts; everyone in the truck wanting to go ends the raid, and the results show the haul and the
+ * crew; then the next lobby puts it all back, everyone rested. In a second raid the bot falls into
+ * the pit and watches the client, and dawn ends it; in a third it's outside the truck at dawn and
+ * left behind.
  * The overlay says each of these. Exits non-zero if any of that doesn't happen.
  *
  * Needs a server, a client and a bot running (`pnpm run ue dev 1 1`):
@@ -73,6 +74,24 @@ await wait(1500);
   );
 }
 
+// Moving gets the client up, which takes SITTING.standUpTime, 1.4 s, before it walks.
+{
+  const at = await where(client);
+  await exec(client, "sr.move 0 1");
+  await wait(800);
+  const rising = await where(client);
+  const still = Math.hypot(rising.x - at.x, rising.z - at.z);
+  check(
+    rising.seat === -1 && still < 0.05,
+    `moving gets the client up, staying put while it does (seat ${rising.seat}, moved ${still.toFixed(2)} m)`,
+  );
+  await wait(1100);
+  await exec(client, "sr.move 0 0");
+  const up = await where(client);
+  const moved = Math.hypot(up.x - at.x, up.z - at.z);
+  check(moved > 0.2, `then it walks (${moved.toFixed(2)} m)`);
+}
+
 // Ready: the raid starts.
 await exec(bot, "sr.ready");
 await wait(500);
@@ -118,6 +137,18 @@ await wait(1000);
   );
 }
 
+// Running against the cab wears the bot out, which the next round puts right.
+await exec(bot, "sr.run 1");
+await exec(bot, "sr.move 0 1");
+await wait(1500);
+await exec(bot, "sr.move 0 0");
+await exec(bot, "sr.run 0");
+{
+  const tired = (await where(bot)).stamina;
+  check(tired < 0.9, `running wears the bot out (stamina ${tired.toFixed(2)})`);
+}
+await walk(bot, inside);
+
 // Leaving: everyone in the truck wants to go.
 await exec(bot, "sr.ready");
 await wait(500);
@@ -155,6 +186,7 @@ await wait(1000);
   const [b, c] = [await where(bot), await where(client)];
   const r = await room("server");
   check(b.seat >= 0 && c.seat >= 0 && r.hatch === 0, "seated again, shut in");
+  check(b.stamina === 1 && !b.winded, `and rested (stamina ${b.stamina})`);
   const phones = (await items("server")).filter((i) => i.kind === "phone");
   check(
     r.loot === 0 && phones.every((p) => p.x < -13),

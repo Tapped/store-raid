@@ -16,6 +16,9 @@ class AStoreRaidPlayerController : APlayerController
 	/** Whether we sat last frame, and whether we've asked to stand since. */
 	bool bWasSeated = false;
 	bool bAskedToStand = false;
+	/** Seconds left getting up, during which we stay put; how far down into the seat the eye is, 0 to 1. */
+	float Rising = 0;
+	float Seatedness = 0;
 
 	/** What the sr.* console commands ask for, added to the devices: for bots and the dev tools. */
 	FControls Virtual;
@@ -133,40 +136,68 @@ class AStoreRaidPlayerController : APlayerController
 		Rotation.Roll = 0;
 		SetControlRotation(Rotation);
 
-		// Seated, nobody moves: moving or jumping asks to get up.
+		// Seated, nobody moves: moving or jumping asks to get up, which takes a moment.
 		const bool bSeated = Me != nullptr && Me.Seat >= 0;
-		if (Character != nullptr)
-			Sit(Character, Me, bSeated);
-		if (bSeated)
+		const bool bWantsToMove = Controls.Move.Size() > 0.2 || Controls.bJump;
+		if (bSeated && bWantsToMove && !bAskedToStand && Rising <= 0)
 		{
-			if (!bAskedToStand && (Controls.Move.Size() > 0.2 || Controls.bJump))
-			{
-				bAskedToStand = true;
-				ServerStand();
-			}
+			bAskedToStand = true;
+			ServerStand();
+		}
+		if (!bSeated)
+			bAskedToStand = false;
+		bool bStill = bSeated;
+		if (Character != nullptr)
+			bStill = Sit(Character, Me, bSeated, bAskedToStand, DeltaSeconds);
+		if (bStill)
+		{
+			// Getting up: standing on the server already, but no input yet.
+			if (Character != nullptr && !bSeated)
+				Character.Drive(FControls(), Rotation.Yaw);
 			return;
 		}
-		bAskedToStand = false;
 		if (Character != nullptr)
 			Character.Drive(Controls, Rotation.Yaw);
 	}
 
 	/**
-	 * Seated, the character doesn't move, the eye is lower, and on sitting down it looks the way the
-	 * seat faces, across the truck; standing, it walks. The server does the same: this keeps the
-	 * prediction with it.
+	 * Seated, the character doesn't move, the eye sinks over the seat in SIT_DOWN_TIME, and on sitting
+	 * down it looks the way the seat faces, across the truck. Getting up, whether we asked or the
+	 * server stood us up as a raid starts, takes STAND_UP_TIME, the eye rising, before it walks, as
+	 * sit() in client/src/localPlayer.ts. The server sets the movement mode the same way, which keeps
+	 * the prediction with it. Whether we must stay put.
 	 */
-	void Sit(AStoreRaidCharacter Character, AStoreRaidPlayerState Me, bool bSeated)
+	bool Sit(AStoreRaidCharacter Character, AStoreRaidPlayerState Me, bool bSeated, bool bAsked, float DeltaSeconds)
 	{
 		if (bSeated && Character.Movement.MovementMode != EMovementMode::MOVE_None)
 			Character.Movement.SetMovementMode(EMovementMode::MOVE_None);
 		if (!bSeated && Character.Movement.MovementMode == EMovementMode::MOVE_None)
 			Character.Movement.SetMovementMode(EMovementMode::MOVE_Walking);
-		Character.Camera.SetRelativeLocation(bSeated ? FVector(-SEATED_EYE_BACK, 0, SEATED_EYE) : FVector(0, 0, 75));
 		AStoreRaidGameState Room = Cast<AStoreRaidGameState>(Gameplay::GetGameState());
-		if (bSeated && !bWasSeated && Room != nullptr && Room.Parked.Seats.IsValidIndex(Me.Seat))
-			SetControlRotation(FRotator(0, Room.Parked.Seats[Me.Seat].Yaw, 0));
+		if (bSeated && !bWasSeated)
+		{
+			Rising = 0;
+			if (Room != nullptr && Room.Parked.Seats.IsValidIndex(Me.Seat))
+				SetControlRotation(FRotator(0, Room.Parked.Seats[Me.Seat].Yaw, 0));
+		}
+		// Getting up: we asked, or we were stood up.
+		if ((bSeated && bAsked) || (!bSeated && bWasSeated))
+		{
+			if (Rising <= 0)
+				Rising = STAND_UP_TIME;
+		}
 		bWasSeated = bSeated;
+		Rising = Math::Max(0.0, Rising - DeltaSeconds);
+
+		if (bSeated && !bAsked && Rising <= 0)
+			Seatedness = Math::Min(1.0, Seatedness + DeltaSeconds / SIT_DOWN_TIME);
+		else if (Rising > 0)
+			Seatedness = Math::Min(Seatedness, Rising / STAND_UP_TIME);
+		else
+			Seatedness = 0;
+		const float Sunk = Seatedness * Seatedness * (3 - 2 * Seatedness);
+		Character.Camera.SetRelativeLocation(FVector(-SEATED_EYE_BACK * Sunk, 0, Math::Lerp(STANDING_EYE, SEATED_EYE, Sunk)));
+		return bSeated || Rising > 0;
 	}
 
 	/**
@@ -250,11 +281,17 @@ class AStoreRaidPlayerController : APlayerController
 			Mode().Ready(Cast<AStoreRaidPlayerState>(PlayerState));
 	}
 
-	/** The server put our character somewhere: look the way it faces. */
+	/**
+	 * The server put our character somewhere: look the way it faces, rested, as the server has it.
+	 * Corrections would bring the stamina too, but not to one sitting, who sends no moves.
+	 */
 	UFUNCTION(Client)
-	void ClientFace(float Yaw)
+	void ClientBrought(float Yaw)
 	{
 		SetControlRotation(FRotator(0, Yaw, 0));
+		AStoreRaidCharacter Character = OwnCharacter();
+		if (Character != nullptr)
+			Character.Movement.Rest();
 	}
 
 	UFUNCTION(Server)
@@ -367,6 +404,11 @@ const float GOAL_REACHED = 0.15;
  */
 const float SEATED_EYE = 32.0;
 const float SEATED_EYE_BACK = 30.0;
+/** Where the eye is standing: 1.65 m over the feet, 75 cm over the capsule's middle. */
+const float STANDING_EYE = 75.0;
+/** Seconds getting up from a seat takes, during which the player can't move, and sitting down, as SITTING. */
+const float STAND_UP_TIME = 1.4;
+const float SIT_DOWN_TIME = 1.2;
 
 /** Where a character's feet are, in game meters. */
 FVector GameFeet(AStoreRaidCharacter Character)
@@ -568,7 +610,7 @@ void OnWhereCommand(TArray<FString> Arguments)
 	const FVector Feet = Character.ActorLocation - FVector(0, 0, 90);
 	UStoreRaidMovement Movement = Character.Movement;
 	const float Yaw = FRotator::NormalizeAxis(Controller.ControlRotation.Yaw);
-	Log(f"StoreRaid where: x {Feet.Y / 100 :.3} y {Feet.Z / 100 :.3} z {Feet.X / 100 :.3} speed {Movement.Velocity.Size2D() / 100 :.2} stamina {Movement.Stamina :.3} winded {Movement.bWinded} running {Movement.bRunning} climbing {Movement.IsClimbing()} falling {Movement.IsFalling()} goal {Controller.bHasGoal} left {HandName(Character.Left)} right {HandName(Character.Right)} role {Role} ready {bReady} seat {Seat} yaw {Yaw :.1}");
+	Log(f"StoreRaid where: x {Feet.Y / 100 :.3} y {Feet.Z / 100 :.3} z {Feet.X / 100 :.3} speed {Movement.Velocity.Size2D() / 100 :.2} stamina {Movement.Stamina :.3} winded {Movement.bWinded} running {Movement.bRunning} climbing {Movement.IsClimbing()} falling {Movement.IsFalling()} goal {Controller.bHasGoal} left {HandName(Character.Left)} right {HandName(Character.Right)} role {Role} ready {bReady} seat {Seat} rising {Controller.Rising :.2} yaw {Yaw :.1}");
 }
 
 // sr.players: logs every player in this world: who they are this round, and where their feet are

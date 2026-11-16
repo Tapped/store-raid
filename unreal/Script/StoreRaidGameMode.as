@@ -152,10 +152,11 @@ class AStoreRaidGameMode : AGameModeBase
 			FHitResult Hit;
 			Character.SetActorLocation(At, false, Hit, true);
 			Character.SetActorRotation(Facing);
+			Character.Movement.Rest();
 		}
 		AStoreRaidPlayerController Player = Cast<AStoreRaidPlayerController>(Controller);
 		if (Player != nullptr)
-			Player.ClientFace(Yaw);
+			Player.ClientBrought(Yaw);
 		if (Character != nullptr)
 			Seat(Character);
 	}
@@ -165,6 +166,7 @@ class AStoreRaidGameMode : AGameModeBase
 	{
 		const AStoreRaidPlayerState Player = Cast<AStoreRaidPlayerState>(Character.PlayerState);
 		const bool bSeated = Player != nullptr && Player.Seat >= 0;
+		Character.ShowSeated(bSeated);
 		Character.Movement.SetMovementMode(bSeated ? EMovementMode::MOVE_None : EMovementMode::MOVE_Walking);
 	}
 
