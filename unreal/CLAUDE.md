@@ -34,6 +34,26 @@ What has tripped up work here before:
 - If you send `dev`'s output to a file and restart it into the same file, the file can pick up NUL
   bytes and grep calls it binary: `tr -d '\000' < file | grep -a ...`.
 
+- Two `dev` launchers at once share the game port and the dev ports: `exec` and `shot` reach
+  whichever process bound the port first, maybe another session's. Check for running
+  `UnrealEditor-Cmd.exe` processes before starting one.
+- Stopping a `dev` launcher means killing its process tree (`taskkill /PID <node> /T /F`, or the
+  `sh.exe` above it). Killing only the editors leaves `ue.ts` running, and it starts them again on
+  the next script save. `dev` stops by itself when a process it was started under exits (it logs
+  them at startup), but stopping a Claude Code background task kills none of them: its `sh.exe` is
+  already orphaned, so kill the tree.
+
+**Importing models**
+
+- Interchange reads neither KTX2 (`KHR_texture_basisu`) nor WebP textures, which every model in
+  `assets/` has: `Tools/import/stage.ts` turns them into PNG first.
+- Deleting an asset folder in the editor and importing into it again in the same session leaves
+  the old objects in memory, and the import skips making them (a mesh with no materials). So
+  `ue.ts` removes the folders from disk before the editor starts.
+- A running game keeps the packages it loaded open (`EBUSY`): stop it before importing.
+- Interchange turns glTF's (x, y, z) into Unreal's (x, z, y), so the import turns models a
+  quarter back (`import_offset_rotation`) to face Unreal's +X.
+
 **Gameplay code**
 
 - In `ChoosePlayerStart`, the joining player isn't in `PlayerArray` yet, so pick a spawn point by

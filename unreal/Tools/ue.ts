@@ -14,15 +14,19 @@
  *   ping <who>            whether a process is up, and its net mode and map
  *   test [filter]         script unit tests in a headless editor (default Angelscript.UnitTests)
  *   check <name> [who]    a check in Tools/checks/ against a running bot: `check playground`
+ *   import [filter…]      models from ../assets into Content/ (Tools/import/): staged with PNG textures,
+ *                         then Interchange in a headless editor, with Nanite; only names containing a
+ *                         filter (`props/tv`, `village/`), else all. Content/ can be deleted and rebuilt
  *
  * Every process gets a dev port (see DevServer.h) for exec and shot: the server 8700, clients 8711 on,
  * bots 8731 on, the window 8721. The game listens on 7777. UE_ROOT points at the engine (the Angelscript fork's checkout).
  * Logs go to unreal/Saved/Logs/<who>.log as well as this terminal, prefixed with who said it.
  */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, watch, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, watch, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stageModels } from "./import/stage";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PROJECT = join(ROOT, "StoreRaid.uproject");
@@ -268,7 +272,52 @@ function dev(clients: number, bots: number): void {
     await stopAll();
     process.exit(0);
   });
+  // Killing the shell above it doesn't kill it on Windows (nor pnpm, nor tsx's own process between
+  // them), and it would go on starting the game again on script saves: when any process it was
+  // started under is gone, it stops everything and exits.
+  // (process.kill(pid, 0) won't do: it still finds a process that has exited while anything holds a
+  // handle to it, as whatever ran the shell does.)
+  const ancestors = ancestry();
+  console.log(`Started under ${ancestors.join(" < ")}: it stops when one of them does.`);
+  setInterval(async () => {
+    const running = spawnSync("tasklist.exe", ["/FO", "CSV", "/NH"], {
+      encoding: "utf8",
+      windowsHide: true,
+    }).stdout;
+    if (!running) return;
+    const pids = new Set(running.split(/\r?\n/).map((line) => Number(line.split('","')[1])));
+    if (ancestors.some((pid) => !pids.has(pid))) {
+      console.log("A process the launcher was started under is gone: stopping.");
+      restarting = true;
+      await stopAll();
+      process.exit(0);
+    }
+  }, 5000);
   launch();
+}
+
+/** The processes this one was started under, its parent first, as Windows has them. */
+function ancestry(): number[] {
+  const listed = spawnSync(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-Command",
+      'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }',
+    ],
+    { encoding: "utf8", windowsHide: true },
+  ).stdout;
+  const parents = new Map<number, number>();
+  for (const line of listed?.split(/\r?\n/) ?? []) {
+    const [pid, parent] = line.trim().split(" ").map(Number);
+    if (pid) parents.set(pid, parent);
+  }
+  const chain: number[] = [];
+  for (let pid = process.ppid; pid && parents.has(pid) && !chain.includes(pid); ) {
+    chain.push(pid);
+    pid = parents.get(pid) ?? 0;
+  }
+  return chain.length ? chain : [process.ppid];
 }
 
 function single(role: Role): void {
@@ -318,6 +367,63 @@ function test(filter: string): void {
   child.on("exit", () => {
     console.log(`${passed} passed, ${failed} failed`);
     process.exit(failed > 0 || passed === 0 ? 1 : 0);
+  });
+}
+
+/**
+ * Stages the models (see Tools/import/stage.ts), then imports them in a headless editor with
+ * Tools/import/import.py, printing its `import:` lines. Fails if any model didn't import.
+ */
+async function importModels(filters: string[]): Promise<void> {
+  const names = await stageModels(filters);
+  if (!names.length) {
+    console.error(`No model in ../assets/models matches ${filters.join(" ")}`);
+    process.exit(1);
+  }
+  // Each model's folder goes before the editor starts, so nothing of the last import is left over.
+  // A running game keeps the packages it loaded open, and they can't be replaced.
+  try {
+    for (const name of names)
+      rmSync(join(ROOT, "Content/Models", name), { recursive: true, force: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EBUSY") throw error;
+    console.error(
+      "The game has models open: stop `pnpm run ue dev` (and any other process) first.",
+    );
+    process.exit(1);
+  }
+  const list = join(ROOT, "Saved/Import/list.txt");
+  writeFileSync(list, `${names.join("\n")}\n`);
+  const script = join(ROOT, "Tools/import/import.py");
+  const child = spawn(
+    EDITOR,
+    [
+      PROJECT,
+      `-ExecutePythonScript=${script}`,
+      "-nullrhi",
+      "-nosound",
+      "-NoP4",
+      ...common("import", 8791),
+    ],
+    { cwd: ROOT, windowsHide: true, env: { ...process.env, STORE_RAID_IMPORT: list } },
+  );
+  let rest = "";
+  let failed = true;
+  const take = (chunk: Buffer) => {
+    rest += chunk.toString("utf8");
+    const lines = rest.split(/\r?\n/);
+    rest = lines.pop() ?? "";
+    for (const line of lines) {
+      if (/import: |Error:|LogPython: Error|Traceback|^\s+File "/.test(line) && !isNoise(line))
+        console.log(line);
+      if (/import: done: \d+ imported, 0 failed/.test(line)) failed = false;
+    }
+  };
+  child.stdout?.on("data", take);
+  child.stderr?.on("data", take);
+  child.on("exit", (code) => {
+    if (code !== 0) console.error(`The editor exited with ${code}: see Saved/Logs/import.log`);
+    process.exit(failed || code !== 0 ? 1 : 0);
   });
 }
 
@@ -397,6 +503,9 @@ switch (command) {
     break;
   case "ping":
     await ping(rest[0]);
+    break;
+  case "import":
+    await importModels(rest);
     break;
   case "check": {
     const file = join(ROOT, "Tools/checks", `${rest[0]}.ts`);

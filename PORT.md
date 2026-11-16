@@ -59,6 +59,19 @@ started with `-bot` walks a small round until given a goal. `pnpm run ue check <
 in `Tools/checks/` against running players: `playground` (a bot; the port of
 `scripts/playground.ts`) and `items` (a bot and a client; hands, the flashlight, the sofa).
 
+**Models:** `pnpm run ue import [filter…]` brings models from `../assets/models` into `Content/`, all
+of them or those whose path (`props/tv`, `village/`) contains a filter, in about a minute for all 117.
+`Tools/import/stage.ts` first writes each as a glTF Interchange can read, in `Saved/Import/models/`:
+the textures, KTX2 (UASTC, decoded with Babylon's decoder from `node_modules`) or WebP, become PNG.
+Then `Tools/import/import.py` runs in a headless editor: each model goes to
+`/Game/Models/<folder>/<name>/`, its mesh named `<name>` beside its materials (Interchange's glTF
+material instances) and textures. A static model's nodes are combined into one static mesh with
+Nanite; a skinned one is a skeletal mesh with its skeleton and clips. Models are turned at import to
+face north (Unreal's +X) with their right east (+Y), as `World::ToWorld` has the game's axes, so
+script places them with the game's yaw. In script, `Models::Mesh("level/truck")` (or `Skinned()`)
+loads one, and `sr.model <name> <x> <y> <z> [yaw]` puts one down on that machine to look at
+(`sr.model clear`). The game must be stopped to import: its processes keep the packages they loaded open.
+
 ## Order
 
 Each step ends playable, with the web game as the reference for how it should behave.
@@ -97,3 +110,6 @@ visibility, KTX2, atlasing and fog are the engine's job now.
 - **Native, not the browser.** Players run a build; the web version goes when the port catches up.
 - **Nanite on imported meshes:** the import script builds every model from `assets/` with Nanite
   enabled (the level's pieces, props and scenery), so dense meshes and many instances cost little.
+- **Asset import:** built before step 3, so the round starts with the real truck, hatch and props
+  (`pnpm run ue import`). Materials are Interchange's glTF ones for now; materials of our own, made
+  by script, and the surface library's textures come when the building is drawn (step 4).
