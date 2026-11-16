@@ -377,8 +377,8 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
   `scripts/models/lib.py`, whose docstring has the conventions (front faces Blender's -y, meters,
   `ITEM`, `OUT`, `ORIGIN`, `TRIS`, `AO`). `pnpm run model <name>` runs it in Blender in the
   background, bakes its `procedural()` materials into textures and its ambient occlusion onto a
-  second UV set (Cycles, on the GPU if there is one), writes the `.glb` to `assets/` with KTX2
-  textures, checks it against `ITEM_KINDS` and its triangle budget, and renders
+  second UV set (Cycles, on the GPU if there is one), writes the `.glb` to `assets/` with lossless
+  PNG textures (for the Unreal port's import), checks it against `ITEM_KINDS` and its triangle budget, and renders
   `node_modules/.cache/models/<name>/preview.png` from four sides. Look at the preview, then at the
   model in the model viewer (`/models.html?model=props/<name>`) and in the game, whose lighting differs. Iterate with `--draft`: only the preview, rendered from
   the live materials unbaked, in seconds (`--watch` builds again on every save; `--focus`, `--views`
@@ -389,11 +389,13 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
   things, so a model's own creases come from its bake. The scripts are in git and the models aren't, so run
   `pnpm run assets:backup` after building.
 - **Video memory:** a texture unpacked on the GPU takes 4 bytes a pixel plus a third for mipmaps, 85 MB
-  at 4096, whatever its file weighs. So models' textures are KTX2 (UASTC, `scripts/models/ktx.ts`),
+  at 4096, whatever its file weighs. Models built before 16 November have KTX2 textures (UASTC),
   which the game turns into BC7 as it loads (`client/src/ktx2.ts`) and the GPU keeps at a quarter of
-  that. Scenery (a prop of `shared/props.ts` or a village model) also has its parts merged over
+  that. Since then `pnpm run model` writes PNG instead, lossless for the Unreal port, so in the web
+  game a model built since takes the full 4 bytes a pixel. Scenery (a prop of `shared/props.ts` or a
+  village model) also has its parts merged over
   atlases when it's built (`scripts/models/atlas.ts`; `ATLAS = 4096` in the script for more than
-  2048 on a side), so it's one draw call. `pnpm run model --repack <name>` does both again from the
+  2048 on a side), so it's one draw call. `pnpm run model --repack <name>` does that again from the
   last build's cache, without Blender. Models not built this way (the Unity imports) are merged as
   they load, unpacked.
 - **Surfaces made in code:** `scripts/surfaces/recipes/<name>.wgsl` is a WGSL `sample(u, v, o)` run

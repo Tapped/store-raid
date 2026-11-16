@@ -34,10 +34,10 @@
  * Blender joins it into one mesh, bakes its procedural materials and exports it (pipeline.py).
  * Scenery (a prop of shared/props.ts or a village model) then has its parts merged over texture
  * atlases (atlas.ts), of at most 2048 pixels on a side unless the script says `ATLAS = 4096`, or
- * `ATLAS = 0` for none. Its textures become KTX2, which the GPU keeps compressed (ktx.ts), and it's
- * written to assets/ (models/props/<name>.glb unless the script says OUT). Finally Blender renders it
- * from four sides into one preview image (studio.py), from a copy with WebP textures, which it can
- * read, and the size, triangles and textures are printed, with a warning when an item doesn't match
+ * `ATLAS = 0` for none. Its textures stay lossless PNG, for the Unreal port's import to compress, and
+ * it's written to assets/ (models/props/<name>.glb unless the script says OUT). (Models built before
+ * 16 November have KTX2 textures, for the web game.) Finally Blender renders it from four sides into
+ * one preview image (studio.py), and the size, triangles and textures are printed, with a warning when an item doesn't match
  * ITEM_KINDS or a model is over its triangle budget.
  */
 
@@ -52,9 +52,9 @@ import {
 } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { getBounds, NodeIO, type Texture } from "@gltf-transform/core";
-import { EXTTextureWebP, KHRONOS_EXTENSIONS, KHRTextureBasisu } from "@gltf-transform/extensions";
-import { cloneDocument, dedup, prune, textureCompress } from "@gltf-transform/functions";
+import { getBounds, NodeIO } from "@gltf-transform/core";
+import { EXTTextureWebP, KHRONOS_EXTENSIONS } from "@gltf-transform/extensions";
+import { dedup, prune } from "@gltf-transform/functions";
 import sharp from "sharp";
 import { ITEM_KINDS } from "../../shared/constants";
 import { PROPS } from "../../shared/props";
@@ -62,7 +62,6 @@ import { sharedAssets } from "../sharedAssets";
 import { findBlender } from "../unity-import/blender";
 import { fixTangents } from "../unity-import/gltf";
 import { packAtlas } from "./atlas";
-import { type TextureKind, toKtx2 } from "./ktx";
 import { Blender, type JobResult } from "./runner";
 
 interface Built {
@@ -288,7 +287,7 @@ async function draft(): Promise<boolean> {
   return failed;
 }
 
-/** A full build (or a quick one): bake, export, pack, KTX2, into assets/, then the previews. */
+/** A full build (or a quick one): bake, export, pack, into assets/, then the previews. */
 async function full(): Promise<boolean> {
   const started = Date.now();
   let built: Record<string, Built>;
@@ -363,34 +362,16 @@ async function full(): Promise<boolean> {
     const packed = atlas ? await packAtlas(doc, name, atlas) : undefined;
     await doc.transform(dedup(), prune());
 
-    // A copy with WebP textures for the preview: Blender can't read KTX2.
-    const preview = cloneDocument(doc);
-    await preview.transform(textureCompress({ encoder: sharp, targetFormat: "webp", quality: 85 }));
-    if (preview.getRoot().listTextures().length) {
-      preview.createExtension(EXTTextureWebP).setRequired(true);
-    }
-    await io.write(`${work}/${name}/preview.glb`, preview);
-
-    // Colour is sRGB and normals are encoded as such; the rest is plain data.
-    const kinds = new Map<Texture, TextureKind>();
-    for (const m of doc.getRoot().listMaterials()) {
-      for (const t of [m.getBaseColorTexture(), m.getEmissiveTexture()]) {
-        if (t) kinds.set(t, "colour");
-      }
-      const normal = m.getNormalTexture();
-      if (normal && !kinds.has(normal)) kinds.set(normal, "normal");
-    }
+    // Textures stay lossless PNG, for the Unreal port to import (unreal/Tools/import/), which
+    // compresses them itself. Blender's preview reads the same file.
     for (const t of doc.getRoot().listTextures()) {
       const image = t.getImage();
-      if (!image) continue;
-      t.setImage(await toKtx2(image, kinds.get(t) ?? "data", b.quick ? 0 : 2)).setMimeType(
-        "image/ktx2",
-      );
+      if (!image || t.getMimeType() === "image/png") continue;
+      t.setImage(new Uint8Array(await sharp(image).png().toBuffer())).setMimeType("image/png");
     }
-    if (doc.getRoot().listTextures().length)
-      doc.createExtension(KHRTextureBasisu).setRequired(true);
     mkdirSync(dirname(output), { recursive: true });
     await io.write(output, doc);
+    await io.write(`${work}/${name}/preview.glb`, doc);
 
     // The report, from the finished file.
     const { min, max } = getBounds(doc.getRoot().listScenes()[0]);
