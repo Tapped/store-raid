@@ -14,6 +14,12 @@ namespace World
 		return FVector(Z * 100.0, X * 100.0, Y * 100.0);
 	}
 
+	/** An Unreal location as game meters on the ground plane: x east, z north. */
+	FVector2D GameXZ(FVector Location)
+	{
+		return FVector2D(Location.Y / 100.0, Location.X / 100.0);
+	}
+
 	/** The way a side faces, in Unreal's axes. */
 	FVector SideVector(ESide Side)
 	{

@@ -7,8 +7,7 @@
 // a mezzanine along the north wall, and stairs on to a platform above that; stairs and a ladder go
 // down to a basement under the middle, where a TV shows static.
 //
-// Still to come with the `Level` type: the hall's four outer walls, its items, dimmer, dock,
-// entrance, spawn points and killY.
+// Still to come with the `Level` type: its items, dimmer, dock and entrance.
 
 namespace Playground
 {
@@ -16,6 +15,16 @@ namespace Playground
 	const float HALL_X = 16.0;
 	const float HALL_Z = 12.0;
 	const float HALL_HEIGHT = 9.0;
+	/** WALL in shared/level.ts: how thick the hall's walls are. */
+	const float WALL = 0.5;
+	/** A storey below the basement (-STOREY - 4): in the pit, and nowhere else. Falling below it respawns. */
+	const float KILL_Y = -7.0;
+
+	/** Where the index'th player comes in: in the middle of the south side, facing north. */
+	FVector2D SpawnPoint(int Index)
+	{
+		return FVector2D(-3 + (Index % 4) * 2, -10.5 + Math::IntegerDivisionTrunc(Index, 4) % 2);
+	}
 
 	/** A storey of a grid from its lines, northern row first. */
 	FTileStorey Storey(TArray<FString> Lines)

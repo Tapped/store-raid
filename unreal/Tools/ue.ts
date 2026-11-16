@@ -12,6 +12,8 @@
  *   exec <who> <command>  run a console command in a running process (`server`, `client`, `client2`, `bot`…)
  *   shot <who> [file]     save a screenshot of a running client (default node_modules/.cache/ue/<who>.png)
  *   ping <who>            whether a process is up, and its net mode and map
+ *   test [filter]         script unit tests in a headless editor (default Angelscript.UnitTests)
+ *   check <name> [who]    a check in Tools/checks/ against a running bot: `check playground`
  *
  * Every process gets a dev port (see DevServer.h) for exec and shot: the server 8700, clients 8711 on,
  * bots 8731 on, the window 8721. The game listens on 7777. UE_ROOT points at the engine (the Angelscript fork's checkout).
@@ -48,6 +50,9 @@ interface Role {
 function common(who: string, devPort: number): string[] {
   return [
     "-as-development-mode",
+    // Script that doesn't compile at startup exits, instead of opening a window to wait for a fix,
+    // which crashes a process without Slate (the server, bots). dev starts it again on the next save.
+    "-as-exit-on-error",
     "-unattended",
     "-nosplash",
     "-stdout",
@@ -204,14 +209,25 @@ function dev(clients: number, bots: number): void {
   ];
   let children: ChildProcess[] = [];
   let restarting = false;
+  /** Whether one of them stopped by itself: script that didn't compile, or a crash. */
+  let down = false;
 
   const launch = () => {
+    down = false;
     // The server first; the others retry their connection until it listens.
-    children = roles.map((role, i) =>
-      start(role, COLOURS[i % COLOURS.length], (line) => {
+    children = roles.map((role, i) => {
+      const child = start(role, COLOURS[i % COLOURS.length], (line) => {
         if (NEEDS_RESTART.test(line)) restart("a script change needs a full reload");
-      }),
-    );
+      });
+      child.once("exit", (code) => {
+        if (restarting || down) return;
+        down = true;
+        console.log(
+          `[31m${role.who} stopped (exit code ${code}): fix it and save to start them again.[0m`,
+        );
+      });
+      return child;
+    });
   };
   const stopAll = async () => {
     for (const child of children) child.kill();
@@ -239,6 +255,13 @@ function dev(clients: number, bots: number): void {
     if (!file || !/\.(h|cpp|cs)$/.test(file)) return;
     clearTimeout(pending);
     pending = setTimeout(() => restart(`${file} changed`, true), 500);
+  });
+
+  // Script changes reload in place, unless a process is down: then they start everything again.
+  watch(join(ROOT, "Script"), { recursive: true }, (_event, file) => {
+    if (!down || !file?.endsWith(".as")) return;
+    clearTimeout(pending);
+    pending = setTimeout(() => restart(`${file} changed`), 500);
   });
 
   process.on("SIGINT", async () => {
@@ -338,7 +361,7 @@ function range(n: number): number[] {
 }
 
 const [command = "dev", ...rest] = process.argv.slice(2);
-if (command !== "build" && !existsSync(EDITOR)) {
+if (command !== "build" && command !== "check" && !existsSync(EDITOR)) {
   console.error(
     `No editor at ${EDITOR}: run \`pnpm run ue build\` (and set UE_ROOT if the engine is elsewhere).`,
   );
@@ -375,6 +398,18 @@ switch (command) {
   case "ping":
     await ping(rest[0]);
     break;
+  case "check": {
+    const file = join(ROOT, "Tools/checks", `${rest[0]}.ts`);
+    if (!rest[0] || !existsSync(file)) {
+      console.error(`No check ${rest[0] ?? ""} in Tools/checks/`);
+      process.exit(1);
+    }
+    const result = spawnSync(process.execPath, ["--import", "tsx", file, ...rest.slice(1)], {
+      stdio: "inherit",
+    });
+    process.exit(result.status ?? 1);
+    break;
+  }
   default:
     console.error(`Unknown command ${command}: see the top of unreal/Tools/ue.ts`);
     process.exit(1);

@@ -10,7 +10,7 @@
  * The dev command server: lets the terminal drive a running game or server over HTTP, as the
  * Chrome tools drove the web game. Started only with -DevPort=<port>, and never in shipping builds.
  *
- *   POST /exec     body: a console command; runs it in the game world, replies with what it printed
+ *   POST /exec     body: a console command; runs it in the game world, replies with what it printed and logged meanwhile
  *   GET  /shot     replies with a PNG of the next frame (?w=&h= to set the resolution first)
  *   GET  /ping     replies "ok" with the net mode, once the engine is up
  */

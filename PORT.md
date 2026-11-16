@@ -45,16 +45,31 @@ What `pnpm run dev` and Chrome do now, in Unreal, all headless and driven from t
    command server in the dev build: run a console command, set the camera, press a key, save a
    screenshot to a file to look at. It does the job of the Chrome MCP tools.
 
+## Running it
+
+`pnpm run ue` (`unreal/Tools/ue.ts`, whose header lists every command): `dev [clients] [bots]` runs a
+headless server with off-screen clients and bots, restarting them for C++ changes, script changes a
+running game can't take in place, or after one stops (script that doesn't compile at startup exits);
+`window [name]` joins in a window on the desktop. Every process has a dev port for `exec`, `shot` and
+`ping`. Console commands for bots and checks, in `Script/Player/StoreRaidPlayerController.as`:
+`sr.move`, `sr.look`, `sr.run`, `sr.jump`, `sr.goal <x> <z>` (walk to a point), `sr.respawn`,
+`sr.where` (this player, as `key value` pairs) and `sr.players` (everyone). A process started with
+`-bot` walks a small round until given a goal. `pnpm run ue check playground` runs
+`Tools/checks/playground.ts` against a running bot, the port of `scripts/playground.ts`.
+
 ## Order
 
 Each step ends playable, with the web game as the reference for how it should behave.
 
-0. **Engine and pipeline.** Build the fork. A project with a C++ module and `Script/`, a headless
+0. ✅ **Engine and pipeline.** Build the fork. A project with a C++ module and `Script/`, a headless
    server that reloads script, a bot that joins it, an off-screen client that takes screenshots.
-1. **The playground, walking.** `shared/tiles.ts` and the playground grid in script; the hall built
+1. ✅ **The playground, walking.** `shared/tiles.ts` and the playground grid in script; the hall built
    from modular pieces (instanced static meshes, so Lumen and Nanite work); a first-person character
    on a predicted movement component: walk, run and stamina, jump, step up and down, stairs' pace,
    ladders, falling and respawn. Two players see each other through a dedicated server.
+   Done but for the look: the hall is the engine's cubes, lit by lamps under the roof, until models
+   are imported. `check playground` passes all of `scripts/playground.ts` but the dimmer and
+   climbing with full hands, which come with step 2.
 2. **Hands and items.** Grab and drop, one- and two-handed, two-person carrying, physics items on the
    server (Chaos instead of Havok, replicated), flashlights, first-person hands.
 3. **The round.** Modes, phases, the truck with its hatch and seats, roles and spectating, loot and
@@ -75,3 +90,5 @@ visibility, KTX2, atlasing and fog are the engine's job now.
   prediction, correction and smoothing replace ours. Mechanics stay tunable and owned by the server.
 - **Physics:** Chaos on the server, items replicated with the engine's physics replication.
 - **Native, not the browser.** Players run a build; the web version goes when the port catches up.
+- **Nanite on imported meshes:** the import script builds every model from `assets/` with Nanite
+  enabled (the level's pieces, props and scenery), so dense meshes and many instances cost little.

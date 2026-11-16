@@ -98,13 +98,41 @@ UWorld* UDevServer::GameWorld() const
 	return nullptr;
 }
 
+namespace
+{
+	/** Every line logged while a command runs, so what script prints with Log() comes back in the reply. */
+	class FCaptureLog : public FOutputDevice
+	{
+	public:
+		FString Lines;
+
+		virtual void Serialize(const TCHAR* Message, ELogVerbosity::Type Verbosity, const FName& Category) override
+		{
+			FScopeLock Lock(&Mutex);
+			Lines += Message;
+			Lines += TEXT("\n");
+		}
+
+		virtual bool CanBeUsedOnAnyThread() const override { return true; }
+		virtual bool CanBeUsedOnMultipleThreads() const override { return true; }
+
+	private:
+		FCriticalSection Mutex;
+	};
+}
+
 bool UDevServer::HandleExec(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
 {
 	const FUTF8ToTCHAR Converted(reinterpret_cast<const ANSICHAR*>(Request.Body.GetData()), Request.Body.Num());
 	const FString Command = FString(Converted.Length(), Converted.Get()).TrimStartAndEnd();
 	FStringOutputDevice Output;
 	Output.SetAutoEmitLineTerminator(true);
+	FCaptureLog Captured;
+	GLog->AddOutputDevice(&Captured);
 	const bool bHandled = GEngine && GEngine->Exec(GameWorld(), *Command, Output);
+	GLog->Flush();
+	GLog->RemoveOutputDevice(&Captured);
+	Output.Log(Captured.Lines.TrimEnd());
 	UE_LOG(LogStoreRaid, Display, TEXT("Dev server: %s%s"), *Command, bHandled ? TEXT("") : TEXT(" (not handled)"));
 	TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(static_cast<const FString&>(Output), TEXT("text/plain"));
 	if (!bHandled)
