@@ -3,6 +3,9 @@
 An online multiplayer browser game: one player per screen, on keyboard or controller. `PLAN.md` has
 the roadmap for the game, a night raid on a harbour warehouse.
 
+The game is being ported to Unreal Engine with Angelscript, in `unreal/`: `PORT.md` has the plan and
+how to run it, and `unreal/CLAUDE.md` what has tripped up work there before.
+
 ## Stack
 
 - **Client:** Babylon.js 9 + TypeScript, bundled by Vite 8 (`client/`)
