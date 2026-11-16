@@ -16,7 +16,8 @@
  *   check <name> [who]    a check in Tools/checks/ against a running bot: `check playground`
  *   import [filter…]      models from ../assets into Content/ (Tools/import/): staged with PNG textures,
  *                         then Interchange in a headless editor, with Nanite; only names containing a
- *                         filter (`props/tv`, `village/`), else all. Content/ can be deleted and rebuilt
+ *                         filter (`props/tv`, `village/`), else all; only those changed since their
+ *                         last import, unless --force. Content/ can be deleted and rebuilt
  *
  * Every process gets a dev port (see DevServer.h) for exec and shot: the server 8700, clients 8711 on,
  * bots 8731 on, the window 8721. The game listens on 7777. UE_MODE=game makes the server's room a game
@@ -25,10 +26,10 @@
  * Logs go to unreal/Saved/Logs/<who>.log as well as this terminal, prefixed with who said it.
  */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, watch, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { stageModels } from "./import/stage";
+import { STAGED, stageModels } from "./import/stage";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PROJECT = join(ROOT, "StoreRaid.uproject");
@@ -375,16 +376,40 @@ function test(filter: string): void {
   });
 }
 
+/** Whether a model's mesh in Content/ is newer than its staged file and than the import script. */
+function imported(name: string, script: string): boolean {
+  const base = name.slice(name.lastIndexOf("/") + 1);
+  const mesh = join(ROOT, "Content/Models", name, `${base}.uasset`);
+  if (!existsSync(mesh)) return false;
+  const made = statSync(mesh).mtimeMs;
+  return (
+    made > statSync(join(STAGED, "models", `${name}.glb`)).mtimeMs &&
+    made > statSync(script).mtimeMs
+  );
+}
+
 /**
  * Stages the models (see Tools/import/stage.ts), then imports them in a headless editor with
  * Tools/import/import.py, printing its `import:` lines. Fails if any model didn't import.
  */
-async function importModels(filters: string[]): Promise<void> {
-  const names = await stageModels(filters);
-  if (!names.length) {
+async function importModels(args: string[]): Promise<void> {
+  const force = args.includes("--force");
+  const filters = args.filter((arg) => arg !== "--force");
+  const staged = await stageModels(filters);
+  if (!staged.length) {
     console.error(`No model in ../assets/models matches ${filters.join(" ")}`);
     process.exit(1);
   }
+  // Only what changed since its last import: a model whose mesh is newer than its staged file and
+  // than import.py, which says how models are imported, is left as it is.
+  const script = join(ROOT, "Tools/import/import.py");
+  const names = force ? staged : staged.filter((name) => !imported(name, script));
+  if (!names.length) {
+    console.log(`All ${staged.length} are imported and up to date (--force imports them again)`);
+    return;
+  }
+  if (names.length < staged.length)
+    console.log(`Importing ${names.length}; ${staged.length - names.length} are up to date`);
   // Each model's folder goes before the editor starts, so nothing of the last import is left over.
   // A running game keeps the packages it loaded open, and they can't be replaced.
   try {
@@ -399,7 +424,6 @@ async function importModels(filters: string[]): Promise<void> {
   }
   const list = join(ROOT, "Saved/Import/list.txt");
   writeFileSync(list, `${names.join("\n")}\n`);
-  const script = join(ROOT, "Tools/import/import.py");
   const child = spawn(
     EDITOR,
     [

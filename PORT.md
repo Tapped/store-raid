@@ -69,7 +69,9 @@ raids. The port's playground has the crew's truck, which the web game's doesn't,
 south wall (`Playground::TruckPlace()`), so the round can be played before the harbour is ported.
 
 **Models:** `pnpm run ue import [filter…]` brings models from `../assets/models` into `Content/`, all
-of them or those whose path (`props/tv`, `village/`) contains a filter, in about a minute for all 117.
+of them or those whose path (`props/tv`, `village/`) contains a filter, in about 2½ minutes for all 117.
+It only imports what changed: a model whose mesh in `Content/` is newer than its staged file and than
+`import.py` is skipped, so changing the import script imports everything again; `--force` does too.
 `Tools/import/stage.ts` first writes each as a glTF Interchange can read, in `Saved/Import/models/`:
 the textures, KTX2 (UASTC, decoded with Babylon's decoder from `node_modules`) or WebP, become PNG.
 Then `Tools/import/import.py` runs in a headless editor: each model goes to
