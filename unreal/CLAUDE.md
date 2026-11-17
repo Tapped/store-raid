@@ -18,6 +18,13 @@ What has tripped up work here before:
 - `TeleportTo` isn't bound: use `SetActorLocation(Location, false, Hit, true)`, with the last
   argument as the teleport.
 - Dividing ints warns about truncation: use `Math::IntegerDivisionTrunc(A, B)`.
+- `>>>` on a `uint` of 2^31 or more doesn't shift in zeros as JS's does. Bit-exact ports of TS
+  integer maths (the generator's mulberry32, `FRandom` in `Level/Generate.as`) work in `int64`
+  masked to 32 bits, with `Math.imul` taken in halves (`Generate::Imul`).
+- `FString`'s `<` and `==` ignore case. To sort strings as JS does, compare with
+  `Compare(Other, ESearchCase::CaseSensitive)`.
+- Unit tests (`pnpm run ue test`) print only that an assert failed, not its message: write what a
+  test made to a file in `Saved/` to diff, as `Generate_Test.as` does.
 - `GameState.PlayerArray` holds `TObjectPtr`s script can't take from it: go through
   `Gameplay::GetNumPlayerStates()` and `Gameplay::GetPlayerState(Index)` (`AStoreRaidGameState.Players()`).
 - Not every engine RPC is callable: `AController::ClientSetRotation` isn't, so the controller has its
