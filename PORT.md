@@ -119,7 +119,8 @@ Each step ends playable, with the web game as the reference for how it should be
    in `Tools/fixtures/` (seeds 1 to 30 and 1 to 3), written by `pnpm exec tsx
    unreal/Tools/dumpGenerated.ts [count] [furnished count]`: more seeds for a wider check, and the
    port's own go to `Saved/`, to diff. A level takes about 1.6 s in the test editor, interpreted.
-   Still to come: `levelCheck.ts`, and drawing it all.
+   `levelCheck.ts` is `LevelCheck.as`: `LevelCheck_Test.as` holds seeds 1 to 3 to every rule and
+   spoils one to see it caught. Still to come: playing in a generated level, and drawing it.
 5. **Ticks and health.**
 6. **The harbour and the yard, then the village.** Environments, sky and fog, ground.
 7. **Sound, the tuning panel, the rest.** Then the web game is deleted.
