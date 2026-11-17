@@ -136,6 +136,7 @@ class AStoreRaidGameState : AGameStateBase
 		Log(f"StoreRaid: {Layout.Name} built: {Layout.Floors.Num()} floors, {Layout.Boxes.Num()} boxes, {Layout.Ladders.Num()} ladders, {Layout.Props.Num()} props, {Layout.Lamps.Num()} lamps");
 		if (!System::IsDedicatedServer())
 		{
+			SpawnActor(ALook);
 			for (const FLamp& Lamp : Layout.Lamps)
 				AddLamp(Lamp);
 			if (Layout.Grid.Storeys.Num() > 0)

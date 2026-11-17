@@ -79,3 +79,40 @@ void OnModelCommand(TArray<FString> Arguments)
 		Model.Skinned.SetSkeletalMeshAsset(Skinned);
 	Log(f"StoreRaid model: {Name} at {At}");
 }
+
+// sr.materials <model>: logs a model's materials, their parents and the textures they're given.
+const FConsoleCommand MaterialsCommand("sr.materials", n"OnMaterialsCommand");
+void OnMaterialsCommand(TArray<FString> Arguments)
+{
+	if (Arguments.Num() < 1)
+		return;
+	UStaticMesh Mesh = Models::Mesh(Arguments[0]);
+	if (Mesh == nullptr)
+	{
+		Log(f"StoreRaid materials: no model {Arguments[0]}");
+		return;
+	}
+	for (int Index = 0; Index < Mesh.StaticMaterials.Num(); Index++)
+	{
+		UMaterialInterface Material = Mesh.GetMaterial(Index);
+		if (Material == nullptr)
+		{
+			Log(f"StoreRaid materials: {Index} none");
+			continue;
+		}
+		FString Line = f"StoreRaid materials: {Index} {Material.GetPathName()} base {Material.GetBaseMaterial().GetPathName()}";
+		UMaterialInstance Instance = Cast<UMaterialInstance>(Material);
+		if (Instance != nullptr)
+		{
+			Line += f" parent {Instance.Parent.GetPathName()}";
+			for (const FTextureParameterValue& Value : Instance.TextureParameterValues)
+			{
+				FString Texture = Value.ParameterValue != nullptr ? Value.ParameterValue.GetPathName() : "none";
+				Line += f" [{Value.ParameterInfo.Name}={Texture}]";
+			}
+			for (const FScalarParameterValue& Value : Instance.ScalarParameterValues)
+				Line += f" {Value.ParameterInfo.Name}={Value.ParameterValue}";
+		}
+		Log(Line);
+	}
+}

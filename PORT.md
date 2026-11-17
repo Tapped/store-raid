@@ -142,9 +142,12 @@ Each step ends playable, with the web game as the reference for how it should be
    that are hidden. `pnpm run ue surfaces` brings the surface library in (`Tools/import/surfaces.ts`
    and `surfaces.py`): its textures, and `M_Surface`, a material made by script that projects them
    from the world, so faces need no texture coordinates, with an instance a surface.
+   Exposure is fixed (`Level/Look.as`, an unbound post-process volume), not the engine's eye
+   adaptation: -3 stops matches the web game's brightness under the same fittings, seen side by side
+   from the same spot (`sr.exposure <stops>` tries another on one machine).
    Still to come: the building's wear, pilasters, beams, lane lines, door trims, stair treads, ladders
-   and railings drawn as such; light levels and exposure against the web game's look (it's washed out
-   now); flickering lights; and how fast it builds (2 s on the server, 6 on a client).
+   and railings drawn as such; hot spots on the ceiling over the fittings, which the web game hasn't;
+   flickering lights; and how fast it builds (2 s on the server, 6 on a client).
 5. **Ticks and health.**
 6. **The harbour and the yard, then the village.** Environments, sky and fog, ground.
 7. **Sound, the tuning panel, the rest.** Then the web game is deleted.
@@ -162,7 +165,8 @@ visibility, KTX2, atlasing and fog are the engine's job now.
 - **Nanite on imported meshes:** the import script builds every model from `assets/` with Nanite
   enabled (the level's pieces, props and scenery), so dense meshes and many instances cost little.
 - **Asset import:** built before step 3, so the round starts with the real truck, hatch and props
-  (`pnpm run ue import`). Materials are Interchange's glTF ones for now; materials of our own, made
+  (`pnpm run ue import`). Materials are Interchange's glTF ones for now, given the usage flags
+  the game draws them with (instanced static meshes and Nanite, or skeletal meshes) at import; materials of our own, made
   by script, and the surface library's textures come when the building is drawn (step 4).
 - **The building's surfaces are projected from the world** (`M_Surface`), not mapped by UVs as the
   web game's part builder did: faces are boxes of any size, and a surface shows at its real size on

@@ -61,10 +61,12 @@ def is_skinned(path):
         return bool(json.loads(file.read(length)).get("skins"))
 
 
-def allow_skinning(paths):
+def allow_usage(paths, flags):
     """
-    Interchange makes a skinned model's materials without the skeletal-mesh usage flag, and the
-    game then draws it with the default material. Sets it on each material of ours they rest on.
+    Interchange makes materials without usage flags but the default ones, and the game then draws
+    a mesh used another way with the default material: a skinned model's on a skeletal mesh, and a
+    static one's on instanced static meshes, which props, scenery and the level's pieces are drawn
+    as. Sets the flags on each material of ours the model's materials rest on.
     """
     bases = {}
     for path in paths:
@@ -74,10 +76,12 @@ def allow_skinning(paths):
             bases[base.get_path_name()] = base
     for path, base in bases.items():
         if not path.startswith("/Game/"):
-            log(f"  {path} is the engine's: can't set its skeletal-mesh usage")
+            log(f"  {path} is the engine's: can't set its usage")
             continue
-        if not base.get_editor_property("used_with_skeletal_mesh"):
-            base.set_editor_property("used_with_skeletal_mesh", True)
+        missing = [flag for flag in flags if not base.get_editor_property(flag)]
+        if missing:
+            for flag in missing:
+                base.set_editor_property(flag, True)
             unreal.MaterialEditingLibrary.recompile_material(base)
             unreal.EditorAssetLibrary.save_loaded_asset(base)
 
@@ -98,7 +102,9 @@ def import_model(name):
     unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
     paths = unreal.EditorAssetLibrary.list_assets(destination, recursive=True)
     if skinned:
-        allow_skinning(paths)
+        allow_usage(paths, ["used_with_skeletal_mesh"])
+    else:
+        allow_usage(paths, ["used_with_instanced_static_meshes", "used_with_nanite"])
     meshes = []
     for path in paths:
         asset = unreal.EditorAssetLibrary.load_asset(path)

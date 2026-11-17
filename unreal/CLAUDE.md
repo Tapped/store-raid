@@ -41,6 +41,7 @@ What has tripped up work here before:
   process (about 15 s).
 
 - `EMode` is the room's mode (playground or game): furnishing's ways of getting about are `EMover`.
+- There are no mutable globals, even in a namespace: keep a setting on an actor or object.
 - Script stops any one run of code that takes over `EditorMaximumScriptExecutionTime` ("took too
   long to execute. Potentially an infinite loop?") in the editor binary, which every process here
   is. Building a generated level takes a couple of seconds, so `Config/DefaultEngine.ini` raises it
@@ -75,6 +76,9 @@ What has tripped up work here before:
   the old objects in memory, and the import skips making them (a mesh with no materials). So
   `ue.ts` removes the folders from disk before the editor starts.
 - A running game keeps the packages it loaded open (`EBUSY`): stop it before importing.
+- Interchange makes materials without the usage flags the game needs, and a material missing one
+  draws as the engine's grey grid (the client logs `missing usage flag`): `import.py` sets them.
+  `sr.materials <model>` lists a model's materials and their textures.
 - Interchange turns glTF's (x, y, z) into Unreal's (x, z, y), so the import turns models a
   quarter back (`import_offset_rotation`) to face Unreal's +X.
 
