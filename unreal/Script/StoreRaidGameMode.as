@@ -2,8 +2,9 @@
 // putting back whoever falls out of the level, the dimmer, the truck's hatch and seats, and a game's
 // rounds, as server/src/rooms/GameRoom.ts had them.
 //
-// The room's mode comes from the server's command line, `-mode=game`, else the playground; `sr.mode`
-// on the server changes it, starting over. Only those playing have a character: the dead, lost and
+// The room's level comes from the server's command line too, `-level=generated-7`, else the
+// playground (AStoreRaidGameState builds it). Its mode is `-mode=game` or `-mode=playground`, else
+// the level's own; `sr.mode` on the server changes it, starting over. Only those playing have a character: the dead, lost and
 // waiting have none, and watch through someone else's eyes (the player controller).
 class AStoreRaidGameMode : AGameModeBase
 {
@@ -31,11 +32,19 @@ class AStoreRaidGameMode : AGameModeBase
 		TArray<FString> Tokens;
 		TArray<FString> Switches;
 		FCommandLine::Parse(FCommandLine::Get(), Tokens, Switches);
+		// The level's own mode, unless the command line says otherwise.
 		EMode Mode = EMode::Playground;
+		for (const FString& Switch : Switches)
+		{
+			if (Switch.StartsWith("level="))
+				Mode = Levels::ModeOf(Switch.RightChop(6));
+		}
 		for (const FString& Switch : Switches)
 		{
 			if (Switch == "mode=game")
 				Mode = EMode::Game;
+			if (Switch == "mode=playground")
+				Mode = EMode::Playground;
 			if (Switch.StartsWith("raidtime="))
 				RaidTime = String::Conv_StringToDouble(Switch.RightChop(9));
 		}
@@ -450,7 +459,7 @@ class AStoreRaidGameMode : AGameModeBase
 
 	bool AtDimmer(AStoreRaidCharacter Character)
 	{
-		return Reaches(Character, Playground::DIMMER);
+		return Reaches(Character, State().Layout.Dimmer);
 	}
 
 	/** Fades the lamps while someone holds the dimmer, turning round at fully on and off. */
@@ -479,7 +488,7 @@ class AStoreRaidGameMode : AGameModeBase
 			return;
 		Dim(DeltaSeconds);
 		MoveHatch(DeltaSeconds);
-		Hands::CarryAll(DeltaSeconds, Playground::KILL_Y);
+		Hands::CarryAll(DeltaSeconds, Room.Layout.KillY);
 
 		// Falling below the level: dead in a raid, else back where they came in.
 		TArray<AStoreRaidCharacter> Characters;
@@ -487,7 +496,7 @@ class AStoreRaidGameMode : AGameModeBase
 		for (AStoreRaidCharacter Character : Characters)
 		{
 			const float FeetY = (Character.ActorLocation.Z - Character.CapsuleComponent.ScaledCapsuleHalfHeight) / 100.0;
-			if (FeetY < Playground::KILL_Y)
+			if (FeetY < Room.Layout.KillY)
 				Fell(Character);
 		}
 
@@ -638,9 +647,10 @@ class AStoreRaidGameMode : AGameModeBase
 	{
 		TArray<AStoreRaidCharacter> Characters;
 		GetAllActorsOfClass(Characters);
-		for (int Index = 0; Index < 8; Index++)
+		const TArray<FVector2D>& Spawns = State().Layout.Spawns;
+		for (int Index = 0; Index < Spawns.Num(); Index++)
 		{
-			const FVector2D Spawn = Playground::SpawnPoint(Index);
+			const FVector2D Spawn = Spawns[Index];
 			bool bTaken = false;
 			for (AStoreRaidCharacter Character : Characters)
 			{
@@ -650,7 +660,7 @@ class AStoreRaidGameMode : AGameModeBase
 			if (!bTaken)
 				return Spawn;
 		}
-		return Playground::SpawnPoint(0);
+		return Spawns.Num() > 0 ? Spawns[0] : FVector2D::ZeroVector;
 	}
 }
 

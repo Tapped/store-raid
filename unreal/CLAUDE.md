@@ -38,6 +38,12 @@ What has tripped up work here before:
   `UPROPERTY` or `UFUNCTION` logs `Full Reload is required`, and `pnpm run ue dev` restarts every
   process (about 15 s).
 
+- `EMode` is the room's mode (playground or game): furnishing's ways of getting about are `EMover`.
+- Script stops any one run of code that takes over `EditorMaximumScriptExecutionTime` ("took too
+  long to execute. Potentially an infinite loop?") in the editor binary, which every process here
+  is. Building a generated level takes a couple of seconds, so `Config/DefaultEngine.ini` raises it
+  to 10.
+
 **Running it**
 
 - Script that doesn't compile at startup makes Angelscript open a window to wait for a fix, which

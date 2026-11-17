@@ -63,9 +63,11 @@ bot; the port of `scripts/playground.ts`), `items` (a bot and a client; hands, t
 sofa), `hatch` (the port of `scripts/hatch.ts`) and `round` (a bot and a client: seats, ready, loot,
 leaving, results, death and watching, dawn). The last two make the room a game and put it back.
 
-**Modes:** the server's room is the playground unless `UE_MODE=game` (`-mode=game` on its command
-line), or `pnpm run ue exec server sr.mode game` on a running one; `UE_RAID_TIME=<seconds>` shortens
-raids. The port's playground has the crew's truck, which the web game's doesn't, parked along the
+**Levels and modes:** the server's room is in the playground unless `UE_LEVEL=generated-<seed>`
+(`-level=` on its command line), a generated warehouse. It's a game or the playground as
+`UE_MODE=game` or `UE_MODE=playground` says (`-mode=`), else as the level's own: generated levels are
+games. `pnpm run ue exec server sr.mode game` switches a running one; `UE_RAID_TIME=<seconds>`
+shortens raids. The port's playground has the crew's truck, which the web game's doesn't, parked along the
 south wall (`Playground::TruckPlace()`), so the round can be played before the harbour is ported.
 
 **Models:** `pnpm run ue import [filter…]` brings models from `../assets/models` into `Content/`, all
@@ -120,7 +122,16 @@ Each step ends playable, with the web game as the reference for how it should be
    unreal/Tools/dumpGenerated.ts [count] [furnished count]`: more seeds for a wider check, and the
    port's own go to `Saved/`, to diff. A level takes about 1.6 s in the test editor, interpreted.
    `levelCheck.ts` is `LevelCheck.as`: `LevelCheck_Test.as` holds seeds 1 to 3 to every rule and
-   spoils one to see it caught. Still to come: playing in a generated level, and drawing it.
+   spoils one to see it caught.
+   Playable: `Level/Levels.as` is the `Level` type and `levelNamed()`, for the playground and
+   `generated-<seed>`; the game state builds the one the server names on every machine (`LevelName`,
+   replicated), and the game mode takes spawns, the kill height and the dimmer from it. Unlike the
+   web game's, a warehouse has the crew's truck, backed up to its open loading door on a fenced patch
+   of yard. Its props are drawn (`PropsActor.as`: an instanced mesh per model, boxes for the ones not
+   imported yet) and its fittings' lights are point lights, the high-bays alone casting shadows.
+   Still to come: the building drawn by room kind, with the port's own materials and the surface
+   library; flickering lights; the roof and outside; and how fast it builds (2 s on the server, 6 on a
+   client).
 5. **Ticks and health.**
 6. **The harbour and the yard, then the village.** Environments, sky and fog, ground.
 7. **Sound, the tuning panel, the rest.** Then the web game is deleted.

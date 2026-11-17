@@ -1,10 +1,17 @@
 // What every machine knows about the room: its mechanics, owned by the server and synced, which
 // every character's movement is given, so the server and each client's prediction agree; what the
 // room is for and where a game's round is (GameState in server/src/rooms/schema.ts). It also builds
-// the level on every machine from the same data, as shared/ did: for now the playground, with the
-// crew's truck.
+// the level on every machine from the same data, as shared/ did: the one the server names
+// (`-level=generated-7` on its command line, else the playground), with the crew's truck.
 class AStoreRaidGameState : AGameStateBase
 {
+	/** The level's name, as Levels::Named takes it: the server's, which every machine builds. */
+	UPROPERTY(Replicated)
+	FString LevelName = "playground";
+
+	/** The level, as built on this machine. Not `Level`, which would hide the namespace Level. */
+	FLevel Layout;
+
 	/** What the room is for: the playground has no rounds. */
 	UPROPERTY(Replicated)
 	EMode Mode = EMode::Playground;
@@ -85,7 +92,18 @@ class AStoreRaidGameState : AGameStateBase
 	UFUNCTION(BlueprintOverride)
 	void BeginPlay()
 	{
-		BuildPlayground();
+		if (HasAuthority())
+		{
+			TArray<FString> Tokens;
+			TArray<FString> Switches;
+			FCommandLine::Parse(FCommandLine::Get(), Tokens, Switches);
+			for (const FString& Switch : Switches)
+			{
+				if (Switch.StartsWith("level="))
+					LevelName = Switch.RightChop(6);
+			}
+		}
+		BuildLevel();
 	}
 
 	UFUNCTION()
@@ -105,78 +123,58 @@ class AStoreRaidGameState : AGameStateBase
 			Character.Movement.SetLadders(Geometry.Ladders);
 	}
 
-	void BuildPlayground()
+	void BuildLevel()
 	{
-		FComposedTiles Composed = Tiles::ComposeTiles(Playground::Grid());
-		if (!Composed.Problem.IsEmpty())
+		Layout = Levels::Named(LevelName);
+		if (!Layout.Problem.IsEmpty())
 		{
-			Log(f"StoreRaid: the playground's tiles don't fit: {Composed.Problem}");
+			Log(f"StoreRaid: no level {LevelName}: {Layout.Problem}");
 			return;
 		}
 		Geometry = Cast<ALevelGeometry>(SpawnActor(ALevelGeometry));
-		Geometry.Build(Composed);
-
-		// The hall's four walls and its roof, which the grid doesn't have (PLAYGROUND in shared/level.ts).
-		const float X = Playground::HALL_X;
-		const float Z = Playground::HALL_Z;
-		const float W = Playground::WALL;
-		const float Top = Playground::HALL_HEIGHT;
-		const float Bottom = -Tiles::STOREY;
-		Geometry.AddBlock(-X - W, -X, Bottom, Top, -Z, Z);
-		Geometry.AddBlock(X, X + W, Bottom, Top, -Z, Z);
-		Geometry.AddBlock(-X - W, X + W, Bottom, Top, -Z - W, -Z);
-		Geometry.AddBlock(-X - W, X + W, Bottom, Top, Z, Z + W);
-		Geometry.AddBlock(-X - W, X + W, Top, Top + W, -Z - W, Z + W);
-
-		Log(f"StoreRaid: playground built: {Composed.Floors.Num()} floors, {Composed.Boxes.Num()} boxes, {Composed.Ladders.Num()} ladders");
-
+		Geometry.Build(Layout);
+		Log(f"StoreRaid: {Layout.Name} built: {Layout.Floors.Num()} floors, {Layout.Boxes.Num()} boxes, {Layout.Ladders.Num()} ladders, {Layout.Props.Num()} props, {Layout.Lamps.Num()} lamps");
 		if (!System::IsDedicatedServer())
-			AddHallLights();
-
+		{
+			for (const FLamp& Lamp : Layout.Lamps)
+				AddLamp(Lamp);
+			if (Layout.Props.Num() > 0)
+			{
+				ALevelProps Props = Cast<ALevelProps>(SpawnActor(ALevelProps));
+				Props.Build(Layout.Props);
+			}
+		}
 		// The dimmer: a plate on the wall with a knob, for everyone to see.
-		Geometry.AddBlock(Playground::DIMMER.X - 0.12, Playground::DIMMER.X + 0.12, Playground::DIMMER.Y - 0.15, Playground::DIMMER.Y + 0.15, Playground::DIMMER.Z, Playground::DIMMER.Z + 0.04);
-
+		Geometry.AddBlock(Layout.Dimmer.X - 0.12, Layout.Dimmer.X + 0.12, Layout.Dimmer.Y - 0.15, Layout.Dimmer.Y + 0.15, Layout.Dimmer.Z, Layout.Dimmer.Z + 0.04);
 		// The crew's truck, with its hatch where the room has it.
-		Parked = Truck::Park(Playground::TruckPlace());
+		Parked = Truck::Park(Layout.Truck);
 		TruckActor = Cast<ATruck>(SpawnActor(ATruck));
 		TruckActor.Build(Parked);
 		TruckActor.Show(Hatch);
-		Quota = Modes::QuotaFor(Playground::Items());
-
+		Quota = Modes::QuotaFor(Layout.Items);
 		// Where players come in, as spawnPoint() in shared/level.ts: facing north; and the items.
 		if (HasAuthority())
 		{
-			for (const FItemSpawn& Spawn : Playground::Items())
+			for (const FItemSpawn& Spawn : Layout.Items)
 			{
 				AStoreRaidItem Item = Cast<AStoreRaidItem>(SpawnActor(AStoreRaidItem, World::ToWorld(Spawn.X, Spawn.Y, Spawn.Z)));
 				Item.Kind = Spawn.Kind;
 				Item.Spawn = FVector(Spawn.X, Spawn.Y, Spawn.Z);
 				Item.OnRep_Kind();
 			}
-			for (int Index = 0; Index < 8; Index++)
-			{
-				const FVector2D Spawn = Playground::SpawnPoint(Index);
+			for (const FVector2D& Spawn : Layout.Spawns)
 				SpawnActor(APlayerStart, World::ToWorld(Spawn.X, 1.0, Spawn.Y), FRotator::ZeroRotator);
-			}
 		}
+		Log(f"StoreRaid: {Layout.Name} ready");
 	}
 
-	/**
-	 * Lamps under the roof in rows 8 m apart, and two in the basement: movable lights, as everything
-	 * is built at runtime and Lumen lights it, with nothing baked.
-	 */
-	void AddHallLights()
+	/** A movable light, as everything is built at runtime and Lumen lights it, with nothing baked. */
+	void AddLamp(FLamp Lamp)
 	{
-		for (float X = -12; X <= 12; X += 8)
-		{
-			for (float Z = -8; Z <= 8; Z += 8)
-				AddLamp(X, Playground::HALL_HEIGHT - 0.6, Z, 12000, 2400);
-		}
-		AddLamp(-6, -0.6, -4, 4000, 1200);
-		AddLamp(1, -0.6, -6, 4000, 1200);
+		AddLamp(Lamp.At.X, Lamp.At.Y, Lamp.At.Z, Lamp.Lumens, Lamp.Radius * 100.0, Lamp.Colour, Lamp.bShadows);
 	}
 
-	void AddLamp(float X, float Y, float Z, float Lumens, float Radius)
+	void AddLamp(float X, float Y, float Z, float Lumens, float Radius, FLinearColor Colour = FLinearColor(1.0, 0.9, 0.75), bool bShadows = true)
 	{
 		APointLight Lamp = Cast<APointLight>(SpawnActor(APointLight, World::ToWorld(X, Y, Z)));
 		UPointLightComponent Bulb = Lamp.PointLightComponent;
@@ -184,8 +182,8 @@ class AStoreRaidGameState : AGameStateBase
 		Bulb.SetIntensityUnits(ELightUnits::Lumens);
 		Bulb.SetIntensity(Lumens);
 		Bulb.SetAttenuationRadius(Radius);
-		Bulb.SetLightColor(FLinearColor(1.0, 0.9, 0.75));
-		Bulb.SetCastShadows(true);
+		Bulb.SetLightColor(Colour);
+		Bulb.SetCastShadows(bShadows);
 		Lamps.Add(Bulb);
 		LampLumens.Add(Lumens);
 	}

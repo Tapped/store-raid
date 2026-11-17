@@ -47,19 +47,25 @@ class ALevelGeometry : AActor
 	/** The ladders, in the movement component's terms, for every character to climb. */
 	TArray<FStoreRaidLadder> Ladders;
 
-	void Build(FComposedTiles Composed)
+	void Build(FLevel Level)
 	{
 		Blocks.SetStaticMesh(Cast<UStaticMesh>(LoadObject(nullptr, "/Engine/BasicShapes/Cube.Cube")));
 		Blocks.SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 		Blocks.SetCollisionProfileName(n"BlockAll");
 
-		for (const FFloor& Floor : Composed.Floors)
+		for (const FFloor& Floor : Level.Floors)
 			AddFloor(Floor);
-		for (const FLevelBox& Box : Composed.Boxes)
+		for (const FLevelBox& Box : Level.Boxes)
 			AddBlock(Box.MinX, Box.MaxX, Box.Y, Box.Y + Box.Height, Box.MinZ, Box.MaxZ);
+		// The roof over a building, which nobody reaches: a slab on its walls.
+		if (Level.Roof > 0)
+		{
+			const FBoxXZ Roof = Level.Footprint;
+			AddBlock(Roof.MinX - Tiles::WALL, Roof.MaxX + Tiles::WALL, Level.Roof, Level.Roof + Tiles::SLAB, Roof.MinZ - Tiles::WALL, Roof.MaxZ + Tiles::WALL);
+		}
 
 		Ladders.Empty();
-		for (const FLadder& Ladder : Composed.Ladders)
+		for (const FLadder& Ladder : Level.Ladders)
 		{
 			FStoreRaidLadder Volume;
 			Volume.Min = World::ToWorld(Ladder.MinX, Ladder.Y, Ladder.MinZ);
