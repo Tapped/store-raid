@@ -18,6 +18,8 @@
  *                         then Interchange in a headless editor, with Nanite; only names containing a
  *                         filter (`props/tv`, `village/`), else all; only those changed since their
  *                         last import, unless --force. Content/ can be deleted and rebuilt
+ *   surfaces [filter…]    the surface library (../assets/textures/surfaces) into Content/Surfaces/: its
+ *                         textures, the world-projected material M_Surface and an instance a surface
  *
  * Every process gets a dev port (see DevServer.h) for exec and shot: the server 8700, clients 8711 on,
  * bots 8731 on, the window 8721. The game listens on 7777. UE_LEVEL=generated-<seed> puts the server's
@@ -31,6 +33,7 @@ import { existsSync, mkdirSync, rmSync, statSync, watch, writeFileSync } from "n
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STAGED, stageModels } from "./import/stage";
+import { stageSurfaces } from "./import/surfaces";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PROJECT = join(ROOT, "StoreRaid.uproject");
@@ -426,6 +429,28 @@ async function importModels(args: string[]): Promise<void> {
   }
   const list = join(ROOT, "Saved/Import/list.txt");
   writeFileSync(list, `${names.join("\n")}\n`);
+  runImportScript(script, "import", { STORE_RAID_IMPORT: list });
+}
+
+/**
+ * The surface library (`assets/textures/surfaces/`) into Content/Surfaces/: staged as PNG (see
+ * Tools/import/surfaces.ts), then textures, the material M_Surface and an instance a surface made in
+ * a headless editor by Tools/import/surfaces.py. Only surfaces whose name contains a filter, else all.
+ */
+async function importSurfaces(filters: string[]): Promise<void> {
+  const staged = await stageSurfaces(filters);
+  if (!staged.length) {
+    console.error(`No surface matches ${filters.join(" ")}`);
+    process.exit(1);
+  }
+  runImportScript(join(ROOT, "Tools/import/surfaces.py"), "surfaces");
+}
+
+/**
+ * Runs an editor Python script headless, printing its lines that start with `<prefix>: ` and any
+ * errors; it ends with `<prefix>: done: N … 0 failed` when everything went in. Exits with whether it did.
+ */
+function runImportScript(script: string, prefix: string, env: Record<string, string> = {}): void {
   const child = spawn(
     EDITOR,
     [
@@ -434,10 +459,12 @@ async function importModels(args: string[]): Promise<void> {
       "-nullrhi",
       "-nosound",
       "-NoP4",
-      ...common("import", 8791),
+      ...common(prefix, 8791),
     ],
-    { cwd: ROOT, windowsHide: true, env: { ...process.env, STORE_RAID_IMPORT: list } },
+    { cwd: ROOT, windowsHide: true, env: { ...process.env, ...env } },
   );
+  const said = new RegExp(String.raw`${prefix}: |Error:|LogPython: Error|Traceback|^\s+File "`);
+  const done = new RegExp(String.raw`${prefix}: done: \d+ \w+, 0 failed`);
   let rest = "";
   let failed = true;
   const take = (chunk: Buffer) => {
@@ -445,15 +472,14 @@ async function importModels(args: string[]): Promise<void> {
     const lines = rest.split(/\r?\n/);
     rest = lines.pop() ?? "";
     for (const line of lines) {
-      if (/import: |Error:|LogPython: Error|Traceback|^\s+File "/.test(line) && !isNoise(line))
-        console.log(line);
-      if (/import: done: \d+ imported, 0 failed/.test(line)) failed = false;
+      if (said.test(line) && !isNoise(line)) console.log(line);
+      if (done.test(line)) failed = false;
     }
   };
   child.stdout?.on("data", take);
   child.stderr?.on("data", take);
   child.on("exit", (code) => {
-    if (code !== 0) console.error(`The editor exited with ${code}: see Saved/Logs/import.log`);
+    if (code !== 0) console.error(`The editor exited with ${code}: see Saved/Logs/${prefix}.log`);
     process.exit(failed || code !== 0 ? 1 : 0);
   });
 }
@@ -537,6 +563,9 @@ switch (command) {
     break;
   case "import":
     await importModels(rest);
+    break;
+  case "surfaces":
+    await importSurfaces(rest);
     break;
   case "check": {
     const file = join(ROOT, "Tools/checks", `${rest[0]}.ts`);

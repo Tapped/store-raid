@@ -138,6 +138,11 @@ class AStoreRaidGameState : AGameStateBase
 		{
 			for (const FLamp& Lamp : Layout.Lamps)
 				AddLamp(Lamp);
+			if (Layout.Grid.Storeys.Num() > 0)
+			{
+				ALevelBuilding Drawn = Cast<ALevelBuilding>(SpawnActor(ALevelBuilding));
+				Drawn.Build(Layout);
+			}
 			if (Layout.Props.Num() > 0)
 			{
 				ALevelProps Props = Cast<ALevelProps>(SpawnActor(ALevelProps));
@@ -145,7 +150,7 @@ class AStoreRaidGameState : AGameStateBase
 			}
 		}
 		// The dimmer: a plate on the wall with a knob, for everyone to see.
-		Geometry.AddBlock(Layout.Dimmer.X - 0.12, Layout.Dimmer.X + 0.12, Layout.Dimmer.Y - 0.15, Layout.Dimmer.Y + 0.15, Layout.Dimmer.Z, Layout.Dimmer.Z + 0.04);
+		Geometry.AddFixture(Layout.Dimmer.X - 0.12, Layout.Dimmer.X + 0.12, Layout.Dimmer.Y - 0.15, Layout.Dimmer.Y + 0.15, Layout.Dimmer.Z, Layout.Dimmer.Z + 0.04);
 		// The crew's truck, with its hatch where the room has it.
 		Parked = Truck::Park(Layout.Truck);
 		TruckActor = Cast<ATruck>(SpawnActor(ATruck));

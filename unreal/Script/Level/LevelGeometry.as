@@ -1,7 +1,7 @@
 // A level's floors, boxes and ladders, put in the world: what shared/ composed and every machine
 // builds the same from the same data. Floors and boxes are instances of the engine's cube on one
 // instanced mesh, with collision, so the movement component walks on them and steps up them; ramps
-// (stairs) are cubes pitched to the slope. Ladders become the movement component's ladder volumes.
+// (stairs) are cubes pitched to the slope. In a building drawn by room (Building.as) they're hidden. Ladders become the movement component's ladder volumes.
 //
 // Game coordinates (meters, x east, y up, z north) become Unreal's (cm, X north, Y east, Z up) here
 // and nowhere else: see World::ToWorld().
@@ -44,6 +44,11 @@ class ALevelGeometry : AActor
 	UInstancedStaticMeshComponent Blocks;
 	default Blocks.Mobility = EComponentMobility::Static;
 
+	/** Small things on the walls, like the dimmer's plate: drawn even when Blocks isn't. */
+	UPROPERTY(DefaultComponent, Attach = Blocks)
+	UInstancedStaticMeshComponent Fixtures;
+	default Fixtures.Mobility = EComponentMobility::Static;
+
 	/** The ladders, in the movement component's terms, for every character to climb. */
 	TArray<FStoreRaidLadder> Ladders;
 
@@ -52,6 +57,12 @@ class ALevelGeometry : AActor
 		Blocks.SetStaticMesh(Cast<UStaticMesh>(LoadObject(nullptr, "/Engine/BasicShapes/Cube.Cube")));
 		Blocks.SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 		Blocks.SetCollisionProfileName(n"BlockAll");
+		Fixtures.SetStaticMesh(Blocks.StaticMesh);
+		Fixtures.SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		// A building drawn by room (ALevelBuilding) covers its boxes in skins, so they only collide.
+		// The dedicated server draws nothing anyway.
+		if (Level.Grid.Storeys.Num() > 0)
+			Blocks.SetVisibility(false);
 
 		for (const FFloor& Floor : Level.Floors)
 			AddFloor(Floor);
@@ -75,6 +86,13 @@ class ALevelGeometry : AActor
 			Volume.Gap = (Tiles::LADDER_WALL + 0.3) * 100.0;
 			Ladders.Add(Volume);
 		}
+	}
+
+	/** A box that blocks and is always drawn, from its extents in game meters. */
+	void AddFixture(float MinX, float MaxX, float MinY, float MaxY, float MinZ, float MaxZ)
+	{
+		AddBlock(MinX, MaxX, MinY, MaxY, MinZ, MaxZ);
+		Fixtures.AddInstance(Shapes::BoxTransform(MinX, MaxX, MinY, MaxY, MinZ, MaxZ), true);
 	}
 
 	/** A box from its extents in game meters. */

@@ -50,6 +50,8 @@ struct FLevel
 	/** How high its roof is, over the building's footprint, or 0 for none drawn. */
 	float Roof = 0.0;
 	FBoxXZ Footprint;
+	/** The tiles a building is made of, for drawing it by room; none (no storeys) for the playground. */
+	FTileGrid Grid;
 	/** Why there's no level of that name, or empty. */
 	FString Problem;
 };
@@ -152,6 +154,7 @@ namespace Levels
 		Level.Props = Warehouse.Props;
 		Level.Lights = Warehouse.Lights;
 		Level.Roof = Warehouse.Roof;
+		Level.Grid = Warehouse.Grid;
 		const float X0 = Warehouse.Grid.X;
 		const float Z0 = Warehouse.Grid.Z;
 		Level.Footprint = Level::MakeBoxXZ(X0, -X0, Z0, -Z0);

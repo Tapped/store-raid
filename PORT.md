@@ -85,6 +85,11 @@ script places them with the game's yaw. In script, `Models::Mesh("level/truck")`
 loads one, and `sr.model <name> <x> <y> <z> [yaw]` puts one down on that machine to look at
 (`sr.model clear`). The game must be stopped to import: its processes keep the packages they loaded open.
 
+**Surfaces:** `pnpm run ue surfaces [filter…]` brings the surface library (`../assets/textures/surfaces`,
+baked by `pnpm run surface`) into `Content/Surfaces/<name>/`: its three textures and `MI_<name>`, an
+instance of `M_Surface` with the surface's tile and paint from `client/src/surfaceTable.ts`, in about
+20 seconds for all of them. Run it again after baking a surface.
+
 ## Order
 
 Each step ends playable, with the web game as the reference for how it should behave.
@@ -129,9 +134,17 @@ Each step ends playable, with the web game as the reference for how it should be
    web game's, a warehouse has the crew's truck, backed up to its open loading door on a fenced patch
    of yard. Its props are drawn (`PropsActor.as`: an instanced mesh per model, boxes for the ones not
    imported yet) and its fittings' lights are point lights, the high-bays alone casting shadows.
-   Still to come: the building drawn by room kind, with the port's own materials and the surface
-   library; flickering lights; the roof and outside; and how fast it builds (2 s on the server, 6 on a
-   client).
+   The building is drawn by room kind (`Level/Building.as`, a first cut of `client/src/building.ts`):
+   each face of a wall, floor and ceiling takes the finish of the room it faces (kick band, lower coat,
+   dado band, upper coat, cladding; floor; slab, deck or ceiling tiles), in the livery from the seed,
+   the web game's finishes and liveries number for number. Faces are thin boxes on the level's boxes,
+   an instanced mesh per surface with each instance's paint in its custom data, over collision boxes
+   that are hidden. `pnpm run ue surfaces` brings the surface library in (`Tools/import/surfaces.ts`
+   and `surfaces.py`): its textures, and `M_Surface`, a material made by script that projects them
+   from the world, so faces need no texture coordinates, with an instance a surface.
+   Still to come: the building's wear, pilasters, beams, lane lines, door trims, stair treads, ladders
+   and railings drawn as such; light levels and exposure against the web game's look (it's washed out
+   now); flickering lights; and how fast it builds (2 s on the server, 6 on a client).
 5. **Ticks and health.**
 6. **The harbour and the yard, then the village.** Environments, sky and fog, ground.
 7. **Sound, the tuning panel, the rest.** Then the web game is deleted.
@@ -151,3 +164,6 @@ visibility, KTX2, atlasing and fog are the engine's job now.
 - **Asset import:** built before step 3, so the round starts with the real truck, hatch and props
   (`pnpm run ue import`). Materials are Interchange's glTF ones for now; materials of our own, made
   by script, and the surface library's textures come when the building is drawn (step 4).
+- **The building's surfaces are projected from the world** (`M_Surface`), not mapped by UVs as the
+  web game's part builder did: faces are boxes of any size, and a surface shows at its real size on
+  each, which costs nothing per face. The normal map goes into the world by the same projection.

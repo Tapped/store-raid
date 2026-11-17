@@ -12,6 +12,8 @@ What has tripped up work here before:
 
 - A global `const` can't use a constant from another file in its initializer ("may not be
   initialized yet"). Write the number, with the sum in a comment (`KILL_Y` in `Playground.as`).
+- Containers can't be nested (`TMap<int, TArray<int>>` doesn't compile): wrap the inner one in a
+  struct (`FIndices` in `Building.as`) and change it through `FindOrAdd`, which gives a reference.
 - A local with the same name as a method hides that method: `FItemKindInfo Info = Info();` fails.
 - There's no `GameState` member on the game mode: use `Gameplay::GetGameState()`, and
   `Gameplay::GetGameMode()`.
