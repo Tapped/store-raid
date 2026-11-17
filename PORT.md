@@ -112,11 +112,14 @@ Each step ends playable, with the web game as the reference for how it should be
    stand-in sits as a short cylinder) and the overlay's look beyond plain text.
 4. **The warehouse.** `generate.ts`, `furnish.ts`, `props.ts`, `levelCheck.ts` in script; the building
    drawn by room kind, dressing, fittings and their light.
-   So far: `generate.ts` is `Level/Generate.as`, and makes what the web game makes on every seed
-   tried (1 to 200): `Generate_Test.as` checks it against `Tools/fixtures/generated.txt`, the web
-   game's levels for seeds 1 to 30, written by `pnpm exec tsx unreal/Tools/dumpGenerated.ts [count]`
-   (more seeds for a wider check; the port's own go to `Saved/generated.txt`, to diff). About 0.3 s
-   a level in the test editor.
+   So far, making the level, as the web game makes it on every seed tried: `generate.ts` is
+   `Level/Generate.as` (seeds 1 to 200), `props.ts` `Props.as`, `furnish.ts` `Reach.as` (the
+   building, links, targets and flood fills) and `Furnish.as`, and `generatedLevel()` `Warehouse.as`
+   (seeds 1 to 20). `Generate_Test.as` and `Furnish_Test.as` check them against the web game's own,
+   in `Tools/fixtures/` (seeds 1 to 30 and 1 to 3), written by `pnpm exec tsx
+   unreal/Tools/dumpGenerated.ts [count] [furnished count]`: more seeds for a wider check, and the
+   port's own go to `Saved/`, to diff. A level takes about 1.6 s in the test editor, interpreted.
+   Still to come: `levelCheck.ts`, and drawing it all.
 5. **Ticks and health.**
 6. **The harbour and the yard, then the village.** Environments, sky and fog, ground.
 7. **Sound, the tuning panel, the rest.** Then the web game is deleted.
