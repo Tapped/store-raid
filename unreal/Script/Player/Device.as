@@ -19,8 +19,12 @@ struct FControls
 	bool bReadyPressed = false;
 }
 
-/** Degrees a mouse count turns, and degrees a second a stick held over turns. */
-const float MOUSE_DEGREES = 0.07;
+/**
+ * Degrees a mouse count turns, as the web game's 0.005 radians a pixel (`dragSpeed`), and degrees a
+ * second a stick held over turns. The engine's own scaling of the mouse axes is 1
+ * (Config/DefaultInput.ini), so this is the only number between a count and a turn.
+ */
+const float MOUSE_DEGREES = 0.2865;
 const float STICK_DEGREES = 150.0;
 /** How far a stick has to move before it counts. */
 const float STICK_DEAD_ZONE = 0.15;
