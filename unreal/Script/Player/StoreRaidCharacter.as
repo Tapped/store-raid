@@ -1,5 +1,5 @@
-// The player's character: a first-person camera at eye height for its owner, and a stand-in body
-// for everyone else, until the character model is imported. It moves by UStoreRaidMovement (C++),
+// The player's character: a first-person camera at eye height for its owner, and the character
+// model for everyone else (Body.as), or a stand-in cylinder if it isn't imported. It moves by UStoreRaidMovement (C++),
 // which predicts walking, running and stamina, jumping, stairs and ladders, and the server corrects.
 class AStoreRaidCharacter : AStoreRaidCharacterBase
 {
@@ -13,11 +13,24 @@ class AStoreRaidCharacter : AStoreRaidCharacterBase
 	// the engine's players hold the vertical angle that gives (MaintainYFOV in BaseEngine.ini).
 	default Camera.FieldOfView = 94.93;
 
-	/** What others see of this player for now: a cylinder as tall and wide as they are. */
+	/** What others see of this player: the character, its feet at the capsule's foot, posed by Pose. */
 	UPROPERTY(DefaultComponent, Attach = CollisionCylinder)
-	UStaticMeshComponent Body;
+	USkeletalMeshComponent Body;
 	default Body.bOwnerNoSee = true;
-	default Body.RelativeScale3D = FVector(0.6, 0.6, 1.8);
+	default Body.RelativeLocation = FVector(0, 0, -90);
+	default Body.SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	/** Shown instead if the character isn't imported: a cylinder as tall and wide as they are. */
+	UPROPERTY(DefaultComponent, Attach = CollisionCylinder)
+	UStaticMeshComponent StandIn;
+	default StandIn.bOwnerNoSee = true;
+	default StandIn.RelativeScale3D = FVector(0.6, 0.6, 1.8);
+	default StandIn.SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	/** How the body is posed and turned, on machines that draw it. */
+	FBody Pose;
+	bool bSeatedShown = false;
+	bool bBodyHidden = false;
 
 	/**
 	 * What shoves loose items: a capsule like the player's own, which blocks only physics bodies. The
@@ -51,25 +64,62 @@ class AStoreRaidCharacter : AStoreRaidCharacterBase
 		Shover.SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Ignore);
 		Shover.SetCollisionResponseToChannel(ECollisionChannel::PhysicsBody, ECollisionResponse::ECR_Block);
 
-		// The engine's cylinder is 1 m tall about its middle, like the capsule.
-		Body.SetStaticMesh(Cast<UStaticMesh>(LoadObject(nullptr, "/Engine/BasicShapes/Cylinder.Cylinder")));
-		Body.SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		USkeletalMesh Character = System::IsDedicatedServer() ? nullptr : Models::Skinned("characters/ch35");
+		if (Character != nullptr)
+		{
+			Body.SetSkeletalMeshAsset(Character);
+			Pose.Load();
+			StandIn.SetVisibility(false);
+		}
+		else
+		{
+			// The engine's cylinder is 1 m tall about its middle, like the capsule.
+			StandIn.SetStaticMesh(Cast<UStaticMesh>(LoadObject(nullptr, "/Engine/BasicShapes/Cylinder.Cylinder")));
+			Body.SetVisibility(false);
+		}
 		AStoreRaidGameState State = Cast<AStoreRaidGameState>(Gameplay::GetGameState());
 		if (State != nullptr)
 			State.Prepare(this);
 	}
 
+	UFUNCTION(BlueprintOverride)
+	void Tick(float DeltaSeconds)
+	{
+		if (System::IsDedicatedServer() || Body.SkeletalMeshAsset == nullptr)
+			return;
+		float SeatYaw = 0;
+		const AStoreRaidPlayerState Player = Cast<AStoreRaidPlayerState>(PlayerState);
+		AStoreRaidGameState Room = Cast<AStoreRaidGameState>(Gameplay::GetGameState());
+		if (Player != nullptr)
+			Pose.ChooseIdle(Player.PlayerName);
+		if (bSeatedShown && Player != nullptr && Room != nullptr && Player.Seat >= 0 && Player.Seat < Room.Parked.Seats.Num())
+			SeatYaw = Room.Parked.Seats[Player.Seat].Yaw;
+		const bool bCarrying = Left != nullptr && Left == Right;
+		Pose.Update(Body, GetVelocity(), GetBaseAimRotation().Yaw, bSeatedShown, SeatYaw, bCarrying, DeltaSeconds);
+	}
+
+	/** Hidden while we look through this player's eyes, so the camera isn't inside their head. */
+	void HideBody(bool bHidden)
+	{
+		if (bHidden == bBodyHidden)
+			return;
+		bBodyHidden = bHidden;
+		Body.SetHiddenInGame(bHidden);
+		StandIn.SetHiddenInGame(bHidden);
+	}
+
 	/**
-	 * Seated or standing, on every machine, from the replicated seat. The stand-in body sits back on
-	 * the bench behind the feet, as the seated clips sit, and shorter; or stands over them. The
+	 * Seated or standing, on every machine, from the replicated seat. The character sits back on the
+	 * bench behind the feet, as the seated clips do; the stand-in sits there too, shorter. The
 	 * capsule narrows to SEATED_RADIUS: seats are 0.56 m apart, closer than two players, and one
 	 * getting up mustn't start inside the one beside them, or neither moves (the web game let those
 	 * seated overlap and pushed walkers out of them).
 	 */
 	void ShowSeated(bool bSeated)
 	{
-		Body.SetRelativeLocation(bSeated ? FVector(-45, 0, -25) : FVector::ZeroVector);
-		Body.SetRelativeScale3D(FVector(0.6, 0.6, bSeated ? 1.3 : 1.8));
+		bSeatedShown = bSeated;
+		StandIn.SetRelativeLocation(bSeated ? FVector(-45, 0, -25) : FVector::ZeroVector);
+		StandIn.SetRelativeScale3D(FVector(0.6, 0.6, bSeated ? 1.3 : 1.8));
 		const float Radius = bSeated ? SEATED_RADIUS : 30;
 		if (CapsuleComponent.CapsuleRadius != Radius)
 			CapsuleComponent.SetCapsuleRadius(Radius, true);

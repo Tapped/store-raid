@@ -17,6 +17,16 @@ namespace Models
 		return Cast<USkeletalMesh>(LoadObject(nullptr, MeshPath(Name)));
 	}
 
+	/** A clip of a skinned model, by the name of its file in raw/characters/animations (`sit-idle`); null if it isn't imported. */
+	UAnimSequence Clip(FString Name, FString Clip)
+	{
+		FString Folder;
+		FString Base;
+		if (!Name.Split("/", Folder, Base, ESearchCase::CaseSensitive, ESearchDir::FromEnd))
+			Base = Name;
+		return Cast<UAnimSequence>(LoadObject(nullptr, f"/Game/Models/{Name}/{Base}{Clip}.{Base}{Clip}"));
+	}
+
 	FString MeshPath(FString Name)
 	{
 		FString Folder;

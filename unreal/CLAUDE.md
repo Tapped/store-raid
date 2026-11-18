@@ -10,6 +10,8 @@ What has tripped up work here before:
 
 **Angelscript**
 
+- A global `const` outside a namespace isn't seen from another file ("is not declared"), even in a
+  function body: put shared constants in a namespace (`TickRules::`), or give the other file its own.
 - A global `const` can't use a constant from another file in its initializer ("may not be
   initialized yet"). Write the number, with the sum in a comment (`KILL_Y` in `Playground.as`).
 - Containers can't be nested (`TMap<int, TArray<int>>` doesn't compile): wrap the inner one in a

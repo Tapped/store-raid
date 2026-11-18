@@ -123,8 +123,12 @@ Each step ends playable, with the web game as the reference for how it should be
    `StoreRaidGameMode.as`, `UI/Overlay.as`. Those out of the building have no character and watch
    someone who has. Getting up takes `SITTING.standUpTime` and sitting down eases the eye in, a
    player put back in the truck is rested, and a seated player's capsule is narrower, so one getting
-   up doesn't start inside the one beside them. Still to come: the seated character's clips (the
-   stand-in sits as a short cylinder) and the overlay's look beyond plain text.
+   up doesn't start inside the one beside them. Everyone else is drawn as the character
+   (`Player/Body.as`, ch35's clips played on its skeletal mesh as client/src/players.ts plays them):
+   walking at their pace, carrying, standing, and on a seat one of the seated idles picked by name,
+   with sit-to-stand forward to get up and backward to sit down; seated, the body faces across the
+   truck. A cylinder stands in if the model isn't imported. Clips switch without blending for now.
+   Still to come: the overlay's look beyond plain text.
 4. **The warehouse.** `generate.ts`, `furnish.ts`, `props.ts`, `levelCheck.ts` in script; the building
    drawn by room kind, dressing, fittings and their light.
    So far, making the level, as the web game makes it on every seed tried: `generate.ts` is

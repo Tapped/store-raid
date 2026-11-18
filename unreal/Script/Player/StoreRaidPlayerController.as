@@ -235,7 +235,7 @@ class AStoreRaidPlayerController : APlayerController
 			const AStoreRaidPlayerState Player = Cast<AStoreRaidPlayerState>(Character.PlayerState);
 			Character.ShowSeated(Player != nullptr && Player.Seat >= 0);
 			const bool bWatched = Character == Watched;
-			Character.Body.SetHiddenInGame(bWatched);
+			Character.HideBody(bWatched);
 			// A watched character's camera looks where they do, as the server last said.
 			Character.Camera.bUsePawnControlRotation = !bWatched;
 			if (bWatched)
