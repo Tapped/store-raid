@@ -21,12 +21,13 @@ struct FControls
 
 /**
  * Degrees a mouse count turns, as the web game's 0.005 radians a pixel (`dragSpeed`), and degrees a
- * second a stick held over turns. The engine's own scaling of the mouse axes is 1
- * (Config/DefaultInput.ini), so this is the only number between a count and a turn.
+ * second a stick held over turns. Config/DefaultInput.ini leaves the mouse and sticks as they come:
+ * no scaling, smoothing, scaling by the field of view or dead zones of the engine's. So this is the
+ * only number between a count and a turn, and Stick() the only shaping of a stick.
  */
 const float MOUSE_DEGREES = 0.2865;
 const float STICK_DEGREES = 150.0;
-/** How far a stick has to move before it counts. */
+/** How far a stick has to move from the middle, any way, before it counts: `DEADZONE` in input.ts. */
 const float STICK_DEAD_ZONE = 0.15;
 
 namespace Device
@@ -50,17 +51,17 @@ namespace Device
 			Forward -= 1;
 
 		// Controllers, analog: a half-pushed stick walks.
-		Right += Device::DeadZone(Controller.GetInputAnalogKeyState(EKeys::Gamepad_LeftX));
-		Forward += Device::DeadZone(Controller.GetInputAnalogKeyState(EKeys::Gamepad_LeftY));
+		const FVector2D Left = Device::Stick(Controller, EKeys::Gamepad_LeftX, EKeys::Gamepad_LeftY);
+		Right += Left.X;
+		Forward += Left.Y;
 		Controls.Move = FVector2D(Right, Forward);
 		if (Controls.Move.Size() > 1)
 			Controls.Move = Controls.Move.GetSafeNormal();
 
 		// Looking: the mouse, and the right stick.
-		Controls.Look.X = Controller.GetInputAnalogKeyState(EKeys::MouseX) * MOUSE_DEGREES
-			+ Device::DeadZone(Controller.GetInputAnalogKeyState(EKeys::Gamepad_RightX)) * STICK_DEGREES * DeltaSeconds;
-		Controls.Look.Y = Controller.GetInputAnalogKeyState(EKeys::MouseY) * MOUSE_DEGREES
-			+ Device::DeadZone(Controller.GetInputAnalogKeyState(EKeys::Gamepad_RightY)) * STICK_DEGREES * DeltaSeconds;
+		const FVector2D Look = Device::Stick(Controller, EKeys::Gamepad_RightX, EKeys::Gamepad_RightY);
+		Controls.Look.X = Controller.GetInputAnalogKeyState(EKeys::MouseX) * MOUSE_DEGREES + Look.X * STICK_DEGREES * DeltaSeconds;
+		Controls.Look.Y = Controller.GetInputAnalogKeyState(EKeys::MouseY) * MOUSE_DEGREES + Look.Y * STICK_DEGREES * DeltaSeconds;
 
 		Controls.bRun = Controller.IsInputKeyDown(EKeys::LeftShift) || Controller.IsInputKeyDown(EKeys::Gamepad_LeftThumbstick);
 		Controls.bJump = Controller.IsInputKeyDown(EKeys::SpaceBar) || Controller.IsInputKeyDown(EKeys::Gamepad_FaceButton_Bottom);
@@ -72,10 +73,17 @@ namespace Device
 		return Controls;
 	}
 
-	float DeadZone(float Value)
+	/**
+	 * `stick()` in input.ts: a stick's two axes with a round dead zone, scaled so it still goes
+	 * smoothly from 0 to 1 past it. One dead zone for the stick, not one an axis, so a stick pushed a
+	 * little off straight doesn't snap to straight.
+	 */
+	FVector2D Stick(APlayerController Controller, FKey X, FKey Y)
 	{
-		if (Math::Abs(Value) < STICK_DEAD_ZONE)
-			return 0;
-		return Value;
+		const FVector2D Raw(Controller.GetInputAnalogKeyState(X), Controller.GetInputAnalogKeyState(Y));
+		const float Length = Raw.Size();
+		if (Length < STICK_DEAD_ZONE)
+			return FVector2D(0, 0);
+		return Raw * (Math::Min(1.0, (Length - STICK_DEAD_ZONE) / (1 - STICK_DEAD_ZONE)) / Length);
 	}
 }
