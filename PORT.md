@@ -147,8 +147,10 @@ Each step ends playable, with the web game as the reference for how it should be
    adaptation: -3 stops matches the web game's brightness under the same fittings, seen side by side
    from the same spot (`sr.exposure <stops>` tries another on one machine). `sr.building` draws the
    building again on one machine, to see a change to `Building.as` once script has reloaded.
-   Stairs, railings, ladders, pit edges and planks are drawn as the web game draws them. Still to come:
-   the building's wear, pilasters, beams, lane lines and door trims; hot spots on the ceiling over the fittings, which the web game hasn't;
+   Stairs, railings, ladders, pit edges, planks, arch and gate trims, thresholds, lane lines,
+   pilasters, beams and ceiling trims are drawn as the web game draws them. Still to come: the
+   building's wear (dirt, scuffs, damp, which the web game bakes into vertex colours), corrugated
+   cladding in the geometry; hot spots on the ceiling over the fittings, which the web game hasn't;
    flickering lights; and how fast it builds (2 s on the server, 6 on a client).
 5. **Ticks and health.**
 6. **The harbour and the yard, then the village.** Environments, sky and fog, ground.

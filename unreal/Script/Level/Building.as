@@ -41,6 +41,12 @@ struct FFinish
 	FCoat Clad;
 	/** Ceiling tiles overhead, else the bare slab. */
 	bool bTiled = false;
+	/** Shallow downstand beams across a slab ceiling, along the room's long axis. */
+	bool bBeams = true;
+	/** Painted lines on the floor a meter in from the walls. */
+	bool bLanes = false;
+	/** Steel columns along the outer walls, a cell apart. */
+	bool bPilasters = false;
 };
 
 /** The colours one building is painted in, chosen from its seed, in sRGB. */
@@ -223,10 +229,13 @@ namespace Building
 				Finish.bClad = true;
 				Finish.CladFrom = 2.1;
 				Finish.Clad = Painted(n"corrugated", Vary(Livery.Cladding, Salt + 2, 0.03));
+				Finish.bLanes = Kind == ERoomKind::Entrance || Kind == ERoomKind::Hall;
+				Finish.bPilasters = true;
 				break;
 			case ERoomKind::Stock:
 				Finish.Lower = Painted(n"concrete-block", Scale(Vary(Livery.Light, Salt + 4, 0.08), 0.92));
 				Finish.Upper = Finish.Lower;
+				Finish.bPilasters = true;
 				break;
 			case ERoomKind::Workshop:
 				Finish.bKick = false;
@@ -243,6 +252,7 @@ namespace Building
 				Finish.Lower = Painted(n"painted-plaster", Light);
 				Finish.Upper = Painted(n"painted-plaster", Light);
 				Finish.bTiled = true;
+				Finish.bBeams = false;
 				break;
 			case ERoomKind::Staff:
 				Finish.Floor = Painted(n"vinyl-tile", Vary(Livery.Vinyl, Salt, 0.04));
@@ -254,6 +264,7 @@ namespace Building
 				Finish.Band = Painted(n"painted-steel", Livery.Accent);
 				Finish.Upper = Painted(n"painted-plaster", Light);
 				Finish.bTiled = true;
+				Finish.bBeams = false;
 				break;
 			case ERoomKind::Plant:
 				Finish.bKick = false;
@@ -265,6 +276,7 @@ namespace Building
 				Finish.Lower = Painted(n"concrete-block", Scale(Vary(Livery.Accent, Salt, 0.04), 0.85));
 				Finish.Dado = 1.0;
 				Finish.Upper = Painted(n"concrete-block", Light);
+				Finish.bBeams = false;
 				break;
 			default:
 				break;
@@ -323,6 +335,21 @@ struct FZone
 	float From = 0.0;
 	float To = 0.0;
 	FCoat Coat;
+};
+
+/** A doorway, arch or gate through a wall: the gap it leaves, from its floor to its head. */
+struct FWallOpening
+{
+	int Storey = 0;
+	EEdge Kind = EEdge::Door;
+	float MinX = 0.0;
+	float MaxX = 0.0;
+	float MinZ = 0.0;
+	float MaxZ = 0.0;
+	float Y0 = 0.0;
+	float Y1 = 0.0;
+	/** Whether it runs along x, in a wall facing north and south. */
+	bool bAlongX = false;
 };
 
 /** A flight of stairs, to place points on it: `at()` in building.ts's stairs(). */
@@ -399,6 +426,10 @@ class ALevelBuilding : AActor
 	const int STEPS = 16;
 	/** Railing posts placed so far, by where they stand, so railings that meet share one. */
 	TSet<FString> Posts;
+	/** Every doorway, arch and gate in the walls. */
+	TArray<FWallOpening> Openings;
+	/** How far below the roof a suspended ceiling hangs: just clear of the deck's ribs. */
+	const float SUSPENDED_DROP = 0.045;
 
 	void Build(FLevel InLevel)
 	{
@@ -421,6 +452,7 @@ class ALevelBuilding : AActor
 			if (Box.Kind == ELevelBoxKind::Wall || Box.Kind == ELevelBoxKind::Partition || Box.Kind == ELevelBoxKind::Pit)
 				AddSolid(Box);
 		}
+		FindOpenings();
 		for (const FFloor& Floor : Level.Floors)
 		{
 			if (!Floor.bHasRise)
@@ -450,6 +482,18 @@ class ALevelBuilding : AActor
 			Floors(Floor);
 		for (const FLadder& Ladder : Level.Ladders)
 			DrawLadder(Ladder);
+		for (const FWallOpening& Opening : Openings)
+		{
+			if (Opening.Kind == EEdge::Door)
+				Threshold(Opening);
+			else
+				OpeningTrim(Opening);
+		}
+		for (const FRoom& Room : Level.Rooms)
+		{
+			Lanes(Room);
+			Beams(Room);
+		}
 		if (Level.Roof > 0)
 			Roof();
 		Log(f"StoreRaid: building drawn: {Skins} faces on {Meshes.Num()} surfaces");
@@ -582,7 +626,11 @@ class ALevelBuilding : AActor
 		if (Box.Y > StoreyOf(Box.Y + 0.01) * Tiles::STOREY + 0.5 && !Inside(CX, Box.Y - LOOK, CZ))
 		{
 			const FFinish Finish = FinishAt(StoreyOf(Box.Y), ColOf(CX), RowOf(CZ));
-			AddSkin(Finish.Upper, Box.MinX, Box.MaxX, Box.Y, Box.Y + SKIN, Box.MinZ, Box.MaxZ);
+			FWallOpening Opening;
+			FCoat Under = Finish.Upper.Surface == n"corrugated" ? Finish.Lower : Finish.Upper;
+			if (OpeningAt(CX, Box.Y, CZ, Opening) && Opening.Kind == EEdge::Arch)
+				Under = Building::Painted(n"painted-steel", Livery.Accent);
+			AddSkin(Under, Box.MinX, Box.MaxX, Box.Y, Box.Y + SKIN, Box.MinZ, Box.MaxZ);
 		}
 		if (!Inside(CX, Top + LOOK, CZ) && Box.Kind != ELevelBoxKind::Pit)
 			AddSkin(Building::Plain(n"concrete-wall"), Box.MinX, Box.MaxX, Top - SKIN, Top, Box.MinZ, Box.MaxZ);
@@ -622,28 +670,127 @@ class ALevelBuilding : AActor
 		const int Col = ColOf(LookX);
 		const int Row = RowOf(LookZ);
 		TArray<FZone> Zones;
-		ZonesOf(Box, Storey, Col, Row, Zones);
+		const float Mid = (A0 + A1) / 2;
+		ZonesOf(Box, Storey, Col, Row, bAlongX ? Face : Mid, MidY, bAlongX ? Mid : Face, Zones);
 		for (const FZone& Zone : Zones)
 		{
 			const float From = Math::Max(Y0, Base + Zone.From);
 			const float To = Math::Min(Y1, Base + Zone.To);
 			if (To - From < 0.002)
 				continue;
-			if (bAlongX)
+			FacePlate(Zone.Coat, bAlongX, Face, Sign > 0 ? -SKIN : SKIN, A0, A1, From, To);
+			// Skirting and trim strips stand proud of the wall, to catch the light along their tops.
+			if (To - From <= 0.12 && (Zone.Coat.Surface == n"rubber" || Zone.Coat.Surface == n"painted-steel"))
+				FacePlate(Zone.Coat, bAlongX, Face, Sign * (Zone.Coat.Surface == n"rubber" ? 0.012 : 0.008), A0, A1, From, To);
+		}
+		if (!InGrid(Col, Row) || Box.Kind == ELevelBoxKind::Pit || IsRock(Box))
+			return;
+		const FFinish Finish = FinishAt(Storey, Col, Row);
+		const float Ceiling = CeilingOf(Storey);
+		const int Top = Parsed.Levels - Parsed.Basements - 1;
+		if (Y1 >= Ceiling - 0.001)
+		{
+			// Under the roof, a closure angle where the wall meets the deck, hiding the ribs' ends.
+			if (Storey == Top && !(Finish.bTiled && Suspended(Col, Row)))
+				FacePlate(Building::Painted(n"painted-steel", Livery.Steel), bAlongX, Face, Sign * 0.05, A0, A1, Ceiling - 0.07, Ceiling);
+			// A trim where walls meet a tiled ceiling.
+			if (Finish.bTiled)
 			{
-				const float C0 = Sign > 0 ? Face - SKIN : Face;
-				AddSkin(Zone.Coat, C0, C0 + SKIN, From, To, A0, A1);
+				const float Y = Storey == Top ? Ceiling - SUSPENDED_DROP : Ceiling;
+				FacePlate(Building::Painted(n"painted-steel", Building::Rgb(0.86, 0.86, 0.84)), bAlongX, Face, Sign * 0.022, A0, A1, Y - 0.022, Y);
 			}
-			else
+		}
+		// Steel columns along the outer walls of big rooms, a cell apart.
+		if (IsOuter(Box) && Finish.bPilasters && Storey >= 0 && Y0 <= Base + 0.001 && Y1 >= Ceiling - 0.001)
+		{
+			const float Origin = bAlongX ? Z0 : X0;
+			const int Last = bAlongX ? Parsed.Rows : Parsed.Cols;
+			for (int K = Math::CeilToInt((A0 - Origin - 0.001) / Tiles::CELL); Origin + K * Tiles::CELL < A1 - 0.35; K++)
 			{
-				const float C0 = Sign > 0 ? Face - SKIN : Face;
-				AddSkin(Zone.Coat, A0, A1, From, To, C0, C0 + SKIN);
+				if (K > 0 && K < Last)
+					Pilaster(Storey, Col, Row, bAlongX, Sign, Face, Origin + K * Tiles::CELL);
 			}
 		}
 	}
 
+	/** A plate on a wall's face from Face out by Out (negative: into the wall), A0 to A1 along it. */
+	void FacePlate(FCoat Coat, bool bAlongX, float Face, float Out, float A0, float A1, float Y0, float Y1)
+	{
+		const float Lo = Math::Min(Face, Face + Out);
+		const float Hi = Math::Max(Face, Face + Out);
+		if (bAlongX)
+			AddSkin(Coat, Lo, Hi, Y0, Y1, A0, A1);
+		else
+			AddSkin(Coat, A0, A1, Y0, Y1, Lo, Hi);
+	}
+
+	/** `pilaster()`: a steel column half buried in an outer wall at `At` along it, and its base plate. */
+	void Pilaster(int Storey, int Col, int Row, bool bAlongX, int Sign, float Face, float At)
+	{
+		// Not where a wall meets this one.
+		const float PX = bAlongX ? Face + Sign * 0.5 : At;
+		const float PZ = bAlongX ? At : Face + Sign * 0.5;
+		const float Base = Storey * Tiles::STOREY;
+		for (float DX = -0.28; DX <= 0.29; DX += 0.14)
+		{
+			for (float DZ = -0.28; DZ <= 0.29; DZ += 0.14)
+			{
+				if (Inside(PX + DX, Base + 1, PZ + DZ))
+					return;
+			}
+		}
+		const FCoat Steel = Building::Painted(n"painted-steel", Livery.Steel);
+		const float Lo = Math::Min(Face, Face + Sign * 0.07) - 0.01;
+		const float Hi = Math::Max(Face, Face + Sign * 0.07);
+		const float Half = 0.11;
+		const float Ceiling = CeilingOf(Storey);
+		if (bAlongX)
+			AddSkin(Steel, Lo, Hi, Base, Ceiling, At - Half, At + Half);
+		else
+			AddSkin(Steel, At - Half, At + Half, Base, Ceiling, Lo, Hi);
+		// A base plate, where there's a floor for it to stand on.
+		const ETileKind Standing = Parsed.Tile(Storey, Col, Row).Kind;
+		if (Standing != ETileKind::Floor && Standing != ETileKind::Tv && Standing != ETileKind::Ladder)
+			return;
+		const float Lo2 = Math::Min(Face, Face + Sign * 0.1) - 0.01;
+		const float Hi2 = Math::Max(Face, Face + Sign * 0.1);
+		if (bAlongX)
+			AddSkin(Steel, Lo2, Hi2, Base, Base + 0.025, At - Half - 0.04, At + Half + 0.04);
+		else
+			AddSkin(Steel, At - Half - 0.04, At + Half + 0.04, Base, Base + 0.025, Lo2, Hi2);
+	}
+
+	bool IsRock(FLevelBox Box)
+	{
+		return Box.Kind == ELevelBoxKind::Wall && Box.MaxX - Box.MinX >= Tiles::CELL - 0.1 && Box.MaxZ - Box.MinZ >= Tiles::CELL - 0.1;
+	}
+
+	bool IsOuter(FLevelBox Box)
+	{
+		return Box.Kind == ELevelBoxKind::Wall && !IsRock(Box) && Math::Min(Box.MaxX - Box.MinX, Box.MaxZ - Box.MinZ) > Tiles::LADDER_WALL + 0.01;
+	}
+
+	/** Where a storey's ceiling is: the underside of the slab above, or the roof over the top storey. */
+	float CeilingOf(int Storey)
+	{
+		const float Base = Storey * Tiles::STOREY;
+		if (Storey == Parsed.Levels - Parsed.Basements - 1)
+			return Base + Tiles::STOREY;
+		return Base + Tiles::STOREY - (Storey + 1 == 0 ? Tiles::GROUND : Tiles::SLAB);
+	}
+
+	/** Whether a cell on the top storey has a suspended ceiling instead of the roof's deck. */
+	bool Suspended(int Col, int Row)
+	{
+		const int Top = Parsed.Levels - Parsed.Basements - 1;
+		const ETileKind Kind = Parsed.Tile(Top, Col, Row).Kind;
+		if (Kind != ETileKind::Floor && Kind != ETileKind::Tv && Kind != ETileKind::Ladder)
+			return false;
+		return FinishAt(Top, Col, Row).bTiled;
+	}
+
 	/** `zonesOf`: the coats a wall face takes, by height above its floor. */
-	void ZonesOf(FLevelBox Box, int Storey, int Col, int Row, TArray<FZone>& Zones)
+	void ZonesOf(FLevelBox Box, int Storey, int Col, int Row, float CX, float MidY, float CZ, TArray<FZone>& Zones)
 	{
 		const float Width = Box.MaxX - Box.MinX;
 		const float Depth = Box.MaxZ - Box.MinZ;
@@ -652,6 +799,14 @@ class ALevelBuilding : AActor
 		if (Box.Kind == ELevelBoxKind::Pit || bRock)
 		{
 			Zone(Zones, -99, 99, Building::Plain(n"concrete-wall"));
+			return;
+		}
+		// Arch reveals: hazard stripes where they're hit, steel above.
+		FWallOpening Opening;
+		if (OpeningAt(CX, MidY, CZ, Opening) && Opening.Kind == EEdge::Arch)
+		{
+			Zone(Zones, -99, 1.2, Building::Plain(n"hazard"));
+			Zone(Zones, 1.2, 99, Building::Painted(n"painted-steel", Livery.Accent));
 			return;
 		}
 		// Outside the building: a concrete plinth and cladding over it; below ground, earth.
@@ -790,7 +945,9 @@ class ALevelBuilding : AActor
 				while (Storey > -Parsed.Basements && Parsed.Tile(Storey, Col, Row).Kind == ETileKind::Open)
 					Storey--;
 				const bool bTiled = Storey == Top && FinishAt(Top, Col, Row).bTiled;
-				AddSkin(Building::Plain(bTiled ? n"ceiling-tile" : n"metal-deck"), X, X + Tiles::CELL, Y, Y + SKIN, Z, Z + Tiles::CELL);
+				if (bTiled && Suspended(Col, Row))
+					AddSkin(Building::Plain(n"ceiling-tile"), X, X + Tiles::CELL, Y - SUSPENDED_DROP, Y - SUSPENDED_DROP + SKIN, Z, Z + Tiles::CELL);
+				AddSkin(Building::Plain(n"metal-deck"), X, X + Tiles::CELL, Y, Y + SKIN, Z, Z + Tiles::CELL);
 			}
 		}
 		const FBoxXZ Roof = Level.Footprint;
@@ -873,10 +1030,10 @@ class ALevelBuilding : AActor
 				continue;
 			}
 			Bar(Rail, S.At(0, Across, Base + 0.5), S.At(1, Across, Base + Height + 0.5), 0.032, 0.032);
-			const int Posts = Math::CeilToInt(Length / 1.1);
-			for (int K = 0; K <= Posts; K++)
+			const int PostCount = Math::CeilToInt(Length / 1.1);
+			for (int K = 0; K <= PostCount; K++)
 			{
-				const float T = float(K) / Posts;
+				const float T = float(K) / PostCount;
 				const FVector Top = S.At(T, Across, Base + Height * T + 0.95);
 				const float FootY = Tread(Base, Height, Math::Min(STEPS - 1, Math::FloorToInt(T * STEPS)));
 				Block(Rail, FVector(Top.X - 0.02, FootY, Top.Z - 0.02), FVector(Top.X + 0.02, Top.Y, Top.Z + 0.02));
@@ -1054,6 +1211,218 @@ class ALevelBuilding : AActor
 			RailSpan(Building::Plain(n"wood-plank"), bAlongX, A0, A1, B0, B1, Y0, Floor.Y + Lift);
 			RailSpan(Building::Plain(n"galvanised"), bAlongX, A0 + 0.06, A0 + 0.09, B0 - 0.002, B1 + 0.002, Y0 - 0.002, Floor.Y + Lift + 0.002);
 			RailSpan(Building::Plain(n"galvanised"), bAlongX, A1 - 0.09, A1 - 0.06, B0 - 0.002, B1 + 0.002, Y0 - 0.002, Floor.Y + Lift + 0.002);
+		}
+	}
+
+	// ---- Openings, lanes and beams ----
+
+	/** `findOpenings()`: every doorway, arch and gate, from the grid's edges. */
+	void FindOpenings()
+	{
+		for (int Storey = -Parsed.Basements; Storey < Parsed.Levels - Parsed.Basements; Storey++)
+		{
+			for (int Row = 0; Row < Parsed.Rows; Row++)
+			{
+				for (int Col = 0; Col < Parsed.Cols; Col++)
+				{
+					for (int Index = 0; Index < 4; Index++)
+					{
+						const ESide Side = Tiles::SideAt(Index);
+						const bool bOuter = !InGrid(Col + Tiles::OffsetX(Side), Row + Tiles::OffsetZ(Side));
+						if (!bOuter && (Side == ESide::S || Side == ESide::W))
+							continue;
+						const EEdge Edge = Parsed.Edge(Storey, Col, Row, Side);
+						if (Edge != EEdge::Door && Edge != EEdge::Arch && Edge != EEdge::Gate)
+							continue;
+						const float Width = Edge == EEdge::Door ? Tiles::DOOR_WIDTH : (Edge == EEdge::Arch ? Tiles::ARCH_WIDTH : Tiles::GATE_WIDTH);
+						const float Height = Edge == EEdge::Door ? Tiles::DOOR_HEIGHT : (Edge == EEdge::Arch ? Tiles::ARCH_HEIGHT : Tiles::GATE_HEIGHT);
+						const float CellX = X0 + Col * Tiles::CELL;
+						const float CellZ = Z0 + Row * Tiles::CELL;
+						const bool bAlongX = Side == ESide::N || Side == ESide::S;
+						const float Line = Side == ESide::N ? CellZ + Tiles::CELL : (Side == ESide::S ? CellZ : (Side == ESide::E ? CellX + Tiles::CELL : CellX));
+						const float Mid = bAlongX ? CellX + Tiles::CELL / 2 : CellZ + Tiles::CELL / 2;
+						FWallOpening Made;
+						Made.Storey = Storey;
+						Made.Kind = Edge;
+						Made.bAlongX = bAlongX;
+						Made.MinX = bAlongX ? Mid - Width / 2 : Line - Tiles::WALL / 2;
+						Made.MaxX = bAlongX ? Mid + Width / 2 : Line + Tiles::WALL / 2;
+						Made.MinZ = bAlongX ? Line - Tiles::WALL / 2 : Mid - Width / 2;
+						Made.MaxZ = bAlongX ? Line + Tiles::WALL / 2 : Mid + Width / 2;
+						Made.Y0 = Storey * Tiles::STOREY;
+						Made.Y1 = Made.Y0 + Height;
+						Openings.Add(Made);
+					}
+				}
+			}
+		}
+	}
+
+	/** The opening whose boundary a point lies on, if any. */
+	bool OpeningAt(float X, float Y, float Z, FWallOpening& Found)
+	{
+		const float E = 0.002;
+		for (const FWallOpening& Each : Openings)
+		{
+			if (X >= Each.MinX - E && X <= Each.MaxX + E && Z >= Each.MinZ - E && Z <= Each.MaxZ + E && Y >= Each.Y0 - E && Y <= Each.Y1 + E)
+			{
+				Found = Each;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** `openingTrims()`: steel angles on an arch's or a gate's corners and a plate over it, both sides. */
+	void OpeningTrim(FWallOpening O)
+	{
+		const FCoat Steel = Building::Painted(n"painted-steel", Livery.Accent);
+		const float Leg = 0.05;
+		const float T = 0.006;
+		const float L0 = O.bAlongX ? O.MinX : O.MinZ;
+		const float L1 = O.bAlongX ? O.MaxX : O.MaxZ;
+		const float F0 = O.bAlongX ? O.MinZ : O.MinX;
+		const float F1 = O.bAlongX ? O.MaxZ : O.MaxX;
+		for (int Side = 0; Side < 2; Side++)
+		{
+			const float Face = Side == 0 ? F0 : F1;
+			const int Out = Side == 0 ? -1 : 1;
+			for (int End = 0; End < 2; End++)
+			{
+				const float Jamb = End == 0 ? L0 : L1;
+				const int Into = End == 0 ? -1 : 1;
+				// The leg on the wall's face and the leg on the reveal.
+				RailSpan(Steel, O.bAlongX, Math::Min(Jamb, Jamb + Into * Leg), Math::Max(Jamb, Jamb + Into * Leg), Face, Face + Out * T, O.Y0, O.Y1 + T);
+				RailSpan(Steel, O.bAlongX, Math::Min(Jamb, Jamb - Into * T), Math::Max(Jamb, Jamb - Into * T), Face, Face - Out * Leg, O.Y0, O.Y1);
+			}
+			// The plate over the opening.
+			RailSpan(Steel, O.bAlongX, L0 - 0.1, L1 + 0.1, Face, Face + Out * 0.012, O.Y1, O.Y1 + 0.22);
+		}
+	}
+
+	/** `thresholds()`: a tread plate across a doorway into a plant room or a workshop, or below ground. */
+	void Threshold(FWallOpening O)
+	{
+		const float X = (O.MinX + O.MaxX) / 2;
+		const float Z = (O.MinZ + O.MaxZ) / 2;
+		const float OX = O.bAlongX ? 0 : 0.3;
+		const float OZ = O.bAlongX ? 0.3 : 0;
+		bool bRough = O.Storey < 0;
+		for (int K = -1; K <= 1; K += 2)
+		{
+			const int Room = RoomOf(O.Storey, ColOf(X + K * OX), RowOf(Z + K * OZ));
+			if (Room >= 0 && (Level.Rooms[Room].Kind == ERoomKind::Plant || Level.Rooms[Room].Kind == ERoomKind::Workshop))
+				bRough = true;
+		}
+		if (!bRough)
+			return;
+		const float Grow = 0.18;
+		AddSkin(Building::Plain(n"diamond-plate"), O.MinX - (O.bAlongX ? 0 : Grow), O.MaxX + (O.bAlongX ? 0 : Grow), O.Y0, O.Y0 + 0.006, O.MinZ - (O.bAlongX ? Grow : 0), O.MaxZ + (O.bAlongX ? Grow : 0));
+	}
+
+	/** Whether a cell's side is closed: a wall or opening on it, or rock or nothing beyond. */
+	bool Walled(int Storey, int Col, int Row, ESide Side)
+	{
+		const FTile Next = Parsed.Tile(Storey, Col + Tiles::OffsetX(Side), Row + Tiles::OffsetZ(Side));
+		return Parsed.Edge(Storey, Col, Row, Side) != EEdge::None || Next.Kind == ETileKind::None || Next.Kind == ETileKind::Solid;
+	}
+
+	bool FloorBeyond(int Storey, int Col, int Row, ESide Side)
+	{
+		const ETileKind Next = Parsed.Tile(Storey, Col + Tiles::OffsetX(Side), Row + Tiles::OffsetZ(Side)).Kind;
+		return Next == ETileKind::Floor || Next == ETileKind::Tv;
+	}
+
+	/** `lanes()`: painted lines on the floors of halls and the loading bay, a meter in from their walls. */
+	void Lanes(FRoom Room)
+	{
+		if (Room.Storey < 0 || Room.Cells.Num() == 0 || !FinishAt(Room.Storey, Room.Cells[0].Col, Room.Cells[0].Row).bLanes)
+			return;
+		const float INSET = 1.0;
+		const float WIDTH = 0.1;
+		const float Base = Room.Storey * Tiles::STOREY;
+		const FCoat Paint = Building::Plain(n"floor-paint");
+		for (const FColRow& Cell : Room.Cells)
+		{
+			const ETileKind Kind = Parsed.Tile(Room.Storey, Cell.Col, Cell.Row).Kind;
+			if (Kind != ETileKind::Floor && Kind != ETileKind::Tv)
+				continue;
+			const float CX0 = X0 + Cell.Col * Tiles::CELL;
+			const float CZ0 = Z0 + Cell.Row * Tiles::CELL;
+			for (int Index = 0; Index < 4; Index++)
+			{
+				const ESide Side = Tiles::SideAt(Index);
+				if (!Walled(Room.Storey, Cell.Col, Cell.Row, Side))
+					continue;
+				const bool bAlongX = Side == ESide::N || Side == ESide::S;
+				const ESide S0 = bAlongX ? ESide::W : ESide::S;
+				const ESide S1 = bAlongX ? ESide::E : ESide::N;
+				const float A0 = bAlongX ? CX0 : CZ0;
+				const float A1 = A0 + Tiles::CELL;
+				// Lines along x run into the corners; lines along z stop at them.
+				const float Trim = bAlongX ? INSET : INSET + WIDTH;
+				// Ending short of whatever isn't floor beyond the cell: a pit's edge, stairs.
+				const float Start = Walled(Room.Storey, Cell.Col, Cell.Row, S0) ? A0 + Trim : (FloorBeyond(Room.Storey, Cell.Col, Cell.Row, S0) ? A0 : A0 + 0.3);
+				const float End = Walled(Room.Storey, Cell.Col, Cell.Row, S1) ? A1 - Trim : (FloorBeyond(Room.Storey, Cell.Col, Cell.Row, S1) ? A1 : A1 - 0.3);
+				if (End - Start < 0.2)
+					continue;
+				float Line = CX0 + INSET;
+				if (Side == ESide::N)
+					Line = CZ0 + Tiles::CELL - INSET;
+				else if (Side == ESide::S)
+					Line = CZ0 + INSET;
+				else if (Side == ESide::E)
+					Line = CX0 + Tiles::CELL - INSET;
+				const float L0 = Side == ESide::N || Side == ESide::E ? Line - WIDTH : Line;
+				RailSpan(Paint, bAlongX, Start, End, L0, L0 + WIDTH, Base, Base + 0.003);
+			}
+		}
+	}
+
+	/** Where the slab over a cell is, from below: false if there's none (open air, or the roof). */
+	bool SlabOver(int Storey, int Col, int Row, float& Bottom)
+	{
+		if (Storey >= Parsed.Levels - Parsed.Basements - 1)
+			return false;
+		const ETileKind Here = Parsed.Tile(Storey, Col, Row).Kind;
+		if (Here == ETileKind::None || Here == ETileKind::Solid)
+			return false;
+		const ETileKind Above = Parsed.Tile(Storey + 1, Col, Row).Kind;
+		if (Above != ETileKind::Floor && Above != ETileKind::Tv && Above != ETileKind::Ladder && Above != ETileKind::Stairs && Above != ETileKind::Solid)
+			return false;
+		Bottom = CeilingOf(Storey);
+		return true;
+	}
+
+	/** `ceilings()`'s beams: shallow downstands along a room's long axis, on the edges between its cells. */
+	void Beams(FRoom Room)
+	{
+		if (Room.Cells.Num() == 0)
+			return;
+		const FFinish Finish = FinishAt(Room.Storey, Room.Cells[0].Col, Room.Cells[0].Row);
+		if (!Finish.bBeams || Finish.bTiled)
+			return;
+		const bool bAlongX = Room.Bounds.MaxX - Room.Bounds.MinX >= Room.Bounds.MaxZ - Room.Bounds.MinZ;
+		TSet<int> Cells;
+		for (const FColRow& Cell : Room.Cells)
+			Cells.Add(CellKey(Cell.Col, Cell.Row));
+		const FCoat Concrete = Building::Plain(n"concrete-wall");
+		const float Width = 0.36;
+		const float Depth = 0.12;
+		for (const FColRow& Cell : Room.Cells)
+		{
+			const int NC = bAlongX ? Cell.Col : Cell.Col + 1;
+			const int NR = bAlongX ? Cell.Row + 1 : Cell.Row;
+			float Y = 0;
+			float Next = 0;
+			if (!Cells.Contains(CellKey(NC, NR)) || !SlabOver(Room.Storey, Cell.Col, Cell.Row, Y) || !SlabOver(Room.Storey, NC, NR, Next))
+				continue;
+			const float CX0 = X0 + Cell.Col * Tiles::CELL;
+			const float CZ0 = Z0 + Cell.Row * Tiles::CELL;
+			if (bAlongX)
+				AddSkin(Concrete, CX0, CX0 + Tiles::CELL, Y - Depth, Y + 0.01, CZ0 + Tiles::CELL - Width / 2, CZ0 + Tiles::CELL + Width / 2);
+			else
+				AddSkin(Concrete, CX0 + Tiles::CELL - Width / 2, CX0 + Tiles::CELL + Width / 2, Y - Depth, Y + 0.01, CZ0, CZ0 + Tiles::CELL);
 		}
 	}
 
