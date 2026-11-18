@@ -75,7 +75,8 @@ namespace Building
 	int SeedOf(FString Name)
 	{
 		int At = Name.Len();
-		while (At > 0 && Name.Mid(At - 1, 1).IsNumeric())
+		// Digits only: IsNumeric() takes a lone "-" as a number too, which made generated-1 seed -1.
+		while (At > 0 && "0123456789".Contains(Name.Mid(At - 1, 1)))
 			At--;
 		// Every level drawn this way is generated-<seed>; the TS hashes other names.
 		return At < Name.Len() ? String::Conv_StringToInt(Name.RightChop(At)) : 7;
@@ -789,5 +790,21 @@ class ALevelBuilding : AActor
 		Mesh.SetCustomDataValue(Index, 1, Paint.G, false);
 		Mesh.SetCustomDataValue(Index, 2, Paint.B, false);
 		Skins++;
+	}
+}
+
+// sr.building: draws this machine's building again, to see a change to Building.as without a restart
+// (script reloads a function's body in place, but the building is only drawn when the level is built).
+const FConsoleCommand BuildingCommand("sr.building", n"OnBuildingCommand");
+void OnBuildingCommand(TArray<FString> Arguments)
+{
+	TArray<ALevelBuilding> Drawn;
+	GetAllActorsOfClass(Drawn);
+	for (ALevelBuilding Each : Drawn)
+	{
+		FLevel Level = Each.Level;
+		Each.DestroyActor();
+		ALevelBuilding Again = Cast<ALevelBuilding>(SpawnActor(ALevelBuilding));
+		Again.Build(Level);
 	}
 }

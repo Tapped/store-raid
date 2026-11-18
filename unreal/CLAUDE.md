@@ -23,6 +23,8 @@ What has tripped up work here before:
 - `>>>` on a `uint` of 2^31 or more doesn't shift in zeros as JS's does. Bit-exact ports of TS
   integer maths (the generator's mulberry32, `FRandom` in `Level/Generate.as`) work in `int64`
   masked to 32 bits, with `Math.imul` taken in halves (`Generate::Imul`).
+- `FString.IsNumeric()` takes a sign alone (`"-"`) as a number: test for digits when reading the
+  number a name ends in (`Building::SeedOf`).
 - `FString`'s `<` and `==` ignore case. To sort strings as JS does, compare with
   `Compare(Other, ESearchCase::CaseSensitive)`.
 - Unit tests (`pnpm run ue test`) print only that an assert failed, not its message: write what a

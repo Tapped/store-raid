@@ -144,7 +144,8 @@ Each step ends playable, with the web game as the reference for how it should be
    from the world, so faces need no texture coordinates, with an instance a surface.
    Exposure is fixed (`Level/Look.as`, an unbound post-process volume), not the engine's eye
    adaptation: -3 stops matches the web game's brightness under the same fittings, seen side by side
-   from the same spot (`sr.exposure <stops>` tries another on one machine).
+   from the same spot (`sr.exposure <stops>` tries another on one machine). `sr.building` draws the
+   building again on one machine, to see a change to `Building.as` once script has reloaded.
    Still to come: the building's wear, pilasters, beams, lane lines, door trims, stair treads, ladders
    and railings drawn as such; hot spots on the ceiling over the fittings, which the web game hasn't;
    flickering lights; and how fast it builds (2 s on the server, 6 on a client).
