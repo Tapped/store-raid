@@ -54,7 +54,8 @@ running game can't take in place, or after one stops (script that doesn't compil
 `ping`. Console commands for bots and checks, in `Script/Player/StoreRaidPlayerController.as`:
 `sr.move`, `sr.look`, `sr.face <yaw> [pitch]`, `sr.run`, `sr.jump`, `sr.goal <x> <z>` (walk to a
 point), `sr.grab`, `sr.release`, `sr.drop`, `sr.light`, `sr.respawn`, `sr.reset` (every item back),
-`sr.where` (this player, as `key value` pairs), `sr.players`, `sr.items` and `sr.room`; for the
+`sr.where` (this player, as `key value` pairs), `sr.eye <x> <y> <z> <bearing> [pitch]` (look from any point on
+that machine, for screenshots; `sr.eye off`), `sr.players`, `sr.items` and `sr.room`; for the
 round, `sr.ready`, `sr.stand` and `sr.overlay` (what this screen's overlay and results say), and on
 the server `sr.mode playground|game`, `sr.clock <seconds>` (what's left of the phase) and
 `sr.raidtime <seconds>`. A process started with `-bot` walks a small round until given a goal.
@@ -146,8 +147,8 @@ Each step ends playable, with the web game as the reference for how it should be
    adaptation: -3 stops matches the web game's brightness under the same fittings, seen side by side
    from the same spot (`sr.exposure <stops>` tries another on one machine). `sr.building` draws the
    building again on one machine, to see a change to `Building.as` once script has reloaded.
-   Still to come: the building's wear, pilasters, beams, lane lines, door trims, stair treads, ladders
-   and railings drawn as such; hot spots on the ceiling over the fittings, which the web game hasn't;
+   Stairs, railings, ladders, pit edges and planks are drawn as the web game draws them. Still to come:
+   the building's wear, pilasters, beams, lane lines and door trims; hot spots on the ceiling over the fittings, which the web game hasn't;
    flickering lights; and how fast it builds (2 s on the server, 6 on a client).
 5. **Ticks and health.**
 6. **The harbour and the yard, then the village.** Environments, sky and fog, ground.

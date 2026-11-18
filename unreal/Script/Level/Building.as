@@ -325,6 +325,46 @@ struct FZone
 	FCoat Coat;
 };
 
+/** A flight of stairs, to place points on it: `at()` in building.ts's stairs(). */
+struct FStairs
+{
+	bool bAlongX = false;
+	/** Which way along it rises: +1 or -1. */
+	int Sign = 1;
+	float A0 = 0.0;
+	float A1 = 0.0;
+
+	/** The point T of the way up from the foot, at `Across` and height Y. */
+	FVector At(float T, float Across, float Y) const
+	{
+		const float A = Sign > 0 ? A0 + T * (A1 - A0) : A1 - T * (A1 - A0);
+		return bAlongX ? FVector(A, Y, Across) : FVector(Across, Y, A);
+	}
+};
+
+/** A ladder's line, to place points on it: `point()` in building.ts's ladders(). */
+struct FLadderLine
+{
+	int DX = 0;
+	int DZ = 0;
+	float MidX = 0.0;
+	float MidZ = 0.0;
+	/** Where the ladder stands, across from the wall. */
+	float Line = 0.0;
+
+	/** A point `Across` its middle, `Out` from it away from the wall, at height Y. */
+	FVector At(float Across, float Out, float Y) const
+	{
+		return DX != 0 ? FVector(Line - DX * Out, Y, MidZ + Across) : FVector(MidX + Across, Y, Line - DZ * Out);
+	}
+
+	/** A point on a hoop of the cage at height Y, Angle round from one side. */
+	FVector Arc(float Y, float Angle) const
+	{
+		return At(Math::Cos(Angle) * (Tiles::LADDER_WIDTH / 2 + 0.02), 0.04 + Math::Sin(Angle) * 0.62, Y);
+	}
+};
+
 class ALevelBuilding : AActor
 {
 	UPROPERTY(DefaultComponent, RootComponent)
@@ -355,6 +395,10 @@ class ALevelBuilding : AActor
 	const float LOOK = 0.05;
 	/** On the outside, concrete up to here, and cladding above. */
 	const float PLINTH = 1.1;
+	/** Steps in a flight of stairs. */
+	const int STEPS = 16;
+	/** Railing posts placed so far, by where they stand, so railings that meet share one. */
+	TSet<FString> Posts;
 
 	void Build(FLevel InLevel)
 	{
@@ -389,11 +433,14 @@ class ALevelBuilding : AActor
 			{
 				case ELevelBoxKind::Wall:
 				case ELevelBoxKind::Partition:
-				case ELevelBoxKind::Pit:
 					Walls(Box);
 					break;
+				case ELevelBoxKind::Pit:
+					Walls(Box);
+					PitEdges(Box);
+					break;
 				case ELevelBoxKind::Rail:
-					AddSkin(Building::Painted(n"painted-steel", Livery.Rail), Box.MinX, Box.MaxX, Box.Y, Box.Y + Box.Height, Box.MinZ, Box.MaxZ);
+					Railing(Box);
 					break;
 				default:
 					break;
@@ -401,6 +448,8 @@ class ALevelBuilding : AActor
 		}
 		for (const FFloor& Floor : Level.Floors)
 			Floors(Floor);
+		for (const FLadder& Ladder : Level.Ladders)
+			DrawLadder(Ladder);
 		if (Level.Roof > 0)
 			Roof();
 		Log(f"StoreRaid: building drawn: {Skins} faces on {Meshes.Num()} surfaces");
@@ -669,13 +718,18 @@ class ALevelBuilding : AActor
 			return;
 		if (Floor.bHasRise)
 		{
-			UInstancedStaticMeshComponent Mesh = MeshFor(n"concrete-floor");
-			AddPainted(Mesh, n"concrete-floor", Building::Plain(n"concrete-floor"), Shapes::RampTransform(Floor));
+			if (Floor.Kind == EFloorKind::Stairs)
+				Stairs(Floor);
+			else
+			{
+				UInstancedStaticMeshComponent Mesh = MeshFor(n"concrete-floor");
+				AddPainted(Mesh, n"concrete-floor", Building::Plain(n"concrete-floor"), Shapes::RampTransform(Floor));
+			}
 			return;
 		}
 		if (Floor.Kind == EFloorKind::Plank)
 		{
-			AddSkin(Building::Plain(n"wood-plank"), Floor.MinX, Floor.MaxX, Floor.Y - Floor.Thickness, Floor.Y, Floor.MinZ, Floor.MaxZ);
+			Plank(Floor);
 			return;
 		}
 		const float Bottom = Floor.Y - Floor.Thickness;
@@ -748,6 +802,284 @@ class ALevelBuilding : AActor
 		AddSkin(Clad, Roof.MinX - W, Roof.MaxX + W, Y, Y + Tiles::SLAB, Roof.MaxZ + W - SKIN, Roof.MaxZ + W);
 		AddSkin(Clad, Roof.MinX - W, Roof.MinX - W + SKIN, Y, Y + Tiles::SLAB, Roof.MinZ - W, Roof.MaxZ + W);
 		AddSkin(Clad, Roof.MaxX + W - SKIN, Roof.MaxX + W, Y, Y + Tiles::SLAB, Roof.MinZ - W, Roof.MaxZ + W);
+	}
+
+	// ---- Stairs, railings, ladders, pits and planks ----
+
+	/** `stairs()`: sixteen steps with hazard nosings, sides where open, handrails and stringers. */
+	void Stairs(FFloor Floor)
+	{
+		const int Storey = StoreyOf(Floor.Y + 0.01);
+		const ESide Toward = Floor.RiseToward;
+		const bool bAlongX = Tiles::OffsetX(Toward) != 0;
+		FStairs S;
+		S.bAlongX = bAlongX;
+		S.Sign = bAlongX ? Tiles::OffsetX(Toward) : Tiles::OffsetZ(Toward);
+		S.A0 = bAlongX ? Floor.MinX : Floor.MinZ;
+		S.A1 = bAlongX ? Floor.MaxX : Floor.MaxZ;
+		const float C0 = bAlongX ? Floor.MinZ : Floor.MinX;
+		const float C1 = bAlongX ? Floor.MaxZ : Floor.MaxX;
+		const float Length = S.A1 - S.A0;
+		const float Base = Floor.Y;
+		const float Height = Floor.RiseHeight;
+		const int Col = ColOf((Floor.MinX + Floor.MaxX) / 2);
+		const int Row = RowOf((Floor.MinZ + Floor.MaxZ) / 2);
+		TArray<ESide> Sides;
+		Sides.Add(bAlongX ? ESide::N : ESide::E);
+		Sides.Add(bAlongX ? ESide::S : ESide::W);
+
+		const FCoat Concrete = Building::Plain(n"concrete-floor");
+		const FCoat Wall = Building::Plain(n"concrete-wall");
+		const FCoat Hazard = Building::Plain(n"hazard");
+		const float Skin = SKIN / Length;
+		for (int I = 0; I < STEPS; I++)
+		{
+			const float T0 = float(I) / STEPS;
+			const float T1 = float(I + 1) / STEPS;
+			const float Y = Tread(Base, Height, I);
+			const float Below = I == 0 ? Base : Tread(Base, Height, I - 1);
+			// The tread, its riser and a hazard nosing on its front edge.
+			Block(Concrete, S.At(T0, C0, Y - SKIN), S.At(T1, C1, Y));
+			Block(Concrete, S.At(T0, C0, Below), S.At(T0 + Skin, C1, Y));
+			Block(Hazard, S.At(T0 + 0.004, C0 + 0.08, Y - 0.002), S.At(T0 + 0.05 / Length + 0.004, C1 - 0.08, Y + 0.004));
+			for (ESide Side : Sides)
+			{
+				if (!StairSideOpen(Storey, Col, Row, Side))
+					continue;
+				const int Out = bAlongX ? Tiles::OffsetZ(Side) : Tiles::OffsetX(Side);
+				const float Across = Out > 0 ? C1 : C0;
+				Block(Wall, S.At(T0, Across - Out * SKIN, Base), S.At(T1, Across, Y));
+			}
+		}
+		// The back of the stairs, under the top step.
+		Block(Wall, S.At(1 - Skin, C0, Base), S.At(1, C1, Tread(Base, Height, STEPS - 1)));
+
+		// Handrails up both sides: posts, top and middle rails, and a steel stringer along open
+		// sides; against a wall, a rail on brackets.
+		const FCoat Rail = Building::Painted(n"painted-steel", Livery.Rail);
+		const FCoat Steel = Building::Painted(n"painted-steel", Livery.Steel);
+		for (ESide Side : Sides)
+		{
+			const int Out = bAlongX ? Tiles::OffsetZ(Side) : Tiles::OffsetX(Side);
+			const bool bWalled = !StairSideOpen(Storey, Col, Row, Side);
+			const float Inset = bWalled ? Tiles::WALL / 2 + 0.07 : 0.03;
+			const float Across = Out > 0 ? C1 - Inset : C0 + Inset;
+			Bar(Rail, S.At(-0.02, Across, Base + 0.95), S.At(1.02, Across, Base + Height + 0.95), 0.044, 0.044);
+			if (bWalled)
+			{
+				const float AtWall = Out > 0 ? C1 - Tiles::WALL / 2 : C0 + Tiles::WALL / 2;
+				for (float T = 0.1; T < 1; T += 0.3)
+					Bar(Rail, S.At(T, Across, Base + Height * T + 0.9), S.At(T, AtWall, Base + Height * T + 0.9), 0.016, 0.016);
+				continue;
+			}
+			Bar(Rail, S.At(0, Across, Base + 0.5), S.At(1, Across, Base + Height + 0.5), 0.032, 0.032);
+			const int Posts = Math::CeilToInt(Length / 1.1);
+			for (int K = 0; K <= Posts; K++)
+			{
+				const float T = float(K) / Posts;
+				const FVector Top = S.At(T, Across, Base + Height * T + 0.95);
+				const float FootY = Tread(Base, Height, Math::Min(STEPS - 1, Math::FloorToInt(T * STEPS)));
+				Block(Rail, FVector(Top.X - 0.02, FootY, Top.Z - 0.02), FVector(Top.X + 0.02, Top.Y, Top.Z + 0.02));
+			}
+			// The stringer: a steel plate along the side, following the nosings.
+			const float Plate = (Out > 0 ? C1 : C0) + Out * 0.008;
+			Bar(Steel, S.At(0, Plate, Base + 0.02), S.At(1, Plate, Base + Height - 0.06), 0.012, 0.24);
+		}
+	}
+
+	/** Where the top of step I is: halfway up its rise, as the web game draws it. */
+	float Tread(float Base, float Height, int I)
+	{
+		return Base + Height * (I + 0.5) / STEPS;
+	}
+
+	/** A side of the stairs open to the room beside, so drawn: no wall, and something other than rock. */
+	bool StairSideOpen(int Storey, int Col, int Row, ESide Side)
+	{
+		const FTile Next = Parsed.Tile(Storey, Col + Tiles::OffsetX(Side), Row + Tiles::OffsetZ(Side));
+		return Parsed.Edge(Storey, Col, Row, Side) == EEdge::None && Next.Kind != ETileKind::None && Next.Kind != ETileKind::Solid;
+	}
+
+	/** `railings()`: top and middle rails, a kick plate, posts on base plates, and the slab's nose. */
+	void Railing(FLevelBox Box)
+	{
+		const int Storey = StoreyOf(Box.Y);
+		const FCoat Rail = Building::Painted(n"painted-steel", Livery.Rail);
+		const bool bAlongX = Box.MaxX - Box.MinX > Box.MaxZ - Box.MinZ;
+		const float Mid = bAlongX ? (Box.MinZ + Box.MaxZ) / 2 : (Box.MinX + Box.MaxX) / 2;
+		const float Start = bAlongX ? Box.MinX : Box.MinZ;
+		const float End = bAlongX ? Box.MaxX : Box.MaxZ;
+		const float Top = Box.Y + Box.Height;
+		Bar(Rail, AlongAt(bAlongX, Start, Top - 0.025, Mid), AlongAt(bAlongX, End, Top - 0.025, Mid), 0.05, 0.05);
+		Bar(Rail, AlongAt(bAlongX, Start, Box.Y + 0.5, Mid), AlongAt(bAlongX, End, Box.Y + 0.5, Mid), 0.032, 0.032);
+		// The kick plate, standing on the slab's edge.
+		RailSpan(Rail, bAlongX, Start, End, Mid - 0.004, Mid + 0.004, Box.Y, Box.Y + 0.1);
+		// The slab's nose: a steel angle over its edge, and hazard paint inside the railing.
+		const float Across0 = bAlongX ? Box.MinZ : Box.MinX;
+		const float Across1 = bAlongX ? Box.MaxZ : Box.MaxX;
+		const float Middle = (Start + End) / 2;
+		const int Sign = OpenBeyond(Storey, bAlongX, Middle, Across1 + 0.05) ? 1 : (OpenBeyond(Storey, bAlongX, Middle, Across0 - 0.05) ? -1 : 0);
+		if (Sign != 0)
+		{
+			const float Edge = Sign > 0 ? Across1 : Across0;
+			const FCoat Steel = Building::Painted(n"painted-steel", Livery.Steel);
+			RailSpan(Steel, bAlongX, Start, End, Edge - Sign * 0.05, Edge + Sign * 0.006, Box.Y, Box.Y + 0.006);
+			RailSpan(Steel, bAlongX, Start, End, Edge, Edge + Sign * 0.006, Box.Y - 0.1, Box.Y + 0.006);
+			RailSpan(Building::Plain(n"hazard"), bAlongX, Start, End, Edge - Sign * 0.07, Edge - Sign * 0.19, Box.Y, Box.Y + 0.003);
+		}
+		const int Count = Math::Max(1, Math::RoundToInt((End - Start) / 1.33));
+		for (int I = 0; I <= Count; I++)
+		{
+			const FVector P = AlongAt(bAlongX, Start + (End - Start) * I / Count, Top, Mid);
+			const FString Key = f"{Math::RoundToInt(P.X * 20)},{Math::RoundToInt(P.Y * 20)},{Math::RoundToInt(P.Z * 20)}";
+			if (Posts.Contains(Key))
+				continue;
+			Posts.Add(Key);
+			Block(Rail, FVector(P.X - 0.025, Box.Y, P.Z - 0.025), FVector(P.X + 0.025, Top - 0.05, P.Z + 0.025));
+			// A base plate bolted down.
+			Block(Rail, FVector(P.X - 0.05, Box.Y, P.Z - 0.05), FVector(P.X + 0.05, Box.Y + 0.012, P.Z + 0.05));
+		}
+	}
+
+	/** A point along a railing (A) at a height, on its middle line across. */
+	FVector AlongAt(bool bAlongX, float A, float Y, float Across)
+	{
+		return bAlongX ? FVector(A, Y, Across) : FVector(Across, Y, A);
+	}
+
+	/** A box along a railing from Start to End, between two lines across and two heights. */
+	void RailSpan(FCoat Coat, bool bAlongX, float Start, float End, float Across0, float Across1, float Y0, float Y1)
+	{
+		Block(Coat, AlongAt(bAlongX, Start, Y0, Across0), AlongAt(bAlongX, End, Y1, Across1));
+	}
+
+	/** Whether the cell past a railing, at this point across it, is open air. */
+	bool OpenBeyond(int Storey, bool bAlongX, float Middle, float Across)
+	{
+		const int Col = bAlongX ? ColOf(Middle) : ColOf(Across);
+		const int Row = bAlongX ? RowOf(Across) : RowOf(Middle);
+		const ETileKind Kind = Parsed.Tile(Storey, Col, Row).Kind;
+		return Kind == ETileKind::Open || Kind == ETileKind::Well;
+	}
+
+	/** `ladders()`: flat-bar stiles, round rungs, brackets back to the wall and a safety cage. */
+	void DrawLadder(FLadder Ladder)
+	{
+		const FCoat Steel = Building::Plain(n"galvanised");
+		const int DX = Tiles::OffsetX(Ladder.Toward);
+		const int DZ = Tiles::OffsetZ(Ladder.Toward);
+		const int Sign = DX != 0 ? DX : DZ;
+		FLadderLine L;
+		L.DX = DX;
+		L.DZ = DZ;
+		L.MidX = (Ladder.MinX + Ladder.MaxX) / 2;
+		L.MidZ = (Ladder.MinZ + Ladder.MaxZ) / 2;
+		// The wall's face, and the ladder a hand's width out from it.
+		const float Face = DX != 0 ? (DX > 0 ? Ladder.MaxX : Ladder.MinX) : (DZ > 0 ? Ladder.MaxZ : Ladder.MinZ);
+		L.Line = Face - Sign * Tiles::LADDER_WALL - Sign * 0.14;
+		const float Top = Ladder.Top + 1.05;
+		const float Half = Tiles::LADDER_WIDTH / 2;
+		const FVector Out = DX != 0 ? FVector(1, 0, 0) : FVector(0, 0, 1);
+		for (int Side = -1; Side <= 1; Side += 2)
+		{
+			Bar(Steel, L.At(Side * Half, 0, Ladder.Y), L.At(Side * Half, 0, Top), 0.016, 0.06, Out);
+			for (float Y = Ladder.Y + 0.4; Y < Top; Y += 1.3)
+				Bar(Steel, L.At(Side * Half, -0.03, Y), L.At(Side * Half, -0.14, Y), 0.024, 0.024);
+		}
+		for (float Y = Ladder.Y + 0.3; Y < Top - 0.1; Y += 0.3)
+			Bar(Steel, L.At(-Half, 0, Y), L.At(Half, 0, Y), 0.026, 0.026);
+		// The cage, from head height up: hoops of flat bar, and three uprights.
+		TArray<float> Hoops;
+		for (float Y = Ladder.Y + 2.3; Y <= Top + 0.0001; Y += 0.7)
+			Hoops.Add(Y);
+		for (float Y : Hoops)
+		{
+			for (int K = 0; K < 8; K++)
+				Bar(Steel, L.Arc(Y, K * PI / 8), L.Arc(Y, (K + 1) * PI / 8), 0.008, 0.05, FVector(0, 1, 0));
+		}
+		if (Hoops.Num() > 1)
+		{
+			TArray<float> Angles;
+			Angles.Add(0.5);
+			Angles.Add(PI / 2);
+			Angles.Add(PI - 0.5);
+			for (float Angle : Angles)
+				Bar(Steel, L.Arc(Hoops[0], Angle), L.Arc(Hoops.Last(), Angle), 0.02, 0.02);
+		}
+	}
+
+	/** `pits()`: a steel angle on the slab's nose over a pit, and hazard paint on the floor behind it. */
+	void PitEdges(FLevelBox Box)
+	{
+		const float Top = Box.Y + Box.Height;
+		const int Storey = StoreyOf(Top);
+		const bool bAlongX = Box.MaxX - Box.MinX > Box.MaxZ - Box.MinZ;
+		const float A0 = bAlongX ? Box.MinX : Box.MinZ;
+		const float A1 = bAlongX ? Box.MaxX : Box.MaxZ;
+		const FCoat Steel = Building::Painted(n"painted-steel", Livery.Steel);
+		for (int S = -1; S <= 1; S += 2)
+		{
+			const float E = bAlongX ? (S > 0 ? Box.MaxZ : Box.MinZ) : (S > 0 ? Box.MaxX : Box.MinX);
+			const int Col = bAlongX ? ColOf((Box.MinX + Box.MaxX) / 2) : ColOf(E + S * 0.05);
+			const int Row = bAlongX ? RowOf(E + S * 0.05) : RowOf((Box.MinZ + Box.MaxZ) / 2);
+			const ETileKind Kind = Parsed.Tile(Storey, Col, Row).Kind;
+			if (Kind != ETileKind::Pit && Kind != ETileKind::Bridge)
+				continue;
+			RailSpan(Steel, bAlongX, A0, A1, E, E + S * 0.006, Top - 0.06, Top + 0.004);
+			RailSpan(Steel, bAlongX, A0, A1, E, E - S * 0.06, Top, Top + 0.005);
+			RailSpan(Building::Plain(n"hazard"), bAlongX, A0, A1, E - S * 0.06, E - S * 0.2, Top, Top + 0.003);
+		}
+	}
+
+	/** `planks()`: two scaffold boards across a pit, with steel bands round their ends. */
+	void Plank(FFloor Floor)
+	{
+		const int Storey = StoreyOf(Floor.Y + 0.01);
+		const bool bAlongX = Floor.MaxX - Floor.MinX > Floor.MaxZ - Floor.MinZ;
+		const int Col = ColOf((Floor.MinX + Floor.MaxX) / 2);
+		const int Row = RowOf((Floor.MinZ + Floor.MaxZ) / 2);
+		const bool bBridgeBefore = Parsed.Tile(Storey, Col - (bAlongX ? 1 : 0), Row - (bAlongX ? 0 : 1)).Kind == ETileKind::Bridge;
+		const bool bBridgeAfter = Parsed.Tile(Storey, Col + (bAlongX ? 1 : 0), Row + (bAlongX ? 0 : 1)).Kind == ETileKind::Bridge;
+		const float A0 = (bAlongX ? Floor.MinX : Floor.MinZ) - (bBridgeBefore ? 0.003 : 0.2);
+		const float A1 = (bAlongX ? Floor.MaxX : Floor.MaxZ) + (bBridgeAfter ? 0.003 : 0.2);
+		const float C0 = bAlongX ? Floor.MinZ : Floor.MinX;
+		const float C1 = bAlongX ? Floor.MaxZ : Floor.MaxX;
+		const float Width = (C1 - C0 - 0.02) / 2;
+		const float Y0 = Floor.Y - 0.045;
+		for (int K = 0; K < 2; K++)
+		{
+			const float B0 = C0 + K * (Width + 0.02);
+			const float B1 = B0 + Width;
+			const float Lift = K * 0.004;
+			RailSpan(Building::Plain(n"wood-plank"), bAlongX, A0, A1, B0, B1, Y0, Floor.Y + Lift);
+			RailSpan(Building::Plain(n"galvanised"), bAlongX, A0 + 0.06, A0 + 0.09, B0 - 0.002, B1 + 0.002, Y0 - 0.002, Floor.Y + Lift + 0.002);
+			RailSpan(Building::Plain(n"galvanised"), bAlongX, A1 - 0.09, A1 - 0.06, B0 - 0.002, B1 + 0.002, Y0 - 0.002, Floor.Y + Lift + 0.002);
+		}
+	}
+
+	/** A box between two corners in game meters, in any order. */
+	void Block(FCoat Coat, FVector A, FVector B)
+	{
+		AddSkin(Coat, Math::Min(A.X, B.X), Math::Max(A.X, B.X), Math::Min(A.Y, B.Y), Math::Max(A.Y, B.Y), Math::Min(A.Z, B.Z), Math::Max(A.Z, B.Z));
+	}
+
+	/**
+	 * A bar from P0 to P1 in game meters, `Width` thick across and `Depth` along `Up` (game axes), as
+	 * the part builder's bar() with a rectangular section.
+	 */
+	void Bar(FCoat Coat, FVector P0, FVector P1, float Width, float Depth, FVector Up = FVector(0, 1, 0))
+	{
+		const FVector W0 = World::ToWorld(P0.X, P0.Y, P0.Z);
+		const FVector W1 = World::ToWorld(P1.X, P1.Y, P1.Z);
+		const FVector Along = W1 - W0;
+		const float Length = Along.Size() / 100.0;
+		if (Length < 0.0005)
+			return;
+		FVector Normal = World::ToWorld(Up.X, Up.Y, Up.Z).GetSafeNormal();
+		if (Math::Abs(Along.GetSafeNormal().DotProduct(Normal)) > 0.99)
+			Normal = Math::Abs(Along.GetSafeNormal().Z) > 0.9 ? FVector(1, 0, 0) : FVector(0, 0, 1);
+		const FRotator Rotation = FRotator::MakeFromXZ(Along, Normal);
+		AddPainted(MeshFor(Coat.Surface), Coat.Surface, Coat, FTransform(Rotation, (W0 + W1) / 2, FVector(Length, Width, Depth)));
 	}
 
 	// ---- Drawing ----
