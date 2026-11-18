@@ -21,6 +21,13 @@ struct FLamp
 	bool bShadows = true;
 	/** Its fitting's state: a flickering one stutters. */
 	ELightState State = ELightState::On;
+	/** What kind of fitting gives it, which shapes its light, if it's a fitting's: else it shines all round. */
+	bool bFitting = false;
+	ELightKind Kind = ELightKind::Bulb;
+	/** Radians round y: a tube's length runs along x before it's turned. */
+	float Turn = 0.0;
+	/** Its place among the level's fittings, dead ones too, which picks how it flickers. */
+	int Fitting = 0;
 };
 
 /** One level: what the server simulates and every machine draws for it. */
@@ -175,11 +182,16 @@ namespace Levels
 		Level.Truck.Z = Outside - 0.3 + Truck::HatchFoot();
 		Level.Truck.Turns = 2;
 
-		for (FLightSpawn Light : Warehouse.Lights)
+		for (int Index = 0; Index < Warehouse.Lights.Num(); Index++)
 		{
+			const FLightSpawn& Light = Warehouse.Lights[Index];
 			if (Light.State == ELightState::Dead)
 				continue;
 			FLamp Lamp;
+			Lamp.bFitting = true;
+			Lamp.Kind = Light.Kind;
+			Lamp.Turn = Light.Turn;
+			Lamp.Fitting = Index;
 			Lamp.At = FVector(Light.X, Light.Y, Light.Z);
 			Lamp.Colour = FLinearColor(Light.R, Light.G, Light.B);
 			Lamp.State = Light.State;

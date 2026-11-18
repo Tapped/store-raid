@@ -14,11 +14,15 @@ class ALevelProps : AActor
 	/** The boxes standing in for models that aren't imported. */
 	UInstancedStaticMeshComponent Stand;
 
-	void Build(TArray<FPropSpawn> Props)
+	/** Draws the props but those at `Skip`, by their index: ones ALevelFittings draws itself. */
+	void Build(TArray<FPropSpawn> Props, TArray<int> Skip)
 	{
 		TArray<FString> Missing;
-		for (const FPropSpawn& Prop : Props)
+		for (int Index = 0; Index < Props.Num(); Index++)
 		{
+			if (Skip.Contains(Index))
+				continue;
+			const FPropSpawn& Prop = Props[Index];
 			UInstancedStaticMeshComponent Mesh = MeshFor(Prop.Model, Missing);
 			if (Mesh != nullptr)
 				Mesh.AddInstance(FTransform(FRotator(0, Math::RadiansToDegrees(Prop.Turn), 0), World::ToWorld(Prop.X, Prop.Y, Prop.Z)), true);

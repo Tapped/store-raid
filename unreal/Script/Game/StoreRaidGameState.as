@@ -78,15 +78,24 @@ class AStoreRaidGameState : AGameStateBase
 	UPROPERTY(ReplicatedUsing = OnRep_Light)
 	float Light = 1.0;
 
-	/** The lamps and how bright each is at full, to dim them by Light. */
-	TArray<UPointLightComponent> Lamps;
-	TArray<float> LampLumens;
+	/** The level's lamps on this machine; none on the dedicated server. */
+	ALevelFittings Fittings;
 
 	UFUNCTION()
 	void OnRep_Light()
 	{
-		for (int Index = 0; Index < Lamps.Num(); Index++)
-			Lamps[Index].SetIntensity(LampLumens[Index] * Light);
+		if (Fittings != nullptr)
+			Fittings.SetDimmer(Light);
+	}
+
+	/** Lights the lamps again (sr.lamps). */
+	void Relight()
+	{
+		if (Fittings != nullptr)
+			Fittings.DestroyActor();
+		Fittings = Cast<ALevelFittings>(SpawnActor(ALevelFittings));
+		Fittings.Build(Layout.Lamps, Layout.Props);
+		Fittings.SetDimmer(Light);
 	}
 
 	UFUNCTION(BlueprintOverride)
@@ -137,8 +146,9 @@ class AStoreRaidGameState : AGameStateBase
 		if (!System::IsDedicatedServer())
 		{
 			SpawnActor(ALook);
-			for (const FLamp& Lamp : Layout.Lamps)
-				AddLamp(Lamp);
+			Fittings = Cast<ALevelFittings>(SpawnActor(ALevelFittings));
+			const TArray<int> Own = Fittings.Build(Layout.Lamps, Layout.Props);
+			Fittings.SetDimmer(Light);
 			if (Layout.Grid.Storeys.Num() > 0)
 			{
 				ALevelBuilding Drawn = Cast<ALevelBuilding>(SpawnActor(ALevelBuilding));
@@ -147,7 +157,7 @@ class AStoreRaidGameState : AGameStateBase
 			if (Layout.Props.Num() > 0)
 			{
 				ALevelProps Props = Cast<ALevelProps>(SpawnActor(ALevelProps));
-				Props.Build(Layout.Props);
+				Props.Build(Layout.Props, Own);
 			}
 		}
 		// The dimmer: a plate on the wall with a knob, for everyone to see.
@@ -172,25 +182,5 @@ class AStoreRaidGameState : AGameStateBase
 				SpawnActor(APlayerStart, World::ToWorld(Spawn.X, 1.0, Spawn.Y), FRotator::ZeroRotator);
 		}
 		Log(f"StoreRaid: {Layout.Name} ready");
-	}
-
-	/** A movable light, as everything is built at runtime and Lumen lights it, with nothing baked. */
-	void AddLamp(FLamp Lamp)
-	{
-		AddLamp(Lamp.At.X, Lamp.At.Y, Lamp.At.Z, Lamp.Lumens, Lamp.Radius * 100.0, Lamp.Colour, Lamp.bShadows);
-	}
-
-	void AddLamp(float X, float Y, float Z, float Lumens, float Radius, FLinearColor Colour = FLinearColor(1.0, 0.9, 0.75), bool bShadows = true)
-	{
-		APointLight Lamp = Cast<APointLight>(SpawnActor(APointLight, World::ToWorld(X, Y, Z)));
-		UPointLightComponent Bulb = Lamp.PointLightComponent;
-		Bulb.SetMobility(EComponentMobility::Movable);
-		Bulb.SetIntensityUnits(ELightUnits::Lumens);
-		Bulb.SetIntensity(Lumens);
-		Bulb.SetAttenuationRadius(Radius);
-		Bulb.SetLightColor(Colour);
-		Bulb.SetCastShadows(bShadows);
-		Lamps.Add(Bulb);
-		LampLumens.Add(Lumens);
 	}
 }

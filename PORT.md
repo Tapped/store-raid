@@ -134,7 +134,12 @@ Each step ends playable, with the web game as the reference for how it should be
    replicated), and the game mode takes spawns, the kill height and the dimmer from it. Unlike the
    web game's, a warehouse has the crew's truck, backed up to its open loading door on a fenced patch
    of yard. Its props are drawn (`PropsActor.as`: an instanced mesh per model, boxes for the ones not
-   imported yet) and its fittings' lights are point lights, the high-bays alone casting shadows.
+   imported yet). Its fittings are lit by `Level/Fittings.as`, as the web game's bake spread their light:
+   tubes and bulbs send a third as much up as down, an even point light hung 0.35 m below them and a
+   spot light facing down, so the ceiling over them isn't burnt white; the high-bays' spots alone cast
+   shadows. Flickering fittings stutter, die, try their starter or buzz as in the web game, on each
+   screen's own dice, and their models are drawn on their own with `M_Glow` (made by `pnpm run ue
+   surfaces`), whose glow dims with the light. `sr.lamps` lights the lamps again on one machine.
    The building is drawn by room kind (`Level/Building.as`, a first cut of `client/src/building.ts`):
    each face of a wall, floor and ceiling takes the finish of the room it faces (kick band, lower coat,
    dado band, upper coat, cladding; floor; slab, deck or ceiling tiles), in the livery from the seed,
@@ -153,8 +158,7 @@ Each step ends playable, with the web game as the reference for how it should be
    mottling), which `M_Surface` works out per pixel from what each face's custom data says about
    where it is (`FWear`). Cladding has its corrugations in the geometry: sheets and single
    corrugations made by `pnpm run model corrugated-sheet` and `corrugated-strip`, laid over the flat
-   face in line with the texture's. Where wall boxes overlap in a plane, only one face is drawn there. Still to come: hot spots on the ceiling over the fittings, which
-   the web game hasn't; flickering lights; and how fast it builds (2 s on the server, 6 on a client).
+   face in line with the texture's. Where wall boxes overlap in a plane, only one face is drawn there. Still to come: how fast it builds (2 s on the server, 6 on a client).
 5. **Ticks and health.**
 6. **The harbour and the yard, then the village.** Environments, sky and fog, ground.
 7. **Sound, the tuning panel, the rest.** Then the web game is deleted.

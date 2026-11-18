@@ -23,6 +23,9 @@ pixel, from the world position and what an instance's custom data 3 to 14 says a
 oil, slow patchiness. Painted surfaces are multiplied by it, the others by it in a warm grime
 colour (`Painted` says which). An instance without that data has no wear.
 
+It also makes `/Game/Surfaces/M_Glow`, which isn't a surface: the glow of a flickering fitting
+(Script/Level/Fittings.as), its emissive `Glow`, set every frame from the fitting's flicker.
+
 Content/ is never in git: running this again rebuilds the surfaces.
 """
 
@@ -338,7 +341,33 @@ def make_instance(material, surface):
     unreal.EditorAssetLibrary.save_loaded_asset(instance)
 
 
+def make_glow():
+    """M_Glow: a dark, glossy surface giving off `Glow`, linear colour times strength."""
+    path = ROOT + "/M_Glow"
+    if unreal.EditorAssetLibrary.does_asset_exist(path):
+        material = unreal.EditorAssetLibrary.load_asset(path)
+        library.delete_all_material_expressions(material)
+    else:
+        material = assets.create_asset("M_Glow", ROOT, unreal.Material, unreal.MaterialFactoryNew())
+    material.set_editor_property("two_sided", True)
+    material.set_editor_property("used_with_nanite", True)
+    glow = library.create_material_expression(material, unreal.MaterialExpressionVectorParameter, -400, 0)
+    glow.set_editor_property("parameter_name", "Glow")
+    glow.set_editor_property("default_value", unreal.LinearColor(3, 2.85, 2.58, 1))
+    library.connect_material_property(glow, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    base = library.create_material_expression(material, unreal.MaterialExpressionConstant3Vector, -400, 200)
+    base.set_editor_property("constant", unreal.LinearColor(0.6, 0.6, 0.58, 1))
+    library.connect_material_property(base, "", unreal.MaterialProperty.MP_BASE_COLOR)
+    rough = library.create_material_expression(material, unreal.MaterialExpressionConstant, -400, 400)
+    rough.set_editor_property("r", 0.3)
+    library.connect_material_property(rough, "", unreal.MaterialProperty.MP_ROUGHNESS)
+    library.recompile_material(material)
+    unreal.EditorAssetLibrary.save_loaded_asset(material)
+    log("M_Glow ok")
+
+
 def main():
+    make_glow()
     with open(os.path.join(STAGED, "surfaces.json"), encoding="utf8") as file:
         surfaces = json.load(file)
     done = []
