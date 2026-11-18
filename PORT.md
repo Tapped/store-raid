@@ -89,7 +89,9 @@ Then `Tools/import/import.py` runs in a headless editor: each model goes to
 material instances) and textures. A static model's nodes are combined into one static mesh with
 Nanite; a skinned one is a skeletal mesh with its skeleton and clips. Models are turned at import to
 face north (Unreal's +X) with their right east (+Y), as `World::ToWorld` has the game's axes, so
-script places them with the game's yaw. In script, `Models::Mesh("level/truck")` (or `Skinned()`)
+script places them with the game's yaw. New models go on show in the playground through `Concepts::Playground()` (`Level/Concepts.as`,
+as `CONCEPTS` in client/src/playground.ts), drawn on every screen with no collision: the zombie stands
+there now. In script, `Models::Mesh("level/truck")` (or `Skinned()`)
 loads one, and `sr.model <name> <x> <y> <z> [yaw]` puts one down on that machine to look at
 (`sr.model clear`). The game must be stopped to import: its processes keep the packages they loaded open.
 

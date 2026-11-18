@@ -160,6 +160,11 @@ class AStoreRaidGameState : AGameStateBase
 				ALevelProps Props = Cast<ALevelProps>(SpawnActor(ALevelProps));
 				Props.Build(Layout.Props, Own);
 			}
+			if (Layout.Name == "playground")
+			{
+				ALevelConcepts Shown = Cast<ALevelConcepts>(SpawnActor(ALevelConcepts));
+				Shown.Build(Concepts::Playground());
+			}
 		}
 		// The dimmer: a plate on the wall with a knob, for everyone to see.
 		Geometry.AddFixture(Layout.Dimmer.X - 0.12, Layout.Dimmer.X + 0.12, Layout.Dimmer.Y - 0.15, Layout.Dimmer.Y + 0.15, Layout.Dimmer.Z, Layout.Dimmer.Z + 0.04);

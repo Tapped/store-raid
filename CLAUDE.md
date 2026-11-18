@@ -84,6 +84,7 @@ scripts/village.ts         checks the village without a server: drawn ground aga
 scripts/villageWalk.ts     a bot walks the village from the truck to the church door (or over the bridge and back through the river)
 scripts/harbour.ts         the harbour's ground and what's in the way, from its model, into shared/harbour.json (`pnpm run harbour`)
 scripts/character.ts       the character model and its clips, from Mixamo downloads in raw/, through Blender (`pnpm run character`)
+scripts/zombie.ts          the zombie, a static model: Meshy's headless body and head in raw/characters/zombie/, scaled to each other and joined in Blender (`pnpm run zombie`)
 scripts/hatch.ts           a bot checks the truck's hatch in a game in the harbour: shut in the lobby, down for the raid, both control boxes
 scripts/harbourCheck.ts    checks the harbour level without a server: the warehouse's rules, and a way without jumps between the truck and the loading door, on foot and with a sofa (`--map` draws the yard)
 scripts/unity-import/      prefabs from a Unity .unitypackage → textured .glb in assets/, through Blender
