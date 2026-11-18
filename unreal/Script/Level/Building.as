@@ -11,8 +11,9 @@
 //
 // Wear (grime, corners, scuffs, damp, oil, mottling), which the web game bakes into vertex colours, is
 // worked out per pixel by the material from what each skin's custom data says about where it is
-// (FWear). How it differs from the web game, for now: corrugated cladding is flat, and where boxes
-// overlap at a corner, two faces can share a plane.
+// (FWear). Cladding has its corrugations in the geometry, as sheets laid over its flat face
+// (Corrugations()). How it differs from the web game, for now: where boxes overlap at a corner, two
+// faces can share a plane.
 // Built on clients, never the dedicated server.
 
 /** A surface and the paint on it, in sRGB: the table's own paint unless `bPainted`. */
@@ -735,6 +736,8 @@ class ALevelBuilding : AActor
 			if (To - From < 0.002)
 				continue;
 			FacePlate(Zone.Coat, bAlongX, Face, Sign > 0 ? -SKIN : SKIN, A0, A1, From, To);
+			if (Zone.Coat.Surface == n"corrugated")
+				Corrugations(Zone.Coat, bAlongX, Sign, Face, A0, A1, From, To);
 			// Skirting and trim strips stand proud of the wall, to catch the light along their tops.
 			if (To - From <= 0.12 && (Zone.Coat.Surface == n"rubber" || Zone.Coat.Surface == n"painted-steel"))
 				FacePlate(Zone.Coat, bAlongX, Face, Sign * (Zone.Coat.Surface == n"rubber" ? 0.012 : 0.008), A0, A1, From, To);
@@ -779,6 +782,38 @@ class ALevelBuilding : AActor
 			AddSkin(Coat, Lo, Hi, Y0, Y1, A0, A1);
 		else
 			AddSkin(Coat, A0, A1, Y0, Y1, Lo, Hi);
+	}
+
+	/**
+	 * `corrugated()`: cladding's corrugations as geometry, over the flat face of a wall facing out
+	 * along x (`bAlongX`) or z by `Sign` from `Face`, from A0 to A1 along it and from Y0 to Y1. Whole
+	 * sheets (models/level/corrugated-sheet) where they fit between the texture's side laps, every
+	 * 0.762 m from 0, so their crests are the texture's; single corrugations (corrugated-strip) past
+	 * them; and the flat face under them shows in what's left at the ends, under one corrugation.
+	 */
+	void Corrugations(FCoat Coat, bool bAlongX, int Sign, float Face, float A0, float A1, float Y0, float Y1)
+	{
+		const float PITCH = 0.0762;
+		const int PER_SHEET = 10;
+		// The models stand out along their +X, run along their -Y from their origin, and rise along +Z.
+		const FVector Out = bAlongX ? World::ToWorld(Sign, 0, 0) : World::ToWorld(0, 0, Sign);
+		const FRotator Rotation = FRotator::MakeFromXZ(Out, FVector(0, 0, 1));
+		const FVector Along = bAlongX ? World::ToWorld(0, 0, 1) : World::ToWorld(1, 0, 0);
+		const bool bForward = Rotation.RightVector.DotProduct(Along) < 0;
+		const int First = Math::CeilToInt(A0 / PITCH - 0.001);
+		const int Last = Math::FloorToInt(A1 / PITCH + 0.001);
+		int K = First;
+		while (K < Last)
+		{
+			const bool bSheet = ((K % PER_SHEET) + PER_SHEET) % PER_SHEET == 0 && K + PER_SHEET <= Last;
+			const int Count = bSheet ? PER_SHEET : 1;
+			const float Start = (bForward ? K : K + Count) * PITCH;
+			const FVector At = bAlongX ? World::ToWorld(Face, Y0, Start) : World::ToWorld(Start, Y0, Face);
+			const FTransform Transform(Rotation, At, FVector(1, 1, Y1 - Y0));
+			const FName Model = bSheet ? n"corrugated-sheet" : n"corrugated-strip";
+			AddPainted(MeshFor(Coat.Surface, Model), Coat.Surface, Coat, Transform);
+			K += Count;
+		}
 	}
 
 	/** `pilaster()`: a steel column half buried in an outer wall at `At` along it, and its base plate. */
@@ -1642,24 +1677,38 @@ class ALevelBuilding : AActor
 
 	// ---- Drawing ----
 
-	/** The instanced mesh for a surface: the engine's cube in the surface's material, painted per instance. */
-	UInstancedStaticMeshComponent MeshFor(FName Surface)
+	/**
+	 * The instanced mesh for a surface: the engine's cube in the surface's material, painted per
+	 * instance; or a model of models/level in it (`Model`), with the baked bumps at half strength, as
+	 * the model has them in its geometry.
+	 */
+	UInstancedStaticMeshComponent MeshFor(FName Surface, FName Model = NAME_None)
 	{
+		const FName Key = Model == NAME_None ? Surface : FName(f"{Surface}/{Model}");
 		UInstancedStaticMeshComponent Found;
-		if (Meshes.Find(Surface, Found))
+		if (Meshes.Find(Key, Found))
 			return Found;
-		UInstancedStaticMeshComponent Made = UInstancedStaticMeshComponent::Create(this, Surface);
-		Made.SetStaticMesh(Cast<UStaticMesh>(LoadObject(nullptr, "/Engine/BasicShapes/Cube.Cube")));
+		UInstancedStaticMeshComponent Made = UInstancedStaticMeshComponent::Create(this, Key);
+		UStaticMesh Shape = Model == NAME_None ? Cast<UStaticMesh>(LoadObject(nullptr, "/Engine/BasicShapes/Cube.Cube")) : Models::Mesh(f"level/{Model}");
+		if (Shape == nullptr)
+			Log(f"StoreRaid: model level/{Model} isn't imported: pnpm run ue import level/{Model}");
+		Made.SetStaticMesh(Shape);
 		Made.SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Made.SetMobility(EComponentMobility::Static);
 		Made.SetNumCustomDataFloats(15);
 		const FString Name = Surface.ToString();
 		UMaterialInterface Material = Cast<UMaterialInterface>(LoadObject(nullptr, f"/Game/Surfaces/{Name}/MI_{Name}.MI_{Name}"));
+		if (Material != nullptr && Model != NAME_None)
+		{
+			UMaterialInstanceDynamic Softer = Material::CreateDynamicMaterialInstance(Material);
+			Softer.SetScalarParameterValue(n"Bump", 0.5);
+			Material = Softer;
+		}
 		if (Material != nullptr)
 			Made.SetMaterial(0, Material);
 		else
 			Log(f"StoreRaid: surface {Name} isn't imported: pnpm run ue surfaces {Name}");
-		Meshes.Add(Surface, Made);
+		Meshes.Add(Key, Made);
 		return Made;
 	}
 

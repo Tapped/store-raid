@@ -151,8 +151,10 @@ Each step ends playable, with the web game as the reference for how it should be
    pilasters, beams and ceiling trims are drawn as the web game draws them. So is the wear the web
    game bakes into vertex colours (dirt rising from the floor, dark corners, scuffs, damp, oil,
    mottling), which `M_Surface` works out per pixel from what each face's custom data says about
-   where it is (`FWear`). Still to come: corrugated cladding in the geometry; hot spots on the ceiling over the fittings, which the web game hasn't;
-   flickering lights; and how fast it builds (2 s on the server, 6 on a client).
+   where it is (`FWear`). Cladding has its corrugations in the geometry: sheets and single
+   corrugations made by `pnpm run model corrugated-sheet` and `corrugated-strip`, laid over the flat
+   face in line with the texture's. Still to come: hot spots on the ceiling over the fittings, which
+   the web game hasn't; flickering lights; and how fast it builds (2 s on the server, 6 on a client).
 5. **Ticks and health.**
 6. **The harbour and the yard, then the village.** Environments, sky and fog, ground.
 7. **Sound, the tuning panel, the rest.** Then the web game is deleted.

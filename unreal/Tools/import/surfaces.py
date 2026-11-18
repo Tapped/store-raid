@@ -89,7 +89,7 @@ return float2(dot(M, U), -dot(M, V)) / Tile;
 """
 
 NORMAL_CODE = PROJECTION + """
-return normalize(T.x * U + T.y * V + T.z * N);
+return normalize((T.x * U + T.y * V) * Bump + T.z * N);
 """
 
 
@@ -239,6 +239,8 @@ def make_material(defaults):
         material = assets.create_asset("M_Surface", ROOT, unreal.Material, unreal.MaterialFactoryNew())
     material.set_editor_property("tangent_space_normal", False)
     material.set_editor_property("used_with_instanced_static_meshes", True)
+    # The corrugated sheets laid over cladding are imported models, with Nanite.
+    material.set_editor_property("used_with_nanite", True)
 
     position = library.create_material_expression(material, unreal.MaterialExpressionWorldPosition, -1400, 0)
     normal = library.create_material_expression(material, unreal.MaterialExpressionVertexNormalWS, -1400, 200)
@@ -291,9 +293,14 @@ def make_material(defaults):
         library.connect_material_expressions(data, "", worn, f"D{k + 1}")
     library.connect_material_property(worn, "", unreal.MaterialProperty.MP_BASE_COLOR)
 
-    world = custom(material, NORMAL_CODE, unreal.CustomMaterialOutputType.CMOT_FLOAT3, ["T", "N"], -400, 100)
+    # How strong the baked bumps are: less where the geometry has them too (corrugated sheets).
+    strength = library.create_material_expression(material, unreal.MaterialExpressionScalarParameter, -700, 300)
+    strength.set_editor_property("parameter_name", "Bump")
+    strength.set_editor_property("default_value", 1.0)
+    world = custom(material, NORMAL_CODE, unreal.CustomMaterialOutputType.CMOT_FLOAT3, ["T", "N", "Bump"], -400, 100)
     library.connect_material_expressions(bump, "RGB", world, "T")
     library.connect_material_expressions(normal, "", world, "N")
+    library.connect_material_expressions(strength, "", world, "Bump")
     library.connect_material_property(world, "", unreal.MaterialProperty.MP_NORMAL)
 
     library.connect_material_property(orm, "R", unreal.MaterialProperty.MP_AMBIENT_OCCLUSION)
