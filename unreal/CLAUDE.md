@@ -38,6 +38,9 @@ What has tripped up work here before:
 - UMG from script: subclass `UUserWidget`, `CreateWidget` it, build the tree with
   `ConstructWidget(UTextBlock)` (a type is a value; `::StaticClass()` is deprecated) and
   `SetRootWidget` before `AddToViewport` (`UI/Overlay.as`).
+- Changing the function behind an `FConsoleCommand` in a running game can leave the command
+  unhandled until the processes restart (`sr.sic` was, after a soft reload): if a command a check
+  sends answers nothing, restart `dev` before chasing it.
 - A running game only soft-reloads: changing function bodies applies in milliseconds, but a new
   `UPROPERTY` or `UFUNCTION` logs `Full Reload is required`, and `pnpm run ue dev` restarts every
   process (about 15 s).

@@ -63,10 +63,13 @@ the server `sr.mode playground|game`, `sr.clock <seconds>` (what's left of the p
 bot; the port of `scripts/playground.ts`), `items` (a bot and a client; hands, the flashlight, the
 sofa), `hatch` (the port of `scripts/hatch.ts`) and `round` (a bot and a client: seats, ready, loot,
 leaving, results, death and watching, dawn). The last two make the room a game and put it back.
-`ticks` (a client, on `UE_LEVEL=generated-2`) has a tick hunt, latch on and drain the player, be pulled
-off, and drain them to death. For ticks there are `sr.ticks` (every tick and everyone's health),
-and on the server `sr.sic [meters]` (a tick on the floor in front of the first player, hunting) and
-`sr.health <amount> [name]`.
+`ticks` (a client and a bot, on `UE_LEVEL=generated-2`, `dev 1 1`) has a perched tick made wary by
+the player's beam, settle, and drop on them; the bot's beam make it let go and flee; a beam send a
+hunting one fleeing; then a tick hunt, latch on and drain the player, be pulled off, and drain them
+to death. Without the bot it leaves out the other player's beam. For ticks there are `sr.ticks`
+(every tick and everyone's health), and on the server `sr.sic [meters] [name]` (a tick on the floor
+in front of a player, hunting), `sr.perch <x> <y> <z>` (a tick perched at a point, as if on racking)
+and `sr.health <amount> [name]`.
 
 **Levels and modes:** the server's room is in the playground unless `UE_LEVEL=generated-<seed>`
 (`-level=` on its command line), a generated warehouse. It's a game or the playground as
@@ -179,8 +182,8 @@ Each step ends playable, with the web game as the reference for how it should be
    gait, FABRIK in each leg's plane, questing front legs when it stands, rearing when wary, legs
    curled and scrabbling in the air, on its back or on a face. `sr.tickdemo <x> <y> <z> [radius]
    [speed] [yaw] [state]` puts one on a single machine, walking a circle or standing, to look at, and
-   `sr.torch [candela]` carries a light with the `sr.eye` camera to see it in the dark. Still to come:
-   hissing and tapping (with sound), and checking beams with a bot.
+   `sr.torch [candela]` carries a light with the `sr.eye` camera to see it in the dark. `check ticks`
+   checks beams too. Still to come: hissing and tapping (with sound).
 6. **The harbour and the yard, then the village.** Environments, sky and fog, ground.
 7. **Sound, the tuning panel, the rest.** Then the web game is deleted.
 

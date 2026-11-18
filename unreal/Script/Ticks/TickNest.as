@@ -679,8 +679,8 @@ class ATickNest : AActor
 	}
 }
 
-// sr.sic [meters]: on the server, puts the first tick on the floor that far (default 4) in front of
-// the first player in the building, hunting, for checks and for a look at one up close.
+// sr.sic [meters] [name]: on the server, puts the first tick on the floor that far (default 4) in front
+// of a player in the building (the first, unless named), hunting, for checks and for a look up close.
 const FConsoleCommand SicCommand("sr.sic", n"OnSicCommand");
 void OnSicCommand(TArray<FString> Arguments)
 {
@@ -695,17 +695,50 @@ void OnSicCommand(TArray<FString> Arguments)
 		return;
 	}
 	const float Far = Arguments.Num() > 0 ? String::Conv_StringToDouble(Arguments[0]) : 4.0;
+	FPrey On = Prey[0];
+	for (const FPrey& One : Prey)
+	{
+		if (Arguments.Num() > 1 && One.Player.PlayerName == Arguments[1])
+			On = One;
+	}
 	ATick Tick = Nest.Ticks[0];
-	const FVector At = Prey[0].Feet + FVector(Math::Sin(Prey[0].Yaw) * Far, 0, Math::Cos(Prey[0].Yaw) * Far);
+	const FVector At = On.Feet + FVector(Math::Sin(On.Yaw) * Far, 0, Math::Cos(On.Yaw) * Far);
 	const float Ground = Nest.Terrain.GroundUnder(At.X, At.Z, At.Y + 0.5);
 	Tick.Victim = nullptr;
-	Tick.Place(FVector(At.X, TickRules::Stands(Ground) ? Ground : At.Y, At.Z), Prey[0].Yaw + PI);
+	Tick.Place(FVector(At.X, TickRules::Stands(Ground) ? Ground : At.Y, At.Z), On.Yaw + PI);
 	Tick.State = ETickState::Hunting;
 	Tick.Afraid = 0;
 	Tick.Rest = 0;
 	Tick.bHasPath = false;
 	Tick.Repath = 0;
 	Log(f"StoreRaid sic: tick at {Tick.Position.X :.2} {Tick.Position.Y :.2} {Tick.Position.Z :.2}");
+}
+
+// sr.perch <x> <y> <z>: on the server, puts the first tick perched at that point (game meters), as if on
+// top of racking there, for checks: one over dark floor waits, a beam makes it wary, and it drops on
+// whoever walks under it.
+const FConsoleCommand PerchCommand("sr.perch", n"OnPerchCommand");
+void OnPerchCommand(TArray<FString> Arguments)
+{
+	AStoreRaidGameMode Mode = Cast<AStoreRaidGameMode>(Gameplay::GetGameMode());
+	if (Mode == nullptr || Mode.Ticks() == nullptr || Arguments.Num() < 3)
+		return;
+	ATickNest Nest = Mode.Ticks();
+	if (Nest.Ticks.Num() == 0)
+	{
+		Log("StoreRaid perch: no tick");
+		return;
+	}
+	ATick Tick = Nest.Ticks[0];
+	Tick.Victim = nullptr;
+	Tick.Place(FVector(String::Conv_StringToDouble(Arguments[0]), String::Conv_StringToDouble(Arguments[1]), String::Conv_StringToDouble(Arguments[2])), Tick.Yaw);
+	Tick.State = ETickState::Perched;
+	Tick.Velocity = FVector::ZeroVector;
+	Tick.Afraid = 0;
+	Tick.Rest = 0;
+	Tick.Shone = 0;
+	Tick.bHasPath = false;
+	Log(f"StoreRaid perch: {Tick.Name} at {Tick.Position.X :.2} {Tick.Position.Y :.2} {Tick.Position.Z :.2}");
 }
 
 // sr.health <amount> [name]: on the server, sets a player's health, the first in the building's
