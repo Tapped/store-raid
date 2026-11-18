@@ -33,8 +33,11 @@ def pipelines(skinned):
     assets.set_editor_property("asset_type_sub_folders", False)
     # Interchange turns glTF's (x, y, z) into Unreal's (x, z, y). The game's models face glTF's +z
     # and their right is -x (as Babylon loads them), which should be Unreal's +X (north, as
-    # World::ToWorld has it) and +Y (east): a quarter turn back about the vertical.
-    assets.set_editor_property("import_offset_rotation", unreal.Rotator(roll=0, pitch=0, yaw=-90))
+    # World::ToWorld has it) and +Y (east): a quarter turn back about the vertical. Not for a skinned
+    # model: Interchange turns its skeleton by the offset but not its vertices, so posed bones and the
+    # mesh they move are a quarter turn apart. Those face Unreal's +Y, and script turns the component.
+    if not skinned:
+        assets.set_editor_property("import_offset_rotation", unreal.Rotator(roll=0, pitch=0, yaw=-90))
     mesh = assets.get_editor_property("mesh_pipeline")
     mesh.set_editor_property("import_static_meshes", True)
     mesh.set_editor_property(

@@ -30,3 +30,29 @@ void OnEyeCommand(TArray<FString> Arguments)
 	Eye.CameraComponent.FieldOfView = 94.93;
 	Controller.SetViewTargetWithBlend(Eye, 0);
 }
+
+// sr.torch [candela]: a light carried with the sr.eye camera on this machine, to look at things in
+// the dark (ticks waiting on racking); `sr.torch off` puts it out. It follows the eye wherever it goes.
+const FConsoleCommand TorchCommand("sr.torch", n"OnTorchCommand");
+void OnTorchCommand(TArray<FString> Arguments)
+{
+	TArray<ACameraActor> Eyes;
+	GetAllActorsOfClass(Eyes);
+	TArray<ASpotLight> Lights;
+	GetAllActorsOfClass(Lights);
+	for (ASpotLight Light : Lights)
+	{
+		if (Light.Tags.Contains(n"Torch"))
+			Light.DestroyActor();
+	}
+	if (Eyes.Num() == 0 || (Arguments.Num() > 0 && Arguments[0] == "off"))
+		return;
+	ASpotLight Torch = Cast<ASpotLight>(SpawnActor(ASpotLight, Eyes[0].ActorLocation, Eyes[0].ActorRotation));
+	Torch.Tags.Add(n"Torch");
+	Torch.SpotLightComponent.SetMobility(EComponentMobility::Movable);
+	Torch.SpotLightComponent.SetIntensityUnits(ELightUnits::Candelas);
+	Torch.SpotLightComponent.SetIntensity(Arguments.Num() > 0 ? String::Conv_StringToDouble(Arguments[0]) : 400.0);
+	Torch.SpotLightComponent.SetOuterConeAngle(40);
+	Torch.SpotLightComponent.SetAttenuationRadius(3000);
+	Torch.AttachToActor(Eyes[0], NAME_None, EAttachmentRule::KeepWorld);
+}

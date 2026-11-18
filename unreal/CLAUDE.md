@@ -82,7 +82,9 @@ What has tripped up work here before:
   draws as the engine's grey grid (the client logs `missing usage flag`): `import.py` sets them.
   `sr.materials <model>` lists a model's materials and their textures.
 - Interchange turns glTF's (x, y, z) into Unreal's (x, z, y), so the import turns models a
-  quarter back (`import_offset_rotation`) to face Unreal's +X.
+  quarter back (`import_offset_rotation`) to face Unreal's +X. Not skinned ones: the offset turns
+  their skeleton but not their vertices, so posed bones move the mesh a quarter turn off. They come in
+  facing +Y, and script turns the component a quarter back (`ATick.Model`).
 
 **Gameplay code**
 

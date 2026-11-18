@@ -174,9 +174,13 @@ Each step ends playable, with the web game as the reference for how it should be
    we look through is shows as their view going (`UI/Dying.as`, the post-process `M_Dying` made by
    `pnpm run ue surfaces`), closing in red-black from the edges, draining of colour and darkening,
    throbbing with a heartbeat that quickens; a tick on them brings it on at once, and the overlay says
-   how to get it off. Grab pulls one off before anything else. `check ticks` passes. Still to come:
-   the walked legs of client/src/tick.ts (the model holds its rest pose), hissing and tapping (with
-   sound), and checking beams with a bot.
+   how to get it off. Grab pulls one off before anything else. `check ticks` passes. Its legs are
+   walked in code as client/src/tick.ts walks them (`TickLegs.as`, on a poseable mesh): the tetrapod
+   gait, FABRIK in each leg's plane, questing front legs when it stands, rearing when wary, legs
+   curled and scrabbling in the air, on its back or on a face. `sr.tickdemo <x> <y> <z> [radius]
+   [speed] [yaw] [state]` puts one on a single machine, walking a circle or standing, to look at, and
+   `sr.torch [candela]` carries a light with the `sr.eye` camera to see it in the dark. Still to come:
+   hissing and tapping (with sound), and checking beams with a bot.
 6. **The harbour and the yard, then the village.** Environments, sky and fog, ground.
 7. **Sound, the tuning panel, the rest.** Then the web game is deleted.
 
