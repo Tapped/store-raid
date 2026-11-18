@@ -3,6 +3,12 @@
 // only those playing have a character: the dead, lost and waiting watch through someone else's eyes.
 // Set by the game mode on the server; it forces an update on every change, as the engine sends player
 // states only now and then.
+namespace Health
+{
+	/** A player's health when they come into the building. */
+	const float MAX = 100;
+}
+
 class AStoreRaidPlayerState : APlayerState
 {
 	/** Who they are this round: only those playing are in the building. */
@@ -16,6 +22,10 @@ class AStoreRaidPlayerState : APlayerState
 	/** The truck's seat they sit on, an index into FParkedTruck.Seats, or -1 standing. */
 	UPROPERTY(Replicated)
 	int Seat = -1;
+
+	/** Out of Health::MAX: only a tick on them takes it. */
+	UPROPERTY(Replicated)
+	float Health = Health::MAX;
 
 	void SetRole(ERole NewRole)
 	{
@@ -32,6 +42,12 @@ class AStoreRaidPlayerState : APlayerState
 	void SetSeat(int NewSeat)
 	{
 		Seat = NewSeat;
+		ForceNetUpdate();
+	}
+
+	void SetHealth(float NewHealth)
+	{
+		Health = NewHealth;
 		ForceNetUpdate();
 	}
 

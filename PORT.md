@@ -63,6 +63,10 @@ the server `sr.mode playground|game`, `sr.clock <seconds>` (what's left of the p
 bot; the port of `scripts/playground.ts`), `items` (a bot and a client; hands, the flashlight, the
 sofa), `hatch` (the port of `scripts/hatch.ts`) and `round` (a bot and a client: seats, ready, loot,
 leaving, results, death and watching, dawn). The last two make the room a game and put it back.
+`ticks` (a client, on `UE_LEVEL=generated-2`) has a tick hunt, latch on and drain the player, be pulled
+off, and drain them to death. For ticks there are `sr.ticks` (every tick and everyone's health),
+and on the server `sr.sic [meters]` (a tick on the floor in front of the first player, hunting) and
+`sr.health <amount> [name]`.
 
 **Levels and modes:** the server's room is in the playground unless `UE_LEVEL=generated-<seed>`
 (`-level=` on its command line), a generated warehouse. It's a game or the playground as
@@ -159,7 +163,20 @@ Each step ends playable, with the web game as the reference for how it should be
    where it is (`FWear`). Cladding has its corrugations in the geometry: sheets and single
    corrugations made by `pnpm run model corrugated-sheet` and `corrugated-strip`, laid over the flat
    face in line with the texture's. Where wall boxes overlap in a plane, only one face is drawn there. Still to come: how fast it builds (2 s on the server, 6 on a client).
-5. **Ticks and health.**
+5. **Ticks and health.** Moved on the server as server/src/ticks.ts moves them, number for number:
+   `Script/Ticks/`, `TickRules.as` (shared/ticks.ts: the numbers, perches, the beam), `TickNest.as`
+   (perch, drop, hunt, leap, latch, drain, flee from beams and fittings' light, stunned when pulled
+   off) and `Tick.as` (each one, replicated, and drawn: on our face, belly to us, filling the view).
+   The level questions they ask, standing room, sliding along boxes, lines of sight and the A* way
+   across the floor, are C++ (`Source/StoreRaid/StoreRaidTerrain`), over the level's own floors and
+   boxes, as a search looks at thousands of cells. Health is on the player state; a tick takes it,
+   and at none in a raid the player is dead. There's no health bar: how close to death the player
+   we look through is shows as their view going (`UI/Dying.as`, the post-process `M_Dying` made by
+   `pnpm run ue surfaces`), closing in red-black from the edges, draining of colour and darkening,
+   throbbing with a heartbeat that quickens; a tick on them brings it on at once, and the overlay says
+   how to get it off. Grab pulls one off before anything else. `check ticks` passes. Still to come:
+   the walked legs of client/src/tick.ts (the model holds its rest pose), hissing and tapping (with
+   sound), and checking beams with a bot.
 6. **The harbour and the yard, then the village.** Environments, sky and fog, ground.
 7. **Sound, the tuning panel, the rest.** Then the web game is deleted.
 

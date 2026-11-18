@@ -146,6 +146,7 @@ class AStoreRaidGameState : AGameStateBase
 		if (!System::IsDedicatedServer())
 		{
 			SpawnActor(ALook);
+			SpawnActor(ADying);
 			Fittings = Cast<ALevelFittings>(SpawnActor(ALevelFittings));
 			const TArray<int> Own = Fittings.Build(Layout.Lamps, Layout.Props);
 			Fittings.SetDimmer(Light);

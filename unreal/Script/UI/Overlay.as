@@ -185,6 +185,9 @@ class UStoreRaidOverlay : UUserWidget
 {
 	UCanvasPanel Canvas;
 	UTextBlock Lines;
+	/** What to do now, below the middle: how to get a tick off. Empty hides it. */
+	UBorder Prompt;
+	UTextBlock PromptText;
 	/** The results: a dimmed screen with a sheet in the middle, rebuilt only when what it says changes. */
 	UBorder Results;
 	FString ResultsShown;
@@ -202,6 +205,17 @@ class UStoreRaidOverlay : UUserWidget
 		LinesAt.SetAlignment(FVector2D(0.5, 0));
 		LinesAt.SetPosition(FVector2D(0, 24));
 		LinesAt.SetAutoSize(true);
+
+		PromptText = Text("", 16, OverlayStyle::TEXT);
+		Prompt = Cast<UBorder>(ConstructWidget(UBorder));
+		Prompt.SetBrushColor(FLinearColor(0.05, 0, 0, 0.6));
+		Prompt.SetPadding(FMargin(12, 6, 12, 6));
+		Prompt.SetContent(PromptText);
+		UCanvasPanelSlot PromptAt = Canvas.AddChildToCanvas(Prompt);
+		PromptAt.SetAnchors(Anchors(0.5, 0.62, 0.5, 0.62));
+		PromptAt.SetAlignment(FVector2D(0.5, 0));
+		PromptAt.SetAutoSize(true);
+		Prompt.SetVisibility(ESlateVisibility::Collapsed);
 
 		Results = Cast<UBorder>(ConstructWidget(UBorder));
 		Results.SetBrushColor(FLinearColor(0, 0, 0, 0.55));
@@ -232,6 +246,13 @@ class UStoreRaidOverlay : UUserWidget
 		Block.SetShadowOffset(FVector2D(1, 1));
 		Block.SetShadowColorAndOpacity(FLinearColor(0, 0, 0, 0.8));
 		return Block;
+	}
+
+	/** Shows what to do now, or nothing for an empty prompt. */
+	void SetPrompt(FString Words)
+	{
+		Prompt.SetVisibility(Words.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+		PromptText.SetText(FText::FromString(Words));
 	}
 
 	/** Shows where the round is: call every frame. */

@@ -26,6 +26,9 @@ class AStoreRaidGameMode : AGameModeBase
 	/** How many have joined, to spread players over the truck's places. */
 	int JoinCount = 0;
 
+	/** The room's ticks, once the level is built. */
+	ATickNest Nest;
+
 	UFUNCTION(BlueprintOverride)
 	void BeginPlay()
 	{
@@ -55,6 +58,37 @@ class AStoreRaidGameMode : AGameModeBase
 	AStoreRaidGameState State() const
 	{
 		return Cast<AStoreRaidGameState>(Gameplay::GetGameState());
+	}
+
+	/** The room's ticks, made the first time they're wanted after the level is built; null before. */
+	ATickNest Ticks()
+	{
+		if (Nest == nullptr && State() != nullptr && State().Geometry != nullptr)
+		{
+			Nest = Cast<ATickNest>(SpawnActor(ATickNest));
+			Nest.Build(State().Layout, State().Parked.Dock);
+		}
+		return Nest;
+	}
+
+	/**
+	 * Takes health from a player, whatever hurts them. True if that was the last of it: in a raid
+	 * they're out until the next round (`How` is what the log says of it); anywhere else nobody
+	 * dies, so they get it all back.
+	 */
+	bool Hurt(AStoreRaidPlayerState Player, float Amount, FString How)
+	{
+		Player.SetHealth(Math::Max(0.0, Player.Health - Amount));
+		if (Player.Health > 0)
+			return false;
+		if (IsGame() && State().Phase == EPhase::Raid)
+		{
+			Log(f"StoreRaid: {Player.PlayerName} {How}");
+			SetRole(Player, ERole::Dead);
+		}
+		else
+			Player.SetHealth(Health::MAX);
+		return true;
 	}
 
 	/** Starts the room over in a mode: a game from its lobby, shut in the truck; the playground's truck stands open. */
@@ -212,6 +246,10 @@ class AStoreRaidGameMode : AGameModeBase
 		AStoreRaidGameState Room = State();
 		Hands::PutAllBack();
 		Room.TimeLeft = 0;
+		if (Ticks() != nullptr)
+			Ticks().Reset();
+		for (AStoreRaidPlayerState Player : Room.Players())
+			Player.SetHealth(Health::MAX);
 		if (Room.Mode != EMode::Game)
 		{
 			for (AStoreRaidPlayerState Player : Room.Players())
@@ -299,13 +337,17 @@ class AStoreRaidGameMode : AGameModeBase
 	}
 
 	/**
-	 * The grab button: a control box of the hatch, the dimmer, the nearest item in front of them, or
-	 * else a free seat in the truck in front of them. Nothing while seated.
+	 * The grab button: a tick on them or on someone in front of them, a control box of the hatch, the
+	 * dimmer, the nearest item in front of them, or else a free seat in the truck in front of them.
+	 * Nothing while seated.
 	 */
 	void Grab(AStoreRaidCharacter Character)
 	{
 		const AStoreRaidPlayerState Player = PlayerOf(Character);
 		if (Player == nullptr || !Player.IsPlaying() || Player.Seat >= 0)
+			return;
+		// A tick on them, or on someone in front of them, comes first.
+		if (Ticks() != nullptr && Ticks().Pull(Character))
 			return;
 		if (AtHatchPanel(Character))
 		{
@@ -510,6 +552,18 @@ class AStoreRaidGameMode : AGameModeBase
 				Loot += Item.Info().Value;
 		}
 		Room.Loot = Loot;
+
+		// Ticks are about in the playground, and during a raid, more eager the nearer dawn is. They
+		// go on through the results, or one in the air as the raid ended would hang there.
+		if (Ticks() != nullptr)
+		{
+			if (Room.Mode == EMode::Playground)
+				Ticks().Step(DeltaSeconds, 0);
+			else if (Room.Phase == EPhase::Raid)
+				Ticks().Step(DeltaSeconds, 1 - Room.TimeLeft / RaidTime);
+			else if (Room.Phase == EPhase::Results)
+				Ticks().Step(DeltaSeconds, 1);
+		}
 
 		if (Room.Mode == EMode::Game)
 			RunRound(DeltaSeconds);

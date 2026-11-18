@@ -24,7 +24,8 @@ oil, slow patchiness. Painted surfaces are multiplied by it, the others by it in
 colour (`Painted` says which). An instance without that data has no wear.
 
 It also makes `/Game/Surfaces/M_Glow`, which isn't a surface: the glow of a flickering fitting
-(Script/Level/Fittings.as), its emissive `Glow`, set every frame from the fitting's flicker.
+(Script/Level/Fittings.as), its emissive `Glow`, set every frame from the fitting's flicker; and
+`/Game/Surfaces/M_Dying`, the post-process that shows a player close to death (Script/UI/Dying.as).
 
 Content/ is never in git: running this again rebuilds the surfaces.
 """
@@ -366,8 +367,60 @@ def make_glow():
     log("M_Glow ok")
 
 
+DYING = """
+// Close to death: the picture closes in from the edges, red-black, drains of colour and darkens,
+// all of it throbbing with Pulse, a heartbeat from 0 to 1. Amount is 0 well, 1 at death's door.
+float2 P = (UV - 0.5) * float2(Size.x / Size.y, 1);
+float D = length(P) / length(float2(Size.x / Size.y, 1) * 0.5);
+float Close = lerp(1.25, 0.3, Amount) - 0.12 * Pulse * Amount;
+float Edge = smoothstep(Close, Close + 0.6, D);
+float Grey = dot(Colour, float3(0.2126, 0.7152, 0.0722));
+float3 C = lerp(Colour, Grey.xxx, saturate(Amount * 0.9));
+C *= 1 - 0.45 * Amount * Amount - 0.15 * Pulse * Amount;
+float3 Blood = Grey * float3(0.9, 0.06, 0.05) + float3(0.05, 0, 0) * Amount;
+C = lerp(C, Blood, saturate(Edge * 1.5));
+return C * (1 - 0.9 * Edge * Edge);
+"""
+
+
+def make_dying():
+    """M_Dying: the post-process for a player close to death, after tonemapping, with `Amount` and `Pulse`."""
+    path = ROOT + "/M_Dying"
+    if unreal.EditorAssetLibrary.does_asset_exist(path):
+        material = unreal.EditorAssetLibrary.load_asset(path)
+        library.delete_all_material_expressions(material)
+    else:
+        material = assets.create_asset("M_Dying", ROOT, unreal.Material, unreal.MaterialFactoryNew())
+    material.set_editor_property("material_domain", unreal.MaterialDomain.MD_POST_PROCESS)
+    material.set_editor_property("blendable_location", unreal.BlendableLocation.BL_SCENE_COLOR_AFTER_TONEMAPPING)
+    scene = library.create_material_expression(material, unreal.MaterialExpressionSceneTexture, -800, 0)
+    scene.set_editor_property("scene_texture_id", unreal.SceneTextureId.PPI_POST_PROCESS_INPUT0)
+    screen = library.create_material_expression(material, unreal.MaterialExpressionScreenPosition, -800, 200)
+    size = library.create_material_expression(material, unreal.MaterialExpressionViewSize, -800, 350)
+    amount = library.create_material_expression(material, unreal.MaterialExpressionScalarParameter, -800, 450)
+    amount.set_editor_property("parameter_name", "Amount")
+    pulse = library.create_material_expression(material, unreal.MaterialExpressionScalarParameter, -800, 550)
+    pulse.set_editor_property("parameter_name", "Pulse")
+    node = custom(material, DYING, unreal.CustomMaterialOutputType.CMOT_FLOAT3, ["Colour", "UV", "Size", "Amount", "Pulse"], -400, 200)
+    mask = library.create_material_expression(material, unreal.MaterialExpressionComponentMask, -600, 0)
+    mask.set_editor_property("r", True)
+    mask.set_editor_property("g", True)
+    mask.set_editor_property("b", True)
+    library.connect_material_expressions(scene, "Color", mask, "")
+    library.connect_material_expressions(mask, "", node, "Colour")
+    library.connect_material_expressions(screen, "ViewportUV", node, "UV")
+    library.connect_material_expressions(size, "", node, "Size")
+    library.connect_material_expressions(amount, "", node, "Amount")
+    library.connect_material_expressions(pulse, "", node, "Pulse")
+    library.connect_material_property(node, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    library.recompile_material(material)
+    unreal.EditorAssetLibrary.save_loaded_asset(material)
+    log("M_Dying ok")
+
+
 def main():
     make_glow()
+    make_dying()
     with open(os.path.join(STAGED, "surfaces.json"), encoding="utf8") as file:
         surfaces = json.load(file)
     done = []
