@@ -12,8 +12,9 @@
 // Wear (grime, corners, scuffs, damp, oil, mottling), which the web game bakes into vertex colours, is
 // worked out per pixel by the material from what each skin's custom data says about where it is
 // (FWear). Cladding has its corrugations in the geometry, as sheets laid over its flat face
-// (Corrugations()). How it differs from the web game, for now: where boxes overlap at a corner, two
-// faces can share a plane.
+// (Corrugations()). Where wall boxes overlap in a plane (walls end to end, a doorway's head on the
+// walls beside it), only the first face drawn there is kept, the tallest walls drawn first, so no two
+// faces share a plane and flicker.
 // Built on clients, never the dedicated server.
 
 /** A surface and the paint on it, in sRGB: the table's own paint unless `bPainted`. */
@@ -354,6 +355,21 @@ struct FIndices
 	TArray<int> Items;
 };
 
+/** A stretch of a wall's face already drawn in its plane: from A0 to A1 along it and Y0 to Y1 up. */
+struct FFaceSpan
+{
+	float A0 = 0.0;
+	float A1 = 0.0;
+	float Y0 = 0.0;
+	float Y1 = 0.0;
+};
+
+/** The spans drawn in one plane, as a map's value. */
+struct FFaceSpans
+{
+	TArray<FFaceSpan> Items;
+};
+
 /** One stretch of wall in a band of height, and what covers it. */
 struct FZone
 {
@@ -486,6 +502,8 @@ class ALevelBuilding : AActor
 	const float SUSPENDED_DROP = 0.045;
 	/** The wear of whatever is placed next: steelwork's unless a wall, floor or ceiling sets its own. */
 	FWear Wear;
+	/** Walls' faces drawn so far, by plane (PlaneKey()). */
+	TMap<FString, FFaceSpans> Drawn;
 
 	void Build(FLevel InLevel)
 	{
@@ -515,18 +533,36 @@ class ALevelBuilding : AActor
 				AddSolid(Level::MakeLevelBox(Floor.Footprint(), Floor.Y - Floor.Thickness, Floor.Thickness, ELevelBoxKind::Wall));
 		}
 
+		// Walls tallest first: where faces overlap in a plane, the first drawn is kept, so a doorway's
+		// head gives way to the full-height walls beside it.
+		TArray<int> ByHeight;
+		for (int Index = 0; Index < Level.Boxes.Num(); Index++)
+		{
+			const ELevelBoxKind Kind = Level.Boxes[Index].Kind;
+			if (Kind == ELevelBoxKind::Wall || Kind == ELevelBoxKind::Partition || Kind == ELevelBoxKind::Pit)
+				ByHeight.Add(Index);
+		}
+		for (int I = 1; I < ByHeight.Num(); I++)
+		{
+			const int Index = ByHeight[I];
+			int J = I - 1;
+			while (J >= 0 && Level.Boxes[ByHeight[J]].Height < Level.Boxes[Index].Height)
+			{
+				ByHeight[J + 1] = ByHeight[J];
+				J--;
+			}
+			ByHeight[J + 1] = Index;
+		}
+		for (int Index : ByHeight)
+		{
+			Walls(Level.Boxes[Index]);
+			if (Level.Boxes[Index].Kind == ELevelBoxKind::Pit)
+				PitEdges(Level.Boxes[Index]);
+		}
 		for (const FLevelBox& Box : Level.Boxes)
 		{
 			switch (Box.Kind)
 			{
-				case ELevelBoxKind::Wall:
-				case ELevelBoxKind::Partition:
-					Walls(Box);
-					break;
-				case ELevelBoxKind::Pit:
-					Walls(Box);
-					PitEdges(Box);
-					break;
 				case ELevelBoxKind::Rail:
 					Railing(Box);
 					break;
@@ -662,7 +698,7 @@ class ALevelBuilding : AActor
 				const float A1 = Math::Min(Box.MaxX, NextCut(A0, X0));
 				if (A1 - A0 < 0.005)
 					continue;
-				WallFace(Box, (A0 + A1) / 2, FaceZ + Sign * LOOK, Box.Y, Top, false, Sign, FaceZ, A0, A1);
+				FaceUnlessDrawn(Box, false, Sign, FaceZ, A0, A1, Box.Y, Top);
 			}
 		}
 		for (int Sign = -1; Sign <= 1; Sign += 2)
@@ -673,7 +709,7 @@ class ALevelBuilding : AActor
 				const float A1 = Math::Min(Box.MaxZ, NextCut(A0, Z0));
 				if (A1 - A0 < 0.005)
 					continue;
-				WallFace(Box, FaceX + Sign * LOOK, (A0 + A1) / 2, Box.Y, Top, true, Sign, FaceX, A0, A1);
+				FaceUnlessDrawn(Box, true, Sign, FaceX, A0, A1, Box.Y, Top);
 			}
 		}
 		// The underside of a doorway's head, as the wall's upper coat, and a top no floor covers.
@@ -690,6 +726,67 @@ class ALevelBuilding : AActor
 		}
 		if (!Inside(CX, Top + LOOK, CZ) && Box.Kind != ELevelBoxKind::Pit)
 			AddSkin(Building::Plain(n"concrete-wall"), Box.MinX, Box.MaxX, Top - SKIN, Top, Box.MinZ, Box.MaxZ);
+	}
+
+	/** Which plane a wall's face is in: facing along x or z, which way, and where. */
+	FString PlaneKey(bool bAlongX, int Sign, float Face)
+	{
+		const int Axis = bAlongX ? 1 : 0;
+		return f"{Axis} {Sign} {Math::RoundToInt(Face * 1000)}";
+	}
+
+	/**
+	 * A piece of a wall's side, as WallFace() has it, less what of it faces already drawn in its plane
+	 * cover at every height it has: those parts would share their plane with it and flicker.
+	 */
+	void FaceUnlessDrawn(FLevelBox Box, bool bAlongX, int Sign, float Face, float A0, float A1, float Y0, float Y1)
+	{
+		const FString Key = PlaneKey(bAlongX, Sign, Face);
+		TArray<FFaceSpan> Left;
+		FFaceSpan Whole;
+		Whole.A0 = A0;
+		Whole.A1 = A1;
+		Whole.Y0 = Y0;
+		Whole.Y1 = Y1;
+		Left.Add(Whole);
+		FFaceSpans Before;
+		if (Drawn.Find(Key, Before))
+		{
+			for (const FFaceSpan& Done : Before.Items)
+			{
+				if (Done.Y0 > Y0 + 0.001 || Done.Y1 < Y1 - 0.001)
+					continue;
+				TArray<FFaceSpan> Cut;
+				for (const FFaceSpan& Part : Left)
+				{
+					if (Done.A1 <= Part.A0 || Done.A0 >= Part.A1)
+					{
+						Cut.Add(Part);
+						continue;
+					}
+					FFaceSpan Lo = Part;
+					Lo.A1 = Done.A0;
+					FFaceSpan Hi = Part;
+					Hi.A0 = Done.A1;
+					if (Lo.A1 - Lo.A0 >= 0.005)
+						Cut.Add(Lo);
+					if (Hi.A1 - Hi.A0 >= 0.005)
+						Cut.Add(Hi);
+				}
+				Left = Cut;
+			}
+		}
+		for (const FFaceSpan& Part : Left)
+		{
+			const float Mid = (Part.A0 + Part.A1) / 2;
+			const float LookX = bAlongX ? Face + Sign * LOOK : Mid;
+			const float LookZ = bAlongX ? Mid : Face + Sign * LOOK;
+			if (WallFace(Box, LookX, LookZ, Y0, Y1, bAlongX, Sign, Face, Part.A0, Part.A1))
+			{
+				FFaceSpans& Spans = Drawn.FindOrAdd(Key);
+				Spans.Items.Add(Part);
+			}
+		}
 	}
 
 	/** Where a span is cut: its start and every cell edge in it. */
@@ -714,13 +811,13 @@ class ALevelBuilding : AActor
 	/**
 	 * One piece of a wall's side, facing out along x (`bAlongX`) or z by `Sign` from `Face`, from A0 to
 	 * A1 along it and from Y0 to Y1: skipped if what it faces is solid, else covered in the zones of the
-	 * finish in front, by height above that storey's floor.
+	 * finish in front, by height above that storey's floor. Whether it was drawn.
 	 */
-	void WallFace(FLevelBox Box, float LookX, float LookZ, float Y0, float Y1, bool bAlongX, int Sign, float Face, float A0, float A1)
+	bool WallFace(FLevelBox Box, float LookX, float LookZ, float Y0, float Y1, bool bAlongX, int Sign, float Face, float A0, float A1)
 	{
 		const float MidY = (Y0 + Y1) / 2;
 		if (Inside(LookX, MidY, LookZ))
-			return;
+			return false;
 		const int Storey = StoreyOf(Y0 + 0.01);
 		const float Base = Storey * Tiles::STOREY;
 		const int Col = ColOf(LookX);
@@ -744,7 +841,7 @@ class ALevelBuilding : AActor
 		}
 		Wear = FWear();
 		if (!InGrid(Col, Row) || Box.Kind == ELevelBoxKind::Pit || IsRock(Box))
-			return;
+			return true;
 		const FFinish Finish = FinishAt(Storey, Col, Row);
 		const float Ceiling = CeilingOf(Storey);
 		const int Top = Parsed.Levels - Parsed.Basements - 1;
@@ -771,6 +868,7 @@ class ALevelBuilding : AActor
 					Pilaster(Storey, Col, Row, bAlongX, Sign, Face, Origin + K * Tiles::CELL);
 			}
 		}
+		return true;
 	}
 
 	/** A plate on a wall's face from Face out by Out (negative: into the wall), A0 to A1 along it. */

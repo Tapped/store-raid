@@ -153,7 +153,7 @@ Each step ends playable, with the web game as the reference for how it should be
    mottling), which `M_Surface` works out per pixel from what each face's custom data says about
    where it is (`FWear`). Cladding has its corrugations in the geometry: sheets and single
    corrugations made by `pnpm run model corrugated-sheet` and `corrugated-strip`, laid over the flat
-   face in line with the texture's. Still to come: hot spots on the ceiling over the fittings, which
+   face in line with the texture's. Where wall boxes overlap in a plane, only one face is drawn there. Still to come: hot spots on the ceiling over the fittings, which
    the web game hasn't; flickering lights; and how fast it builds (2 s on the server, 6 on a client).
 5. **Ticks and health.**
 6. **The harbour and the yard, then the village.** Environments, sky and fog, ground.
