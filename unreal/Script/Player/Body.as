@@ -1,5 +1,6 @@
-// What everyone else sees of a player: the character model (models/characters/ch35), its clips
-// played straight on its skeletal mesh as client/src/players.ts plays them: walking (at the pace the
+// What everyone else sees of a player: a character model (models/characters/ch35 for now), its clips
+// played by UStoreRaidClipPlayer (C++), which fades from one to the next, as client/src/players.ts
+// plays them with blending: walking (at the pace the
 // player goes), carrying, standing (the walk's feet-together frame, as there's no idle clip), and
 // sitting on a seat in the truck, one of the seated idles chosen by name, with sit-to-stand played
 // forward to get up and backward to sit down. The seated clips sit behind the feet, so standing up
@@ -20,6 +21,8 @@ const float STAND_TIME = 2.0 / 60;
 /** Seconds sitting down and getting up take, as SIT_DOWN_TIME and STAND_UP_TIME in StoreRaidPlayerController.as. */
 const float BODY_SIT_DOWN = 1.2;
 const float BODY_STAND_UP = 1.4;
+/** Seconds one pose's clip fades into the next (players.ts's blendingSpeed of 0.08 a frame at 60). */
+const float BODY_FADE = 0.2;
 
 enum EBodyPose
 {
@@ -35,6 +38,8 @@ enum EBodyPose
 
 struct FBody
 {
+	/** The model the clips are its own, as `characters/ch35`. */
+	FString Model;
 	/** The clips, or null where one isn't imported. */
 	UAnimSequence Walk;
 	UAnimSequence CarryWalk;
@@ -55,29 +60,42 @@ struct FBody
 	bool bSeatedYet = false;
 	float Shifting = 0;
 
-	void Load()
+	/**
+	 * Takes a character model's clips and gives its mesh the clip player. Any model with clips of these
+	 * names (scripts/character.ts builds them from raw/characters/animations) can be the body.
+	 */
+	void Load(USkeletalMeshComponent Mesh, FString NewModel)
 	{
-		Walk = Models::Clip("characters/ch35", "walk");
-		CarryWalk = Models::Clip("characters/ch35", "carry-walk");
-		CarryStop = Models::Clip("characters/ch35", "carry-stop");
-		SitToStand = Models::Clip("characters/ch35", "sit-to-stand");
+		Model = NewModel;
+		Walk = Models::Clip(Model, "walk");
+		CarryWalk = Models::Clip(Model, "carry-walk");
+		CarryStop = Models::Clip(Model, "carry-stop");
+		SitToStand = Models::Clip(Model, "sit-to-stand");
+		Idle = nullptr;
+		Mesh.SetAnimationMode(EAnimationMode::AnimationBlueprint);
+		Mesh.SetAnimInstanceClass(UStoreRaidClipPlayer);
 	}
 
-	/** The seated idle for a name: the same on every screen, as the web game hashes it. */
+	/**
+	 * The seated idle for a name: the same on every screen, as the web game hashes it. A player's name
+	 * arrives a moment after they do, so a change of name picks again, and a seated body takes it up.
+	 */
 	void ChooseIdle(FString Name)
 	{
-		if (Name == IdleFor && Idle != nullptr)
+		if (Name.Equals(IdleFor, ESearchCase::CaseSensitive) && Idle != nullptr)
 			return;
 		IdleFor = Name;
+		// (hash * 31 + char) | 0 in JS, over 32 bits.
+		const int64 Wrap = 4294967296;
 		int64 Hash = 0;
 		for (int I = 0; I < Name.Len(); I++)
-		{
-			Hash = (Hash * 31 + Name[I]) & 0xFFFFFFFF;
-		}
-		if (Hash >= 0x80000000)
-			Hash -= 0x100000000;
+			Hash = (Hash * 31 + int64(Name[I])) % Wrap;
+		if (Hash >= Wrap / 2)
+			Hash -= Wrap;
 		const int64 Index = (Hash < 0 ? -Hash : Hash) % 2;
-		Idle = Models::Clip("characters/ch35", Index == 0 ? "sit-idle" : "sit-idle-2");
+		Idle = Models::Clip(Model, Index == 0 ? "sit-idle" : "sit-idle-2");
+		if (Pose == EBodyPose::Sit)
+			Pose = EBodyPose::None;
 	}
 
 	/**
@@ -121,7 +139,11 @@ struct FBody
 
 		// The walk clips keep pace with however fast they go, never slower than half a walk.
 		if (bMoving && (Pose == EBodyPose::Walk || Pose == EBodyPose::CarryWalk))
-			Mesh.SetPlayRate(Math::Max(WALK_RATE / 2, Speed * RATE_PER_SPEED));
+		{
+			UStoreRaidClipPlayer Player = Cast<UStoreRaidClipPlayer>(Mesh.GetAnimInstance());
+			if (Player != nullptr)
+				Player.SetRate(Math::Max(WALK_RATE / 2, Speed * RATE_PER_SPEED));
+		}
 	}
 
 	void SetPose(USkeletalMeshComponent Mesh, EBodyPose NewPose)
@@ -149,10 +171,34 @@ struct FBody
 			Play(Mesh, Walk, false, 0, STAND_TIME);
 	}
 
+	/** Fades into a clip, from wherever the last one had got to. */
 	void Play(USkeletalMeshComponent Mesh, UAnimSequence Clip, bool bLoop, float Rate, float From)
 	{
-		Mesh.PlayAnimation(Clip, bLoop);
-		Mesh.SetPlayRate(Rate);
-		Mesh.SetPosition(From, false);
+		UStoreRaidClipPlayer Player = Cast<UStoreRaidClipPlayer>(Mesh.GetAnimInstance());
+		if (Player != nullptr)
+			Player.Play(Clip, bLoop, Rate, From, BODY_FADE);
+	}
+}
+
+// sr.bodies: on this machine, every character's body: the clip it plays, where in it, and how many
+// clips show at once (more than one while fading).
+const FConsoleCommand BodiesCommand("sr.bodies", n"OnBodiesCommand");
+void OnBodiesCommand(TArray<FString> Arguments)
+{
+	TArray<AStoreRaidCharacter> All;
+	GetAllActorsOfClass(All);
+	for (AStoreRaidCharacter Character : All)
+	{
+		UStoreRaidClipPlayer Player = Cast<UStoreRaidClipPlayer>(Character.Body.GetAnimInstance());
+		const FString Name = Character.PlayerState != nullptr ? Character.PlayerState.PlayerName : "?";
+		if (Player == nullptr)
+		{
+			Log(f"StoreRaid body: {Name} none");
+			continue;
+		}
+		const FString Clip = Player.GetClip() != nullptr ? Player.GetClip().Name.ToString() : "-";
+		const float Time = Player.GetTime();
+		const int Blending = Player.GetBlending();
+		Log(f"StoreRaid body: {Name} clip {Clip} time {Time :.2} blending {Blending}");
 	}
 }

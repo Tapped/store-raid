@@ -129,7 +129,11 @@ Each step ends playable, with the web game as the reference for how it should be
    (`Player/Body.as`, ch35's clips played on its skeletal mesh as client/src/players.ts plays them):
    walking at their pace, carrying, standing, and on a seat one of the seated idles picked by name,
    with sit-to-stand forward to get up and backward to sit down; seated, the body faces across the
-   truck. A cylinder stands in if the model isn't imported. Clips switch without blending for now.
+   truck. A cylinder stands in if the model isn't imported. Clips fade into each other over 0.2 s through
+   `UStoreRaidClipPlayer` (C++, `Source/StoreRaid/StoreRaidClipPlayer`), an anim instance with no
+   blueprint that any skinned character can use: script calls `Play(clip, loop, rate, from, fade)`
+   and it crossfades from whatever showed, even mid-fade. `sr.bodies` lists each body's clip and how
+   many clips are blending.
    Still to come: the overlay's look beyond plain text.
 4. **The warehouse.** `generate.ts`, `furnish.ts`, `props.ts`, `levelCheck.ts` in script; the building
    drawn by room kind, dressing, fittings and their light.

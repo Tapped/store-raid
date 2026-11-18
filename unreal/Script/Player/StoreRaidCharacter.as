@@ -30,6 +30,8 @@ class AStoreRaidCharacter : AStoreRaidCharacterBase
 	/** How the body is posed and turned, on machines that draw it. */
 	FBody Pose;
 	bool bSeatedShown = false;
+	/** Whether the seat has been said yet: until then the body waits, so one already seated starts seated. */
+	bool bSeatKnown = false;
 	bool bBodyHidden = false;
 
 	/**
@@ -68,7 +70,7 @@ class AStoreRaidCharacter : AStoreRaidCharacterBase
 		if (Character != nullptr)
 		{
 			Body.SetSkeletalMeshAsset(Character);
-			Pose.Load();
+			Pose.Load(Body, "characters/ch35");
 			StandIn.SetVisibility(false);
 		}
 		else
@@ -85,7 +87,7 @@ class AStoreRaidCharacter : AStoreRaidCharacterBase
 	UFUNCTION(BlueprintOverride)
 	void Tick(float DeltaSeconds)
 	{
-		if (System::IsDedicatedServer() || Body.SkeletalMeshAsset == nullptr)
+		if (System::IsDedicatedServer() || Body.SkeletalMeshAsset == nullptr || !bSeatKnown || PlayerState == nullptr)
 			return;
 		float SeatYaw = 0;
 		const AStoreRaidPlayerState Player = Cast<AStoreRaidPlayerState>(PlayerState);
@@ -118,6 +120,7 @@ class AStoreRaidCharacter : AStoreRaidCharacterBase
 	void ShowSeated(bool bSeated)
 	{
 		bSeatedShown = bSeated;
+		bSeatKnown = PlayerState != nullptr;
 		StandIn.SetRelativeLocation(bSeated ? FVector(-45, 0, -25) : FVector::ZeroVector);
 		StandIn.SetRelativeScale3D(FVector(0.6, 0.6, bSeated ? 1.3 : 1.8));
 		const float Radius = bSeated ? SEATED_RADIUS : 30;

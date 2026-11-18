@@ -25,6 +25,8 @@ What has tripped up work here before:
 - `>>>` on a `uint` of 2^31 or more doesn't shift in zeros as JS's does. Bit-exact ports of TS
   integer maths (the generator's mulberry32, `FRandom` in `Level/Generate.as`) work in `int64`
   masked to 32 bits, with `Math.imul` taken in halves (`Generate::Imul`).
+- Hex literals are 32-bit: `0xFFFFFFFF` and `0x80000000` don't mask or compare as 64-bit numbers
+  in `int64` maths. Hold such constants in a typed `int64` (`const int64 Wrap = 4294967296;`).
 - `FString.IsNumeric()` takes a sign alone (`"-"`) as a number: test for digits when reading the
   number a name ends in (`Building::SeedOf`).
 - `FString`'s `<` and `==` ignore case. To sort strings as JS does, compare with
