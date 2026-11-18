@@ -8,7 +8,10 @@ class AStoreRaidCharacter : AStoreRaidCharacterBase
 	UCameraComponent Camera;
 	default Camera.RelativeLocation = FVector(0, 0, 75);
 	default Camera.bUsePawnControlRotation = true;
-	default Camera.FieldOfView = 80;
+	// The web game's view: 1.1 rad (63°) from top to bottom, whatever the window's shape, as Babylon
+	// keeps the vertical angle. FieldOfView is the angle across at the camera's AspectRatio (16:9), and
+	// the engine's players hold the vertical angle that gives (MaintainYFOV in BaseEngine.ini).
+	default Camera.FieldOfView = 94.93;
 
 	/** What others see of this player for now: a cylinder as tall and wide as they are. */
 	UPROPERTY(DefaultComponent, Attach = CollisionCylinder)
