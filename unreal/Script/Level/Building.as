@@ -9,9 +9,10 @@
 // material projects its textures from the world (see Tools/import/surfaces.py), so a skin needs no
 // texture coordinates. The level's collision boxes are hidden under them (ALevelGeometry).
 //
-// How it differs from the web game, for now: no wear (grime, scuffs, damp in vertex colours),
-// pilasters, beams, lane lines, door trims, stair treads, ladders' rungs or railings' tubes (a
-// railing is a painted box); and where boxes overlap at a corner, two faces can share a plane.
+// Wear (grime, corners, scuffs, damp, oil, mottling), which the web game bakes into vertex colours, is
+// worked out per pixel by the material from what each skin's custom data says about where it is
+// (FWear). How it differs from the web game, for now: corrugated cladding is flat, and where boxes
+// overlap at a corner, two faces can share a plane.
 // Built on clients, never the dedicated server.
 
 /** A surface and the paint on it, in sRGB: the table's own paint unless `bPainted`. */
@@ -47,6 +48,14 @@ struct FFinish
 	bool bLanes = false;
 	/** Steel columns along the outer walls, a cell apart. */
 	bool bPilasters = false;
+	/** How grimy it is, before how far in the room is: 0 clean, 1 filthy. */
+	float Dirt = 0.5;
+	/** Scuffed bands at trolley height. */
+	bool bScuffs = true;
+	/** Water stains and a tide line. */
+	bool bDamp = false;
+	/** Oil on the floor, 0 to 1. */
+	float Oil = 0.0;
 };
 
 /** The colours one building is painted in, chosen from its seed, in sRGB. */
@@ -204,6 +213,9 @@ namespace Building
 			Finish.bKick = false;
 			Finish.Lower = Plain(n"concrete-wall");
 			Finish.Upper = Plain(n"concrete-wall");
+			Finish.Dirt = 0.8;
+			Finish.bDamp = true;
+			Finish.Oil = 0.4;
 			return Finish;
 		}
 		switch (Kind)
@@ -231,11 +243,13 @@ namespace Building
 				Finish.Clad = Painted(n"corrugated", Vary(Livery.Cladding, Salt + 2, 0.03));
 				Finish.bLanes = Kind == ERoomKind::Entrance || Kind == ERoomKind::Hall;
 				Finish.bPilasters = true;
+				Finish.Dirt = Kind == ERoomKind::Entrance ? 0.55 : 0.45;
 				break;
 			case ERoomKind::Stock:
 				Finish.Lower = Painted(n"concrete-block", Scale(Vary(Livery.Light, Salt + 4, 0.08), 0.92));
 				Finish.Upper = Finish.Lower;
 				Finish.bPilasters = true;
+				Finish.Dirt = 0.6;
 				break;
 			case ERoomKind::Workshop:
 				Finish.bKick = false;
@@ -244,6 +258,8 @@ namespace Building
 				Finish.bBand = true;
 				Finish.BandHeight = 0.05;
 				Finish.Band = Painted(n"painted-steel", Livery.Accent);
+				Finish.Dirt = 0.75;
+				Finish.Oil = 1;
 				break;
 			case ERoomKind::Office:
 				Finish.Floor = Painted(n"carpet-tile", Vary(Livery.Carpet, Salt, 0.04));
@@ -253,6 +269,8 @@ namespace Building
 				Finish.Upper = Painted(n"painted-plaster", Light);
 				Finish.bTiled = true;
 				Finish.bBeams = false;
+				Finish.Dirt = 0.18;
+				Finish.bScuffs = false;
 				break;
 			case ERoomKind::Staff:
 				Finish.Floor = Painted(n"vinyl-tile", Vary(Livery.Vinyl, Salt, 0.04));
@@ -265,11 +283,16 @@ namespace Building
 				Finish.Upper = Painted(n"painted-plaster", Light);
 				Finish.bTiled = true;
 				Finish.bBeams = false;
+				Finish.Dirt = 0.3;
+				Finish.bScuffs = false;
 				break;
 			case ERoomKind::Plant:
 				Finish.bKick = false;
 				Finish.Lower = Plain(n"concrete-wall");
 				Finish.Upper = Plain(n"concrete-wall");
+				Finish.Dirt = 0.8;
+				Finish.bDamp = true;
+				Finish.Oil = 0.4;
 				break;
 			case ERoomKind::Corridor:
 				Finish.Floor = Painted(n"floor-paint", Vary(Livery.CorridorFloor, Salt, 0.04));
@@ -277,6 +300,7 @@ namespace Building
 				Finish.Dado = 1.0;
 				Finish.Upper = Painted(n"concrete-block", Light);
 				Finish.bBeams = false;
+				Finish.Dirt = 0.6;
 				break;
 			default:
 				break;
@@ -392,6 +416,35 @@ struct FLadderLine
 	}
 };
 
+/**
+ * How a skin wears: what M_Surface needs to work out client/src/building.ts's wear per pixel, in the
+ * instance's custom data 3 to 14 (see Tools/import/surfaces.py). Heights and places in game meters.
+ */
+struct FWear
+{
+	/** 1 a wall facing a room, 2 a floor, 3 a ceiling, 4 steelwork and the rest; 0 none. */
+	int Kind = 4;
+	/** The floor of its storey; steelwork is dirtiest just above it. Below -999: the skin's own storey's. */
+	float Base = -1000.0;
+	float Ceiling = 0.0;
+	/** `dirtOf`: the room's dirt, worse the further in it is; steelwork's own. */
+	float Dirt = 0.3;
+	/** 1 scuffs, 2 damp. */
+	int Flags = 0;
+	/** A wall's storey; a floor's oil. */
+	float Extra = 0.0;
+	/**
+	 * A wall: where its corners are along it (A, B), and how dark each is (C, D). A floor or ceiling:
+	 * the faces of the walls west, east, south and north of it, far off where there's none.
+	 */
+	float A = -10000.0;
+	float B = 10000.0;
+	float C = -10000.0;
+	float D = 10000.0;
+	/** A floor's tone: bare concrete is sealed darker than the bake's fresh slab. */
+	float Tone = 1.0;
+};
+
 class ALevelBuilding : AActor
 {
 	UPROPERTY(DefaultComponent, RootComponent)
@@ -430,6 +483,8 @@ class ALevelBuilding : AActor
 	TArray<FWallOpening> Openings;
 	/** How far below the roof a suspended ceiling hangs: just clear of the deck's ribs. */
 	const float SUSPENDED_DROP = 0.045;
+	/** The wear of whatever is placed next: steelwork's unless a wall, floor or ceiling sets its own. */
+	FWear Wear;
 
 	void Build(FLevel InLevel)
 	{
@@ -672,6 +727,7 @@ class ALevelBuilding : AActor
 		TArray<FZone> Zones;
 		const float Mid = (A0 + A1) / 2;
 		ZonesOf(Box, Storey, Col, Row, bAlongX ? Face : Mid, MidY, bAlongX ? Mid : Face, Zones);
+		Wear = WallWear(Storey, Col, Row, bAlongX, Sign, Face, A0, A1, Y0, Y1);
 		for (const FZone& Zone : Zones)
 		{
 			const float From = Math::Max(Y0, Base + Zone.From);
@@ -683,6 +739,7 @@ class ALevelBuilding : AActor
 			if (To - From <= 0.12 && (Zone.Coat.Surface == n"rubber" || Zone.Coat.Surface == n"painted-steel"))
 				FacePlate(Zone.Coat, bAlongX, Face, Sign * (Zone.Coat.Surface == n"rubber" ? 0.012 : 0.008), A0, A1, From, To);
 		}
+		Wear = FWear();
 		if (!InGrid(Col, Row) || Box.Kind == ELevelBoxKind::Pit || IsRock(Box))
 			return;
 		const FFinish Finish = FinishAt(Storey, Col, Row);
@@ -898,11 +955,17 @@ class ALevelBuilding : AActor
 				const int Col = ColOf((X + X1) / 2);
 				const int Row = RowOf((Z + Z1) / 2);
 				const FCoat Top = InGrid(Col, Row) ? FinishAt(Storey, Col, Row).Floor : Building::Plain(n"concrete-floor");
+				Wear = InGrid(Col, Row) ? SurfaceWear(2, Storey, Col, Row, X, X1, Z, Z1, Floor.Y + 0.5) : FWear();
+				if (Top.Surface == n"concrete-floor")
+					Wear.Tone = 0.8;
 				AddSkin(Top, X, X1, Floor.Y - SKIN, Floor.Y, Z, Z1);
+				Wear = FWear();
 				if (Inside((X + X1) / 2, Bottom - LOOK, (Z + Z1) / 2) || !InGrid(Col, Row) || Storey - 1 < -Parsed.Basements)
 					continue;
 				const bool bTiled = FinishAt(Storey - 1, Col, Row).bTiled;
+				Wear = SurfaceWear(3, Storey - 1, Col, Row, X, X1, Z, Z1, Bottom - 0.3);
 				AddSkin(Building::Plain(bTiled ? n"ceiling-tile" : n"concrete-wall"), X, X1, Bottom, Bottom + SKIN, Z, Z1);
+				Wear = FWear();
 			}
 		}
 		// Edges showing at wells and pits.
@@ -945,9 +1008,11 @@ class ALevelBuilding : AActor
 				while (Storey > -Parsed.Basements && Parsed.Tile(Storey, Col, Row).Kind == ETileKind::Open)
 					Storey--;
 				const bool bTiled = Storey == Top && FinishAt(Top, Col, Row).bTiled;
+				Wear = SurfaceWear(3, Top, Col, Row, X, X + Tiles::CELL, Z, Z + Tiles::CELL, Y - 0.3);
 				if (bTiled && Suspended(Col, Row))
 					AddSkin(Building::Plain(n"ceiling-tile"), X, X + Tiles::CELL, Y - SUSPENDED_DROP, Y - SUSPENDED_DROP + SKIN, Z, Z + Tiles::CELL);
 				AddSkin(Building::Plain(n"metal-deck"), X, X + Tiles::CELL, Y, Y + SKIN, Z, Z + Tiles::CELL);
+				Wear = FWear();
 			}
 		}
 		const FBoxXZ Roof = Level.Footprint;
@@ -1451,6 +1516,130 @@ class ALevelBuilding : AActor
 		AddPainted(MeshFor(Coat.Surface), Coat.Surface, Coat, FTransform(Rotation, (W0 + W1) / 2, FVector(Length, Width, Depth)));
 	}
 
+	// ---- Wear ----
+
+	float SmoothStep(float A, float B, float X)
+	{
+		const float T = Math::Clamp((X - A) / (B - A), 0.0, 1.0);
+		return T * T * (3 - 2 * T);
+	}
+
+	/** `dirtOf`: how dirty a room is overall, from its finish, how far in it is and its storey. */
+	float DirtOf(FFinish Finish, int Storey, int Col, int Row)
+	{
+		const int Room = RoomOf(Storey, Col, Row);
+		const float Depth = Room >= 0 ? Level.Rooms[Room].Depth : (Storey < 0 ? 0.8 : 0.3);
+		return Finish.Dirt * (1 + 0.6 * Depth) + (Storey < 0 ? 0.25 : 0.0);
+	}
+
+	/** The wear of a wall facing a room from cell (Col, Row): the room's, and how dark the face's corners are. */
+	FWear WallWear(int Storey, int Col, int Row, bool bAlongX, int Sign, float Face, float A0, float A1, float Y0, float Y1)
+	{
+		FWear Made;
+		if (!InGrid(Col, Row))
+			return Made;
+		const FFinish Finish = FinishAt(Storey, Col, Row);
+		Made.Kind = 1;
+		Made.Base = Storey * Tiles::STOREY;
+		Made.Ceiling = CeilingOf(Storey);
+		Made.Dirt = DirtOf(Finish, Storey, Col, Row);
+		Made.Flags = (Finish.bScuffs ? 1 : 0) + (Finish.bDamp || Storey < 0 ? 2 : 0);
+		Made.Extra = Storey;
+		// Corners as they are below doorways' heads, where doorways are open.
+		const float Y = Y0 < Made.Base + Tiles::DOOR_HEIGHT ? Made.Base + 1.0 : (Y0 + Y1) / 2;
+		const float Front = Face + Sign * 0.06;
+		Made.A = CornerOf(bAlongX, Front, A0, 1, Y);
+		Made.B = CornerOf(bAlongX, Front, A1, -1, Y);
+		Made.C = SmoothStep(0.42, 0.8, Enclosed(bAlongX ? Front : Made.A, Y, bAlongX ? Made.A : Front, 0.45));
+		Made.D = SmoothStep(0.42, 0.8, Enclosed(bAlongX ? Front : Made.B, Y, bAlongX ? Made.B : Front, 0.45));
+		return Made;
+	}
+
+	/** Where a wall's face shows from: past a wall that crosses its end, going `Dir` along it from `From`. */
+	float CornerOf(bool bAlongX, float Front, float From, int Dir, float Y)
+	{
+		float At = From;
+		for (int Step = 0; Step < 20 && Inside(bAlongX ? Front : At, Y, bAlongX ? At : Front); Step++)
+			At += Dir * 0.02;
+		return At;
+	}
+
+	/** `enclosed`: the share of the square R round a point that's solid at height Y. */
+	float Enclosed(float X, float Y, float Z, float R)
+	{
+		TSet<int> Seen;
+		float Sum = 0;
+		for (int Col = ColOf(X - R); Col <= ColOf(X + R); Col++)
+		{
+			for (int Row = RowOf(Z - R); Row <= RowOf(Z + R); Row++)
+			{
+				FIndices Near;
+				if (!SolidsIn.Find(CellKey(Col, Row), Near))
+					continue;
+				for (int Index : Near.Items)
+				{
+					if (Seen.Contains(Index))
+						continue;
+					Seen.Add(Index);
+					const FLevelBox& Box = Solids[Index];
+					if (Y < Box.Y || Y > Box.Y + Box.Height)
+						continue;
+					const float W = Math::Min(Box.MaxX, X + R) - Math::Max(Box.MinX, X - R);
+					const float D = Math::Min(Box.MaxZ, Z + R) - Math::Max(Box.MinZ, Z - R);
+					if (W > 0 && D > 0)
+						Sum += W * D;
+				}
+			}
+		}
+		return Math::Min(1.0, Sum / (4 * R * R));
+	}
+
+	/**
+	 * The wear of a floor (Kind 2) or a ceiling (3) over a cell of a storey, from MinX to MaxX and MinZ
+	 * to MaxZ: its room's, and where the walls round it are, found at height Y.
+	 */
+	FWear SurfaceWear(int Kind, int Storey, int Col, int Row, float MinX, float MaxX, float MinZ, float MaxZ, float Y)
+	{
+		FWear Made;
+		const FFinish Finish = FinishAt(Storey, Col, Row);
+		Made.Kind = Kind;
+		Made.Base = Storey * Tiles::STOREY;
+		Made.Ceiling = CeilingOf(Storey);
+		Made.Dirt = DirtOf(Finish, Storey, Col, Row);
+		Made.Flags = Finish.bDamp || Storey < 0 ? 2 : 0;
+		Made.Extra = Kind == 2 ? Finish.Oil : 0.0;
+		Made.A = WallFaceBy(true, MinX, 1, MinZ, MaxZ, Y);
+		Made.B = WallFaceBy(true, MaxX, -1, MinZ, MaxZ, Y);
+		Made.C = WallFaceBy(false, MinZ, 1, MinX, MaxX, Y);
+		Made.D = WallFaceBy(false, MaxZ, -1, MinX, MaxX, Y);
+		return Made;
+	}
+
+	/**
+	 * Where the face of a wall along one side of a floor is: the side at `Edge` across x (`bX`) or z,
+	 * the floor lying `Inward` from it, from Lo to Hi along it. Far off if there's no wall there.
+	 */
+	float WallFaceBy(bool bX, float Edge, int Inward, float Lo, float Hi, float Y)
+	{
+		for (int K = 0; K < 3; K++)
+		{
+			const float Along = Lo + (Hi - Lo) * (K == 0 ? 0.5 : (K == 1 ? 0.25 : 0.75));
+			bool bFound = false;
+			float Deepest = 0;
+			for (float D = -0.3; D <= 0.61; D += 0.05)
+			{
+				if (Inside(bX ? Edge + Inward * D : Along, Y, bX ? Along : Edge + Inward * D))
+				{
+					bFound = true;
+					Deepest = D;
+				}
+			}
+			if (bFound)
+				return Edge + Inward * (Deepest + 0.025);
+		}
+		return -Inward * 10000.0;
+	}
+
 	// ---- Drawing ----
 
 	/** The instanced mesh for a surface: the engine's cube in the surface's material, painted per instance. */
@@ -1463,7 +1652,7 @@ class ALevelBuilding : AActor
 		Made.SetStaticMesh(Cast<UStaticMesh>(LoadObject(nullptr, "/Engine/BasicShapes/Cube.Cube")));
 		Made.SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Made.SetMobility(EComponentMobility::Static);
-		Made.SetNumCustomDataFloats(3);
+		Made.SetNumCustomDataFloats(15);
 		const FString Name = Surface.ToString();
 		UMaterialInterface Material = Cast<UMaterialInterface>(LoadObject(nullptr, f"/Game/Surfaces/{Name}/MI_{Name}.MI_{Name}"));
 		if (Material != nullptr)
@@ -1487,9 +1676,28 @@ class ALevelBuilding : AActor
 		FLinearColor Paint = FLinearColor(0, 0, 0, 1);
 		if (Building::Paintable(Surface))
 			Paint = Building::Linear(Coat.bPainted ? Coat.Paint : Building::TableTint(Surface));
-		Mesh.SetCustomDataValue(Index, 0, Paint.R, false);
-		Mesh.SetCustomDataValue(Index, 1, Paint.G, false);
-		Mesh.SetCustomDataValue(Index, 2, Paint.B, false);
+		// The wear, after the paint: see FWear.
+		float Base = Wear.Base;
+		if (Base < -999)
+			Base = StoreyOf(Transform.Location.Z / 100.0) * Tiles::STOREY;
+		TArray<float> Data;
+		Data.Add(Paint.R);
+		Data.Add(Paint.G);
+		Data.Add(Paint.B);
+		Data.Add(Wear.Kind);
+		Data.Add(Base);
+		Data.Add(Wear.Ceiling);
+		Data.Add(Wear.Dirt);
+		Data.Add(Wear.Flags);
+		Data.Add(Wear.Extra);
+		Data.Add(Wear.A);
+		Data.Add(Wear.B);
+		Data.Add(Wear.C);
+		Data.Add(Wear.D);
+		Data.Add(Seed);
+		Data.Add(Wear.Tone);
+		for (int K = 0; K < Data.Num(); K++)
+			Mesh.SetCustomDataValue(Index, K, Data[K], false);
 		Skins++;
 	}
 }

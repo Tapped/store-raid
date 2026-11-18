@@ -17,6 +17,12 @@ alpha`, the paint in linear colour from an instance's custom data 0 to 2 (an ins
 each instance its own colour), else the `Tint` parameter. Surfaces that can't be painted have a
 tint of black.
 
+Wear darkens the colour as client/src/parts.ts and building.ts bake it into vertex colours, but per
+pixel, from the world position and what an instance's custom data 3 to 14 says about where it is
+(`FWear` in Script/Level/Building.as): dirt rising from the floor, darker corners, scuffs, damp,
+oil, slow patchiness. Painted surfaces are multiplied by it, the others by it in a warm grime
+colour (`Painted` says which). An instance without that data has no wear.
+
 Content/ is never in git: running this again rebuilds the surfaces.
 """
 
@@ -87,6 +93,121 @@ return normalize(T.x * U + T.y * V + T.z * N);
 """
 
 
+# Wear, per pixel: `WEAR` and the wear functions of client/src/building.ts, with parts.ts's noise3
+# bit for bit, in game meters (x east, y up, z north). D1 to D4 are the instance's custom data 3 to
+# 14: kind, floor, ceiling; dirt, flags, extra; and four numbers that depend on the kind. Returns the
+# surface's colour, worn.
+WEAR_CODE = """
+struct Worn
+{
+    float Hash(int3 C, int Seed)
+    {
+        uint H = (asuint(C.x) * 0x27d4eb2du) ^ (asuint(C.y) * 0x165667b1u) ^ (asuint(C.z) * 0x9e3779b1u) ^ asuint(Seed);
+        H = (H ^ (H >> 15)) * 0x85ebca77u;
+        H = (H ^ (H >> 13)) * 0xc2b2ae3du;
+        return float(H ^ (H >> 16)) / 4294967296.0;
+    }
+    float Noise(float3 P, int Seed)
+    {
+        float3 I = floor(P);
+        float3 F = P - I;
+        float3 S = F * F * (3 - 2 * F);
+        int3 C = int3(I);
+        float A = lerp(lerp(Hash(C, Seed), Hash(C + int3(1, 0, 0), Seed), S.x), lerp(Hash(C + int3(0, 1, 0), Seed), Hash(C + int3(1, 1, 0), Seed), S.x), S.y);
+        float B = lerp(lerp(Hash(C + int3(0, 0, 1), Seed), Hash(C + int3(1, 0, 1), Seed), S.x), lerp(Hash(C + int3(0, 1, 1), Seed), Hash(C + int3(1, 1, 1), Seed), S.x), S.y);
+        return lerp(A, B, S.z);
+    }
+    float Mottle(float3 P, int Seed)
+    {
+        float N = Noise(P / 2.3, Seed) * 0.65 + Noise(P / 0.7, Seed + 9) * 0.35;
+        return 1 + (N - 0.5) * 2 * 0.12;
+    }
+    // How much of the square R round a point on a floor or ceiling is wall, from where its four walls' faces are.
+    float Enclosed(float3 G, float4 Faces, float R)
+    {
+        float X = saturate((R - (G.x - Faces.x)) / (2 * R)) + saturate((R - (Faces.y - G.x)) / (2 * R));
+        float Z = saturate((R - (G.z - Faces.z)) / (2 * R)) + saturate((R - (Faces.w - G.z)) / (2 * R));
+        return saturate(X + Z - X * Z);
+    }
+};
+Worn W;
+const float GRIME = 0.55;
+const float CORNERS = 0.5;
+const float SCUFFS = 0.18;
+const float DAMP = 0.3;
+float3 G = float3(P.y, P.z, P.x) * 0.01;
+float3 Nm = float3(N.y, N.z, N.x);
+int Kind = (int)round(D1.x);
+float Base = D1.y;
+float Ceiling = D1.z;
+float Dirt = D2.x;
+int Flags = (int)round(D2.y);
+int Seed = (int)round(D4.y);
+float K = 1;
+if (Kind == 1)
+{
+    // A wall: grime from the floor, corners, scuffs, damp, the ceiling's edge.
+    float H = G.y - Base;
+    K = W.Mottle(G, Seed);
+    float Patch = 0.6 + 0.4 * W.Noise(float3(G.x * 1.3, 0, G.z * 1.3), Seed + 3);
+    K *= 1 - GRIME * Dirt * 0.6 * (1 - smoothstep(0, 0.5, H)) * Patch;
+    if (abs(Nm.y) < 0.5)
+    {
+        float Along = abs(Nm.x) > 0.5 ? G.z : G.x;
+        // D3.x and D3.y: where the face's corners are along it; D3.z and D4.x: how dark each corner is.
+        float Corner = max(D3.z * saturate(1 - (Along - D3.x) / 0.5), D4.x * saturate(1 - (D3.y - Along) / 0.5));
+        K *= 1 - CORNERS * 0.7 * Corner;
+        if ((Flags & 1) != 0 && H > 0.1 && H < 1.2)
+        {
+            float S = smoothstep(0.5, 0.75, W.Noise(float3(G.x * 1.6, G.y * 3, G.z * 1.6), Seed + 5));
+            K *= 1 - SCUFFS * S * Dirt * smoothstep(0.1, 0.3, H) * (1 - smoothstep(0.9, 1.2, H));
+        }
+        if ((Flags & 2) != 0)
+        {
+            float Storey = D2.z;
+            float Streak = smoothstep(0.62, 0.8, W.Noise(float3(Along * 1.8, 0.5, Storey), Seed + 11));
+            float Reach = 0.6 + 1.6 * W.Noise(float3(Along * 0.7, 2.5, Storey), Seed + 12);
+            K *= 1 - DAMP * 0.8 * Streak * smoothstep(Ceiling - Base - Reach, Ceiling - Base, H);
+            K *= 1 - DAMP * 0.4 * (1 - smoothstep(0.2, 0.45, H));
+        }
+    }
+    K *= 1 - 0.15 * (1 - smoothstep(0, 0.4, Ceiling - G.y));
+    K = max(0.15, K);
+}
+else if (Kind == 2)
+{
+    // A floor: darker by the walls, oil, broad dirt. D2.z is the oil, D4.z the floor's tone.
+    K = W.Mottle(G, Seed) * D4.z;
+    float Occ = W.Enclosed(G, float4(D3.x, D3.y, D3.z, D4.x), 0.4);
+    K *= 1 - CORNERS * 0.6 * smoothstep(0.05, 0.6, Occ) * (0.5 + Dirt * 0.5);
+    if (D2.z > 0)
+        K *= 1 - 0.4 * D2.z * smoothstep(0.55, 0.78, W.Noise(float3(G.x / 1.4, 0, G.z / 1.4), Seed + 21));
+    K *= 1 - 0.15 * Dirt * W.Noise(float3(G.x / 3, 1, G.z / 3), Seed + 22);
+    K = max(0.2, K);
+}
+else if (Kind == 3)
+{
+    // A ceiling: darker by the walls, damp stains.
+    K = W.Mottle(G, Seed + 1);
+    float Occ = W.Enclosed(G, float4(D3.x, D3.y, D3.z, D4.x), 0.4);
+    K *= 1 - CORNERS * 0.5 * smoothstep(0.05, 0.6, Occ);
+    if ((Flags & 2) != 0)
+        K *= 1 - DAMP * 0.7 * smoothstep(0.6, 0.8, W.Noise(float3(G.x / 1.7, 3, G.z / 1.7), Seed + 31));
+    K = max(0.2, K);
+}
+else if (Kind == 4)
+{
+    // Steelwork and fittings: mottled, darker low down.
+    K = W.Mottle(G, Seed + 2) * (1 - 0.3 * Dirt * (1 - smoothstep(0, 0.4, G.y - Base)));
+}
+if (Painted > 0.5)
+    return Colour * K;
+// Grime's colour on surfaces that aren't painted: a little warm.
+const float3 TINT = float3(0.86, 0.8, 0.72);
+return Colour * K * (TINT + (1 - TINT) * min(1, K));
+"""
+
+
 def custom(material, code, output, inputs, x, y):
     node = library.create_material_expression(material, unreal.MaterialExpressionCustom, x, y)
     node.set_editor_property("code", code)
@@ -151,7 +272,24 @@ def make_material(defaults):
     colour = library.create_material_expression(material, unreal.MaterialExpressionAdd, -150, -400)
     library.connect_material_expressions(base, "RGB", colour, "A")
     library.connect_material_expressions(painted, "", colour, "B")
-    library.connect_material_property(colour, "", unreal.MaterialProperty.MP_BASE_COLOR)
+
+    # Wear, from the instance's custom data 3 to 14; none without it (kind 0).
+    is_painted = library.create_material_expression(material, unreal.MaterialExpressionScalarParameter, -500, -900)
+    is_painted.set_editor_property("parameter_name", "Painted")
+    is_painted.set_editor_property("default_value", 0.0)
+    inputs = ["Colour", "Painted", "P", "N", "D1", "D2", "D3", "D4"]
+    worn = custom(material, WEAR_CODE, unreal.CustomMaterialOutputType.CMOT_FLOAT3, inputs, 0, -700)
+    library.connect_material_expressions(colour, "", worn, "Colour")
+    library.connect_material_expressions(is_painted, "", worn, "Painted")
+    library.connect_material_expressions(position, "", worn, "P")
+    library.connect_material_expressions(normal, "", worn, "N")
+    for k, index in enumerate((3, 6, 9, 12)):
+        data = library.create_material_expression(
+            material, unreal.MaterialExpressionPerInstanceCustomData3Vector, -300, -1200 + k * 120
+        )
+        data.set_editor_property("data_index", index)
+        library.connect_material_expressions(data, "", worn, f"D{k + 1}")
+    library.connect_material_property(worn, "", unreal.MaterialProperty.MP_BASE_COLOR)
 
     world = custom(material, NORMAL_CODE, unreal.CustomMaterialOutputType.CMOT_FLOAT3, ["T", "N"], -400, 100)
     library.connect_material_expressions(bump, "RGB", world, "T")
@@ -185,6 +323,7 @@ def make_instance(material, surface):
     library.set_material_instance_texture_parameter_value(instance, "ORM", load(f"{folder}/{name}-orm"))
     library.set_material_instance_scalar_parameter_value(instance, "Tile", surface["tile"])
     tint = surface["tint"]
+    library.set_material_instance_scalar_parameter_value(instance, "Painted", 1.0 if tint else 0.0)
     if tint:
         r, g, b = (srgb_to_linear(c) for c in tint)
         library.set_material_instance_vector_parameter_value(instance, "Tint", unreal.LinearColor(r, g, b, 1))
