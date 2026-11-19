@@ -513,6 +513,12 @@ struct FFurnisher
 		return RoomAt(Point.Storey, Math::FloorToInt((Point.X - Building.X0) / Tiles::CELL), Math::FloorToInt((Point.Z - Building.Z0) / Tiles::CELL));
 	}
 
+	/** Whether a room is of a kind itself, not only dressed as one (Generate::DressedAs). */
+	bool IsRoom(int Room, ERoomKind Kind) const
+	{
+		return Room >= 0 && Room < Rooms.Num() && Rooms[Room].Kind == Kind;
+	}
+
 	bool IsKind(int Room, ERoomKind Kind) const
 	{
 		return Room >= 0 && Room < Rooms.Num() && Generate::DressedAs(Rooms[Room].Kind) == Kind;
@@ -1150,7 +1156,10 @@ struct FFurnisher
 
 	// ---- Doorways and cages ----
 
-	/** A frame in every doorway, and a strip curtain in some between halls and the rooms behind. */
+	/**
+	 * A frame in every doorway, a strip curtain in some between halls and the rooms behind and
+	 * always into the reefer section, and quarantine's sheeting, its notice facing out.
+	 */
 	void FitDoorways()
 	{
 		for (int Storey = -Building.Basements; Storey <= Building.Top; Storey++)
@@ -1171,6 +1180,17 @@ struct FFurnisher
 						int Room = RoomAt(Storey, Col, Row);
 						int Other = RoomAt(Storey, Col + Tiles::OffsetX(Side), Row + Tiles::OffsetZ(Side));
 						Fixture(EProp::DoorFrame, Storey, X, Z, Turn, Room);
+						if (IsRoom(Room, ERoomKind::Quarantine) || IsRoom(Other, ERoomKind::Quarantine))
+						{
+							ESide Out = IsRoom(Room, ERoomKind::Quarantine) ? Side : Tiles::Opposite(Side);
+							Fixture(EProp::QuarantineSheet, Storey, X, Z, Reach::Turn(Out), Room);
+							continue;
+						}
+						if (IsRoom(Room, ERoomKind::Reefer) || IsRoom(Other, ERoomKind::Reefer))
+						{
+							Fixture(EProp::StripCurtain, Storey, X, Z, Turn, Room);
+							continue;
+						}
 						bool bHall = IsKind(Room, ERoomKind::Hall) || IsKind(Other, ERoomKind::Hall);
 						bool bBehind = IsKind(Room, ERoomKind::Stock) || IsKind(Room, ERoomKind::Corridor) || IsKind(Room, ERoomKind::Workshop)
 							|| IsKind(Other, ERoomKind::Stock) || IsKind(Other, ERoomKind::Corridor) || IsKind(Other, ERoomKind::Workshop);
@@ -1275,6 +1295,16 @@ struct FFurnisher
 		FStyle Style;
 		Style.Density = Rng(0.45, 1.15);
 		Style.bRansacked = Generate::DressedAs(Room.Kind) != ERoomKind::Entrance && Chance(0.08 + Room.Depth * 0.25);
+		if (Room.Kind == ERoomKind::Reefer)
+		{
+			FurnishReefer(Room, Style);
+			return;
+		}
+		if (Room.Kind == ERoomKind::Quarantine)
+		{
+			FurnishQuarantine(Room);
+			return;
+		}
 		switch (Generate::DressedAs(Room.Kind))
 		{
 			case ERoomKind::Entrance:
@@ -1836,6 +1866,121 @@ struct FFurnisher
 			Math::RoundToInt(Room.Cells.Num() * 0.8 * Style.Density), 0.1);
 	}
 
+	/**
+	 * Warehouse 7's reefer section: refrigerated containers end to end along the walls where they
+	 * fit, plugged in, pallets of frozen goods and shelving where they don't, and pallets, tanks and
+	 * a hand truck about the floor.
+	 */
+	void FurnishReefer(FRoom Room, FStyle Style)
+	{
+		FPropKind Reefer = Props::Kind(EProp::ReeferContainer);
+		for (FWallRun Run : WallRuns(Room))
+		{
+			if (Run.To - Run.From >= Reefer.Depth + 0.3 && Chance(0.85))
+			{
+				AlongWallLengthways(Run, Room, Furnish::List(EProp::ReeferContainer));
+				continue;
+			}
+			FAlongWall Options;
+			Options.Gap = 0.2;
+			Options.Skip = Style.bRansacked ? 0.35 : 0.15;
+			AlongWall(Run, Room, Furnish::Pick(Furnish::List(EProp::PalletStackA, EProp::PalletStackB, EProp::WallShelfA), 1), Options);
+		}
+		TArray<EProp> Loose = Furnish::List(EProp::PalletStackA, EProp::PalletStackB, EProp::Pallet);
+		Loose.Add(EProp::HandTruck);
+		Loose.Add(EProp::IbcTank);
+		Loose.Add(EProp::Cardboard);
+		Scatter(Room, Loose, Math::RoundToInt(3 + 4 * Style.Density), Style.bRansacked ? 0.5 : 0.12);
+	}
+
+	/**
+	 * Quarantine, laid out by hand round its one doorway: container HB-0417 in the middle, its open
+	 * doors facing the way in and set back from it, a cordon of plastic barriers along its sides
+	 * with one knocked out, work lights at its front corners aimed at it, and drums and canisters
+	 * left about. Its fittings are all dead (lightRooms).
+	 */
+	void FurnishQuarantine(FRoom Room)
+	{
+		FBoxXZ Bounds;
+		if (!StandingBounds(Room, Bounds))
+			return;
+		// The way in: the room's doorway, and the side of the room it's on.
+		ESide In = ESide::N;
+		bool bDoor = false;
+		for (FColRow Cell : Room.Cells)
+		{
+			for (int S = 0; S < 4 && !bDoor; S++)
+			{
+				ESide Side = Tiles::SideAt(S);
+				int Other = RoomAt(Room.Storey, Cell.Col + Tiles::OffsetX(Side), Cell.Row + Tiles::OffsetZ(Side));
+				if (Other >= 0 && Other != Room.Id && Tiles::IsOpening(Building.Parsed.Edge(Room.Storey, Cell.Col, Cell.Row, Side)))
+				{
+					In = Side;
+					bDoor = true;
+				}
+			}
+		}
+		if (!bDoor)
+			return;
+		// Along: towards the doorway; across: along the wall it's in.
+		float AlongX = Tiles::OffsetX(In);
+		float AlongZ = Tiles::OffsetZ(In);
+		float AcrossX = AlongZ;
+		float AcrossZ = -AlongX;
+		float Span = AlongX != 0 ? Bounds.MaxX - Bounds.MinX : Bounds.MaxZ - Bounds.MinZ;
+		FPropKind Container = Props::Kind(EProp::ContainerBreached);
+		float Back = (Span - Container.Depth) * 0.15;
+		float CX = (Bounds.MinX + Bounds.MaxX) / 2 - AlongX * Back;
+		float CZ = (Bounds.MinZ + Bounds.MaxZ) / 2 - AlongZ * Back;
+		float Facing = Reach::Turn(In);
+		bool bStood = false;
+		for (int Try = 0; Try < 5 && !bStood; Try++)
+		{
+			float Shift = Try == 0 ? 0.0 : (Try % 2 == 1 ? 1.0 : -1.0) * Math::IntegerDivisionTrunc(Try + 1, 2);
+			bStood = Stand(EProp::ContainerBreached, Room.Storey, CX + AcrossX * Shift, CZ + AcrossZ * Shift, Facing, Room.Id);
+			if (bStood)
+			{
+				CX += AcrossX * Shift;
+				CZ += AcrossZ * Shift;
+			}
+		}
+		if (!bStood)
+			return;
+		// The cordon: three barriers end to end along each side, one of them knocked away.
+		FPropKind Fence = Props::Kind(EProp::PlasticFence);
+		float Out = Container.Width / 2 + 1.0 + Fence.Width / 2;
+		int Missing = PickIndex(6);
+		for (int I = 0; I < 6; I++)
+		{
+			if (I == Missing)
+				continue;
+			float Side = I < 3 ? 1.0 : -1.0;
+			float Along = ((I % 3) - 1) * (Fence.Depth + 0.15);
+			float X = CX + AcrossX * Side * Out + AlongX * Along;
+			float Z = CZ + AcrossZ * Side * Out + AlongZ * Along;
+			Stand(EProp::PlasticFence, Room.Storey, X, Z, Facing + Rng(-0.06, 0.06), Room.Id);
+		}
+		// Work lights at its front corners, aimed back at it: as near the corner as there's room.
+		for (float Side = -1; Side <= 1; Side += 2)
+		{
+			float Ahead = Container.Depth / 2 + Rng(0.8, 1.4);
+			for (int Try = 0; Try < 6; Try++)
+			{
+				float A = Ahead - (Try % 3) * 0.7;
+				float C = Out + 0.4 + Math::IntegerDivisionTrunc(Try, 3) * 0.8;
+				float X = CX + AlongX * A + AcrossX * Side * C;
+				float Z = CZ + AlongZ * A + AcrossZ * Side * C;
+				if (Stand(EProp::WorkLight, Room.Storey, X, Z, Math::Atan2(CX - X, CZ - Z), Room.Id))
+					break;
+			}
+		}
+		TArray<EProp> Left = Furnish::List(EProp::DrumGroup, EProp::Barrel, EProp::PlasticBarrel);
+		Left.Add(EProp::PlasticCanister);
+		Left.Add(EProp::GasCylinder);
+		Left.Add(EProp::TrafficCone);
+		Scatter(Room, Left, 5, 0.6);
+	}
+
 	void FurnishCorridor(FRoom Room, FStyle Style)
 	{
 		// Mostly clear: now and then something left against a wall.
@@ -1898,7 +2043,8 @@ struct FFurnisher
 				continue;
 			float RoomDarkness = Darkness(Room);
 			// Some deep rooms are dark altogether.
-			bool bDark = Generate::DressedAs(Room.Kind) != ERoomKind::Entrance && RoomDarkness > 0.55 && Chance((RoomDarkness - 0.45) * 0.9);
+			// Quarantine's fittings are all dead.
+			bool bDark = Room.Kind == ERoomKind::Quarantine || Generate::DressedAs(Room.Kind) != ERoomKind::Entrance && RoomDarkness > 0.55 && Chance((RoomDarkness - 0.45) * 0.9);
 			FBoxXZ Bounds;
 			if (!StandingBounds(Room, Bounds))
 				continue;
@@ -1957,7 +2103,8 @@ struct FFurnisher
 				case ERoomKind::Office:
 				case ERoomKind::Corridor:
 				{
-					FVector Base = Generate::DressedAs(Room.Kind) == ERoomKind::Office ? Furnish::Warm() : Generate::DressedAs(Room.Kind) == ERoomKind::Corridor ? Furnish::Cold() : Furnish::ColdGreen();
+					FVector Base = Generate::DressedAs(Room.Kind) == ERoomKind::Office ? Furnish::Warm()
+						: Generate::DressedAs(Room.Kind) == ERoomKind::Corridor || Room.Kind == ERoomKind::Reefer ? Furnish::Cold() : Furnish::ColdGreen();
 					FVector Colour = Tint(Base);
 					for (FColRow Cell : Room.Cells)
 					{

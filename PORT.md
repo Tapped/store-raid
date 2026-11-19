@@ -161,8 +161,14 @@ Each step ends playable, with the web game as the reference for how it should be
    post beside the loading bay, and in a back corner of the ground quarantine, reached only through
    the reefer section, which opens onto a hall. Each is behind a single doorway
    (`Generate::ReachedFrom`), with no stairs, ladders or pits in it, which `LevelCheck.as` checks.
-   They borrow a storeroom's and an office's dressing until they have their own
-   (`Generate::DressedAs`).
+   The guard's post borrows an office's dressing (`Generate::DressedAs`). The reefer section has its
+   own (`FurnishReefer`): reefer containers along the walls, frozen goods, cold white tubes,
+   insulated white walls and always a strip curtain in its doorway. Quarantine is laid out by hand
+   round its doorway (`FurnishQuarantine`): container HB-0417 breached in the middle, its open doors
+   facing the way in, a cordon of plastic barriers with one knocked away, work lights aimed at it,
+   every fitting dead, and polythene sheeting taped over the doorway, its notice facing out. The
+   models are `reefer-container` and `container-breached` (options of `cargo/container.py`),
+   `quarantine-sheet` and `work-light`.
    Playable: `Level/Levels.as` is the `Level` type and `levelNamed()`, for the playground and
    `generated-<seed>`; the game state builds the one the server names on every machine (`LevelName`,
    replicated), and the game mode takes spawns, the kill height and the dimmer from it. Unlike the

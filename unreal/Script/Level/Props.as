@@ -15,6 +15,7 @@
 // a material whose name starts with `glow`.
 //
 // The TS keys props by their file names; here they're EProp, and Props::Name gives the file name.
+// The props after StepLift are the port's own, with no TS.
 
 enum EPropMount
 {
@@ -157,6 +158,21 @@ enum EProp
 	CementBag,
 	/** A wheeled step ladder with a platform. */
 	StepLift,
+	/** A plastic road barrier, water-filled, red and white: its length runs front to back. */
+	PlasticFence,
+
+	// Warehouse 7: the reefer section and quarantine.
+	/** A 20 ft refrigerated container, its blind end the refrigeration unit, whose display glows. The doors are the front. */
+	ReeferContainer,
+	/**
+	 * Container HB-0417, breached: doors swung wide, split crates inside, a hole torn low in its
+	 * left side (seen from the doors). The open doors are the front; it's deeper than a shut one.
+	 */
+	ContainerBreached,
+	/** Polythene sheeting taped over a doorway 1.4 m wide and 2.2 m high, slit to get through, a notice on its front. Origin on the floor in the middle of the opening. */
+	QuarantineSheet,
+	/** A site floodlight on a tripod, two heads facing the front, switched off. Origin under the mast. */
+	WorkLight,
 
 };
 
@@ -240,6 +256,11 @@ namespace Props
 			case EProp::Pallet: return Make(2.21, 0.21, 1.71, EPropMount::Floor, false);
 			case EProp::CementBag: return Make(0.83, 0.23, 0.57, EPropMount::Floor, false);
 			case EProp::StepLift: return Make(0.69, 1.79, 0.91, EPropMount::Floor, true);
+			case EProp::PlasticFence: return Make(0.64, 1.17, 2.24, EPropMount::Floor, true);
+			case EProp::ReeferContainer: return Make(2.44, 2.59, 6.06, EPropMount::Floor, true);
+			case EProp::ContainerBreached: return Make(2.44, 2.59, 7.15, EPropMount::Floor, true);
+			case EProp::QuarantineSheet: return Make(1.48, 2.2, 0.1, EPropMount::Floor, false);
+			case EProp::WorkLight: return Make(0.85, 2.0, 0.85, EPropMount::Floor, false);
 		}
 		return FPropKind();
 	}
@@ -311,6 +332,11 @@ namespace Props
 			case EProp::Pallet: return "pallet";
 			case EProp::CementBag: return "cement-bag";
 			case EProp::StepLift: return "step-lift";
+			case EProp::PlasticFence: return "plastic-fence";
+			case EProp::ReeferContainer: return "reefer-container";
+			case EProp::ContainerBreached: return "container-breached";
+			case EProp::QuarantineSheet: return "quarantine-sheet";
+			case EProp::WorkLight: return "work-light";
 		}
 		return "";
 	}

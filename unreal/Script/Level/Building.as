@@ -222,6 +222,32 @@ namespace Building
 		}
 		switch (Kind)
 		{
+			case ERoomKind::Reefer:
+				// A cold store: insulated steel panels floor to ceiling, a pale sealed floor.
+				Finish.Floor = Painted(n"floor-paint", Rgb(0.32, 0.36, 0.38));
+				Finish.bKick = true;
+				Finish.KickHeight = 0.2;
+				Finish.Kick = Painted(n"painted-steel", Rgb(0.08, 0.16, 0.3));
+				Finish.Lower = Painted(n"painted-plaster", Vary(Rgb(0.62, 0.64, 0.63), Salt, 0.03));
+				Finish.Upper = Finish.Lower;
+				Finish.bBand = true;
+				Finish.BandHeight = 0.08;
+				Finish.Band = Painted(n"painted-steel", Rgb(0.08, 0.16, 0.3));
+				Finish.Dado = 1.6;
+				Finish.Dirt = 0.3;
+				break;
+			case ERoomKind::Quarantine:
+				// A storeroom gone bad: hazard striping round the foot of the walls, filth and damp.
+				Finish.KickHeight = 0.3;
+				Finish.Kick = Plain(n"hazard");
+				Finish.Lower = Painted(n"concrete-block", Scale(Vary(Livery.Light, Salt + 4, 0.08), 0.8));
+				Finish.Upper = Finish.Lower;
+				Finish.bPilasters = true;
+				Finish.Dirt = 0.9;
+				Finish.bDamp = true;
+				break;
+			case ERoomKind::Guard:
+				return FinishFor(ERoomKind::Office, bBasement, Livery, Salt);
 			case ERoomKind::Entrance:
 			case ERoomKind::Hall:
 			case ERoomKind::Cage:
@@ -671,8 +697,9 @@ class ALevelBuilding : AActor
 		bool bBasement = Storey < 0;
 		if (Room >= 0 && Level.Rooms[Room].Kind != ERoomKind::Atrium)
 		{
-			Kind = Generate::DressedAs(Level.Rooms[Room].Kind);
-			bBasement = Storey < 0 && Kind != ERoomKind::Office && Kind != ERoomKind::Staff;
+			Kind = Level.Rooms[Room].Kind;
+			ERoomKind Dressed = Generate::DressedAs(Kind);
+			bBasement = Storey < 0 && Dressed != ERoomKind::Office && Dressed != ERoomKind::Staff;
 		}
 		const int Key = bBasement ? -2 - Math::Max(Room, 0) * 2 : (Room >= 0 ? Room * 2 : -1);
 		FFinish Found;
