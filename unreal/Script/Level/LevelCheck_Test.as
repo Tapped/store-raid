@@ -36,3 +36,35 @@ void Test_LevelCheckCatchesProblems(FUnitTest& T)
 	T.AssertTrue(All.Contains("stands on the dock"), "a prop on the dock is caught");
 	T.AssertTrue(All.Contains("light at") && All.Contains("has no fitting"), "a light with no fitting is caught");
 }
+
+void Test_LevelCheckCatchesZones(FUnitTest& T)
+{
+	FWarehouse Level = Warehouse::Build(1);
+	// The guard's post made a hall, and a hall made a second reefer section.
+	bool bGuard = false;
+	bool bHall = false;
+	for (int I = 0; I < Level.Rooms.Num(); I++)
+	{
+		if (!bGuard && Level.Rooms[I].Kind == ERoomKind::Guard)
+		{
+			Level.Rooms[I].Kind = ERoomKind::Hall;
+			bGuard = true;
+		}
+		else if (!bHall && Level.Rooms[I].Kind == ERoomKind::Hall && Level.Rooms[I].Storey == 0)
+		{
+			Level.Rooms[I].Kind = ERoomKind::Reefer;
+			bHall = true;
+		}
+	}
+	T.AssertTrue(bGuard && bHall, "seed 1 has a guard's post and a hall on the ground");
+	FString All;
+	for (FString Problem : LevelCheck::Check(Level))
+	{
+		Log(f"level check, spoiled zones: {Problem}");
+		All += Problem + "
+";
+	}
+	T.AssertTrue(All.Contains("0 guard rooms, not one"), "a missing guard's post is caught");
+	T.AssertTrue(All.Contains("2 reefer rooms, not one"), "a second reefer section is caught");
+	T.AssertTrue(All.Contains("ways in, not one"), "a reefer section with many ways in is caught");
+}

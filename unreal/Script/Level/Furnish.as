@@ -515,7 +515,7 @@ struct FFurnisher
 
 	bool IsKind(int Room, ERoomKind Kind) const
 	{
-		return Room >= 0 && Room < Rooms.Num() && Rooms[Room].Kind == Kind;
+		return Room >= 0 && Room < Rooms.Num() && Generate::DressedAs(Rooms[Room].Kind) == Kind;
 	}
 
 	FFurnished Run()
@@ -525,7 +525,7 @@ struct FFurnisher
 		// Cages first, so their fences go up before the halls round them fill.
 		for (int I = 0; I < Rooms.Num(); I++)
 		{
-			if (Rooms[I].Kind == ERoomKind::Cage)
+			if (Generate::DressedAs(Rooms[I].Kind) == ERoomKind::Cage)
 				FenceCage(Rooms[I]);
 		}
 		for (int I = 0; I < Rooms.Num(); I++)
@@ -651,7 +651,7 @@ struct FFurnisher
 	/** How dark a room is meant to be, 0 to 1: deeper, higher up and below ground are darker. */
 	float Darkness(FRoom Room) const
 	{
-		if (Room.Kind == ERoomKind::Entrance)
+		if (Generate::DressedAs(Room.Kind) == ERoomKind::Entrance)
 			return 0.0;
 		float Height = Room.Storey < 0 ? 0.2 : Room.Storey * 0.08;
 		return Math::Min(1.0, Room.Depth * 0.85 + Height);
@@ -1274,8 +1274,8 @@ struct FFurnisher
 	{
 		FStyle Style;
 		Style.Density = Rng(0.45, 1.15);
-		Style.bRansacked = Room.Kind != ERoomKind::Entrance && Chance(0.08 + Room.Depth * 0.25);
-		switch (Room.Kind)
+		Style.bRansacked = Generate::DressedAs(Room.Kind) != ERoomKind::Entrance && Chance(0.08 + Room.Depth * 0.25);
+		switch (Generate::DressedAs(Room.Kind))
 		{
 			case ERoomKind::Entrance:
 				FurnishBay(Room);
@@ -1864,7 +1864,7 @@ struct FFurnisher
 	/** How a room's fitting at a point is doing: `state(x, z)` in lightRooms. */
 	ELightState StateAt(FRoom Room, bool bDark, float Darkness, float X, float Z)
 	{
-		if (Room.Kind == ERoomKind::Entrance)
+		if (Generate::DressedAs(Room.Kind) == ERoomKind::Entrance)
 			return ELightState::On;
 		return LightState(bDark, Math::Max(Darkness, DepthAt(Room.Storey, X, Z) * 0.9));
 	}
@@ -1894,15 +1894,15 @@ struct FFurnisher
 	{
 		for (FRoom Room : Rooms)
 		{
-			if (Room.Kind == ERoomKind::Atrium)
+			if (Generate::DressedAs(Room.Kind) == ERoomKind::Atrium)
 				continue;
 			float RoomDarkness = Darkness(Room);
 			// Some deep rooms are dark altogether.
-			bool bDark = Room.Kind != ERoomKind::Entrance && RoomDarkness > 0.55 && Chance((RoomDarkness - 0.45) * 0.9);
+			bool bDark = Generate::DressedAs(Room.Kind) != ERoomKind::Entrance && RoomDarkness > 0.55 && Chance((RoomDarkness - 0.45) * 0.9);
 			FBoxXZ Bounds;
 			if (!StandingBounds(Room, Bounds))
 				continue;
-			switch (Room.Kind)
+			switch (Generate::DressedAs(Room.Kind))
 			{
 				case ERoomKind::Hall:
 				{
@@ -1957,13 +1957,13 @@ struct FFurnisher
 				case ERoomKind::Office:
 				case ERoomKind::Corridor:
 				{
-					FVector Base = Room.Kind == ERoomKind::Office ? Furnish::Warm() : Room.Kind == ERoomKind::Corridor ? Furnish::Cold() : Furnish::ColdGreen();
+					FVector Base = Generate::DressedAs(Room.Kind) == ERoomKind::Office ? Furnish::Warm() : Generate::DressedAs(Room.Kind) == ERoomKind::Corridor ? Furnish::Cold() : Furnish::ColdGreen();
 					FVector Colour = Tint(Base);
 					for (FColRow Cell : Room.Cells)
 					{
 						if (!Building.Standable(Room.Storey, Cell.Col, Cell.Row))
 							continue;
-						if (Room.Kind == ERoomKind::Corridor && (Cell.Col + Cell.Row) % 2 == 1 && Chance(0.6))
+						if (Generate::DressedAs(Room.Kind) == ERoomKind::Corridor && (Cell.Col + Cell.Row) % 2 == 1 && Chance(0.6))
 							continue;
 						FBoxXZ Box = Building.CellBox(Cell.Col, Cell.Row);
 						bool bAlongZ = !LongAxisX(Room);
@@ -2039,7 +2039,7 @@ struct FFurnisher
 	{
 		for (FRoom Room : Rooms)
 		{
-			if (Room.Kind == ERoomKind::Atrium)
+			if (Generate::DressedAs(Room.Kind) == ERoomKind::Atrium)
 				continue;
 			TArray<FWallRun> Runs = WallRuns(Room);
 			// An exit sign over the way out, and an extinguisher beside it.
@@ -2066,7 +2066,7 @@ struct FFurnisher
 				}
 			}
 			// Emergency lights: in plant rooms and anywhere below ground, red or amber.
-			int Emergency = Room.Kind == ERoomKind::Plant || Room.Storey < 0 ? Math::Max(1, Math::RoundToInt(Room.Cells.Num() / 4.0)) : 0;
+			int Emergency = Generate::DressedAs(Room.Kind) == ERoomKind::Plant || Room.Storey < 0 ? Math::Max(1, Math::RoundToInt(Room.Cells.Num() / 4.0)) : 0;
 			FVector Colour = Chance(0.5) ? Furnish::Red() : Furnish::Amber();
 			for (int I = 0; I < Emergency && Runs.Num() > 0; I++)
 			{
@@ -2085,7 +2085,7 @@ struct FFurnisher
 			}
 			CeilingRuns(Room);
 			// Cameras in the corners of the bigger rooms.
-			if (Room.Kind == ERoomKind::Hall || Room.Kind == ERoomKind::Entrance || Room.Kind == ERoomKind::Cage || Room.Kind == ERoomKind::Corridor)
+			if (Generate::DressedAs(Room.Kind) == ERoomKind::Hall || Generate::DressedAs(Room.Kind) == ERoomKind::Entrance || Generate::DressedAs(Room.Kind) == ERoomKind::Cage || Generate::DressedAs(Room.Kind) == ERoomKind::Corridor)
 			{
 				FBoxXZ Bounds;
 				if (StandingBounds(Room, Bounds))
@@ -2120,7 +2120,7 @@ struct FFurnisher
 				}
 			}
 			// Air vents in the ceiling of offices and staff rooms.
-			if (Room.Kind == ERoomKind::Office || Room.Kind == ERoomKind::Staff)
+			if (Generate::DressedAs(Room.Kind) == ERoomKind::Office || Generate::DressedAs(Room.Kind) == ERoomKind::Staff)
 			{
 				for (FColRow Cell : Room.Cells)
 				{
@@ -2203,7 +2203,7 @@ struct FFurnisher
 	 */
 	bool ExitOf(FRoom Room, FExit&out Exit) const
 	{
-		if (Room.Kind == ERoomKind::Entrance)
+		if (Generate::DressedAs(Room.Kind) == ERoomKind::Entrance)
 			return false;
 		bool bBest = false;
 		int BestCol = 0;
@@ -2259,7 +2259,7 @@ struct FFurnisher
 	void CeilingRuns(FRoom Room)
 	{
 		TArray<EProp> Options;
-		switch (Room.Kind)
+		switch (Generate::DressedAs(Room.Kind))
 		{
 			case ERoomKind::Plant:
 				Options = Furnish::List(EProp::Duct, EProp::PipeRun, EProp::CableTray);
@@ -2283,7 +2283,7 @@ struct FFurnisher
 				return;
 		}
 		bool bAlongX = LongAxisX(Room);
-		int Lines = Room.Kind == ERoomKind::Hall || Room.Kind == ERoomKind::Plant ? 2 : 1;
+		int Lines = Generate::DressedAs(Room.Kind) == ERoomKind::Hall || Generate::DressedAs(Room.Kind) == ERoomKind::Plant ? 2 : 1;
 		for (int LineIndex = 0; LineIndex < Lines; LineIndex++)
 		{
 			EProp Model = PickProp(Options);
@@ -2354,7 +2354,7 @@ struct FFurnisher
 		TArray<FSpot> Spots;
 		for (FRoom Room : Rooms)
 		{
-			if (Room.Kind == ERoomKind::Atrium || Room.Kind == ERoomKind::Entrance || Room.Kind == ERoomKind::Corridor)
+			if (Generate::DressedAs(Room.Kind) == ERoomKind::Atrium || Generate::DressedAs(Room.Kind) == ERoomKind::Entrance || Generate::DressedAs(Room.Kind) == ERoomKind::Corridor)
 				continue;
 			float RoomDarkness = Darkness(Room);
 			for (FColRow Cell : Room.Cells)
@@ -2370,7 +2370,7 @@ struct FFurnisher
 						FSpot Spot;
 						Spot.Point = Reach::MakePoint(Room.Storey, X, Z);
 						Spot.Room = Room.Id;
-						Spot.Score = 0.5 * DepthAt(Room.Storey, X, Z) + 0.2 * Height + 0.2 * RoomDarkness + (Room.Kind == ERoomKind::Cage ? 0.35 : 0) + Rng(0, 0.1);
+						Spot.Score = 0.5 * DepthAt(Room.Storey, X, Z) + 0.2 * Height + 0.2 * RoomDarkness + (Generate::DressedAs(Room.Kind) == ERoomKind::Cage ? 0.35 : 0) + Rng(0, 0.1);
 						Spots.Add(Spot);
 					}
 				}
@@ -2421,7 +2421,7 @@ struct FFurnisher
 				if (Index < 0 || Index >= Spots.Num())
 					continue;
 				FSpot Spot = Spots[Index];
-				if (!Each.Rooms.Contains(Rooms[Spot.Room].Kind))
+				if (!Each.Rooms.Contains(Generate::DressedAs(Rooms[Spot.Room].Kind)))
 					continue;
 				FPoint Point = Spot.Point;
 				bool bNear = false;

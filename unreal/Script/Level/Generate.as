@@ -1,12 +1,17 @@
-// Levels generated from a seed: mirrors shared/generate.ts, all of it, number for number, so the
-// same seed gives the same building as in the web game (Generate_Test.as checks it against
-// unreal/Tools/fixtures/generated.txt, written from the TS).
+// Levels generated from a seed: Warehouse 7. Began as a port of shared/generate.ts, number for
+// number, and now goes its own way: Generate_Test.as checks that seeds come out as
+// unreal/Tools/fixtures/generated.txt has them, which `pnpm run ue fixtures` rewrites after a change
+// on purpose, and `pnpm run ue level <seed>` draws one.
 //
 // In two layers. First the layout: each storey of the building is split into rooms that each have a
-// kind (a loading bay at the entrance, big storage halls behind it with bonded cages in their
-// corners, storerooms and workshops at the back, offices and staff rooms upstairs, plant rooms in the
+// kind (a loading bay at the entrance with the guard's post beside it, big storage halls behind it
+// with bonded cages in their corners, the reefer section and quarantine in a back corner,
+// storerooms and workshops at the back, offices and staff rooms upstairs, plant rooms in the
 // basement, corridors, and atriums open to the storey below), walled off from each other, with
-// doorways and arches joining them all up and stairs or ladders between the storeys. Then the tiles,
+// doorways and arches joining them all up and stairs or ladders between the storeys. The zone graph
+// puts some rooms behind a single doorway, in order: quarantine is reached only through the reefer
+// section, the reefer section only from a hall, and the guard's post only from the loading bay
+// (`ReachedFrom`). Then the tiles,
 // by wave function collapse: every cell gets the tile that fits its neighbours, the walls and
 // doorways between them, what's above and below it, and what its room is for. Anything that can't be
 // reached from the entrance is filled in or taken away, and the result is a grid like a hand-written
@@ -19,7 +24,7 @@
 // - The random numbers are an FRandom passed by reference, not a closure; `Next()` is `next()`.
 // - Rock, a layout kind in the TS (`LayoutKind`), is ERoomKind::Rock: no room ever has it.
 // - Edges are a flat array, two a cell (its north and east edges), not a map of string keys.
-// - Nothing throws: Generate puts why it failed in `Problem`, word for word the TS's error.
+// - Nothing throws: Generate puts why it failed in `Problem`.
 
 /** What a room is for, which decides its surfaces, what stands in it and how it's lit: `RoomKind`. */
 enum ERoomKind
@@ -42,6 +47,15 @@ enum ERoomKind
 	Plant,
 	/** A passage between rooms. */
 	Corridor,
+	/**
+	 * Warehouse 7's cold store at the back of the ground, behind one doorway: the reefer section,
+	 * which the only way into quarantine goes through.
+	 */
+	Reefer,
+	/** Where container HB-0417 was opened, in a back corner, reached only through the reefer section. */
+	Quarantine,
+	/** The night guard's post beside the loading bay, behind one doorway. */
+	Guard,
 	/** Open air above the storey below, with railings round it. */
 	Atrium,
 	/** Only in the layout: left solid, the parts of a basement nobody dug out. */
@@ -396,19 +410,19 @@ struct FGenerateTry
 			ERoomKind Arrives;
 			if (!KindAt(Storey + 1, Cell.Col + Dx, Cell.Row + Dz, Arrives))
 				continue;
-			if (Arrives == ERoomKind::Rock || Arrives == ERoomKind::Atrium || Arrives == ERoomKind::Cage)
+			if (Arrives == ERoomKind::Rock || Arrives == ERoomKind::Atrium || Arrives == ERoomKind::Cage || Generate::BehindOneDoor(Arrives))
 				continue;
 			ERoomKind Above;
 			KindAt(Storey + 1, Cell.Col, Cell.Row, Above);
 			// Outside the grid `above` is undefined in the TS, which passes; Rock here would not.
-			if (Inside(Storey + 1, Cell.Col, Cell.Row) && (Above == ERoomKind::Rock || Above == ERoomKind::Cage))
+			if (Inside(Storey + 1, Cell.Col, Cell.Row) && (Above == ERoomKind::Rock || Above == ERoomKind::Cage || Generate::BehindOneDoor(Above)))
 				continue;
 			if (!bLadder)
 			{
 				ERoomKind Before;
 				if (!KindAt(Storey, Cell.Col - Dx, Cell.Row - Dz, Before))
 					continue;
-				if (Before == ERoomKind::Rock || Before == ERoomKind::Atrium)
+				if (Before == ERoomKind::Rock || Before == ERoomKind::Atrium || Generate::BehindOneDoor(Before))
 					continue;
 				if (IsEntrance(Storey, Cell.Col - Dx, Cell.Row - Dz))
 					continue;
@@ -505,7 +519,10 @@ struct FGenerateTry
 			Edges[I] = EEdge::None;
 		Plans = Generate::LayOut(Options, Entrance.Col, Random);
 		for (int Storey = -Basements; Storey < Storeys - Basements; Storey++)
-			JoinRooms(Storey, Random);
+		{
+			if (!JoinRooms(Storey, Random))
+				return f"a room behind one doorway on storey {Storey} has nowhere to open onto";
+		}
 
 		// 2. The tiles, by wave function collapse.
 		int Count = Generate::COUNT;
@@ -539,9 +556,10 @@ struct FGenerateTry
 				FTile Tile = Generate::Variant(V);
 				float Weight = Generate::Weight(Kind, Tile.Kind);
 				Weights[Base + V] = Weight;
-				// Wells and shafts follow from what's below or above, in any room but rock or a cage.
+				// Wells and shafts follow from what's below or above, in any room but rock, a cage or
+				// one behind a single doorway, which stairs from below would be another way into.
 				bool bFollows = Tile.Kind == ETileKind::Well || Tile.Kind == ETileKind::Shaft;
-				bool bOk = Weight > 0 || (Kind != ERoomKind::Rock && Kind != ERoomKind::Cage && bFollows);
+				bool bOk = Weight > 0 || (Kind != ERoomKind::Rock && Kind != ERoomKind::Cage && !Generate::BehindOneDoor(Kind) && bFollows);
 				// Pits only on the ground, over a basement: anywhere else they'd hang over a room.
 				if ((Tile.Kind == ETileKind::Pit || Tile.Kind == ETileKind::Bridge) && Cell.Storey != 0)
 					bOk = false;
@@ -892,7 +910,8 @@ struct FGenerateTry
 	 * walled off from anything else with no way through. Open-air rooms have no walls round them: the
 	 * floors beside them get railings instead.
 	 */
-	void JoinRooms(int Storey, FRandom& Random)
+	/** Walls and doorways between a storey's rooms; false if a one-doorway room has nowhere to open onto. */
+	bool JoinRooms(int Storey, FRandom& Random)
 	{
 		FStoreyPlan Plan = Plans[Storey + Options.Basements];
 		int Cols = Options.Cols;
@@ -953,10 +972,44 @@ struct FGenerateTry
 		for (int I = 0; I < Pairs.Num(); I++)
 			Pairs[I].Order = Random.Next();
 		Generate::SortPairs(Pairs);
+		// The zone graph's one-doorway rooms first, each onto the best kind of room beside it, and
+		// then left out of the tree and its loops.
+		for (int Gated = 0; Gated < Plan.Kinds.Num(); Gated++)
+		{
+			TArray<ERoomKind> From = Generate::ReachedFrom(Plan.Kinds[Gated]);
+			if (From.Num() == 0)
+				continue;
+			bool bJoined = false;
+			for (ERoomKind Kind : From)
+			{
+				TArray<FWallBetween> Options;
+				TArray<int> Onto;
+				for (FWallBetween Wall : Between)
+				{
+					int Other = Wall.A == Gated ? Wall.B : Wall.B == Gated ? Wall.A : -1;
+					if (Other >= 0 && Plan.Kinds[Other] == Kind)
+					{
+						Options.Add(Wall);
+						Onto.Add(Other);
+					}
+				}
+				if (Options.Num() == 0)
+					continue;
+				int Pick = Random.Below(Options.Num());
+				SetEdge(Storey, Options[Pick].Col, Options[Pick].Row, Options[Pick].Side, EEdge::Door);
+				Parent[Generate::Find(Parent, Gated)] = Generate::Find(Parent, Onto[Pick]);
+				bJoined = true;
+				break;
+			}
+			if (!bJoined)
+				return false;
+		}
 		for (FRoomPair Pair : Pairs)
 		{
 			int A = Pair.A;
 			int B = Pair.B;
+			if (Generate::BehindOneDoor(Plan.Kinds[A]) || Generate::BehindOneDoor(Plan.Kinds[B]))
+				continue;
 			TArray<FWallBetween> Options;
 			for (FWallBetween Wall : Between)
 			{
@@ -989,6 +1042,7 @@ struct FGenerateTry
 				SetEdge(Storey, Options[Second].Col, Options[Second].Row, Options[Second].Side, EEdge::Door);
 			}
 		}
+		return true;
 	}
 
 	/** The storeys, drawn with their walls as ParseTiles reads them. */
@@ -1116,6 +1170,10 @@ namespace Generate
 		{
 			case ERoomKind::Entrance:
 			case ERoomKind::Cage:
+			// Behind one doorway: nothing that could cut the way through, or lead in from another storey.
+			case ERoomKind::Reefer:
+			case ERoomKind::Quarantine:
+			case ERoomKind::Guard:
 				return Tile == ETileKind::Floor ? 1.0 : 0.0;
 			case ERoomKind::Hall:
 				switch (Tile)
@@ -1275,6 +1333,55 @@ namespace Generate
 		return Kind == ERoomKind::Entrance || Kind == ERoomKind::Hall;
 	}
 
+	/**
+	 * The zone graph's one-doorway rooms: which kinds of room each opens onto, best first, by a
+	 * single doorway, walled off from everything else. Empty for rooms joined like any other.
+	 */
+	TArray<ERoomKind> ReachedFrom(ERoomKind Kind)
+	{
+		TArray<ERoomKind> From;
+		if (Kind == ERoomKind::Quarantine)
+		{
+			From.Add(ERoomKind::Reefer);
+		}
+		else if (Kind == ERoomKind::Reefer)
+		{
+			From.Add(ERoomKind::Hall);
+			From.Add(ERoomKind::Corridor);
+		}
+		else if (Kind == ERoomKind::Guard)
+		{
+			From.Add(ERoomKind::Entrance);
+			From.Add(ERoomKind::Hall);
+		}
+		return From;
+	}
+
+	/**
+	 * The kind of room a room is furnished, lit and finished as. The zone graph's rooms borrow an
+	 * older kind's dressing until they have their own: the reefer section and quarantine a
+	 * storeroom's, the guard's post an office's.
+	 */
+	ERoomKind DressedAs(ERoomKind Kind)
+	{
+		switch (Kind)
+		{
+			case ERoomKind::Reefer:
+			case ERoomKind::Quarantine:
+				return ERoomKind::Stock;
+			case ERoomKind::Guard:
+				return ERoomKind::Office;
+			default:
+				return Kind;
+		}
+	}
+
+	/** Whether a room has only the one doorway ReachedFrom gives it: no other way in, by any storey. */
+	bool BehindOneDoor(ERoomKind Kind)
+	{
+		return Kind == ERoomKind::Reefer || Kind == ERoomKind::Quarantine || Kind == ERoomKind::Guard;
+	}
+
 	/** The root of a room in the spanning tree, shortening the way there as it goes. */
 	int Find(TArray<int>& Parent, int I)
 	{
@@ -1341,6 +1448,9 @@ namespace Generate
 			case ERoomKind::Staff: return "staff";
 			case ERoomKind::Plant: return "plant";
 			case ERoomKind::Corridor: return "corridor";
+			case ERoomKind::Reefer: return "reefer";
+			case ERoomKind::Quarantine: return "quarantine";
+			case ERoomKind::Guard: return "guard";
 			case ERoomKind::Atrium: return "atrium";
 			case ERoomKind::Rock: return "rock";
 		}
@@ -1443,10 +1553,11 @@ namespace Generate
 
 	/**
 	 * The building's layout, storey by storey from the deepest, as a harbour warehouse is laid out.
-	 * On the ground: the loading bay at the entrance, in the middle of the south side; big storage
-	 * halls behind and around it, some with a bonded cage in a back corner; maybe a shipping office or
-	 * storeroom in a front corner; and a strip of storerooms along the back, often with a corridor in
-	 * front of them. Above: more halls at the front round an atrium open to the hall below, and
+	 * On the ground: the loading bay at the entrance, in the middle of the south side, with the
+	 * guard's post beside it; big storage halls behind and around it, some with a bonded cage in a
+	 * back corner; maybe a shipping office or storeroom in a front corner; along the back, quarantine
+	 * in one corner with the reefer section beside it, and storerooms in the rest of the strip, often
+	 * with a corridor in front of them. Above: more halls at the front round an atrium open to the hall below, and
 	 * offices, staff rooms, workshops and storerooms along a corridor at the back; the top storey is
 	 * more often all back of house. In the basement: plant and stock rooms off a corridor, under the
 	 * back of the building, and rock elsewhere.
@@ -1485,14 +1596,26 @@ namespace Generate
 		int LobbyWidth = 3 + (Random.Next() < 0.4 ? 1 : 0);
 		FRect Lobby = MakeRect(EntranceCol - Math::IntegerDivisionTrunc(LobbyWidth, 2), 0, LobbyWidth, 2);
 		Ground.Paint(ERoomKind::Entrance, Lobby.Col, Lobby.Row, Lobby.Width, Lobby.Depth);
+		// The guard's post, beside the loading bay on one side or the other.
+		FRect Post = MakeRect(Random.Next() < 0.5 ? Lobby.Col - 2 : Lobby.Col + Lobby.Width, 0, 2, 2);
+		Ground.Paint(ERoomKind::Guard, Post.Col, Post.Row, Post.Width, Post.Depth);
 		TArray<FRect> AvoidLobby;
 		AvoidLobby.Add(Lobby);
+		AvoidLobby.Add(Post);
 		for (FRect Hall : Halls)
 		{
 			if (Random.Next() < 0.45)
 				PaintCage(Ground, Hall, AvoidLobby, Random);
 		}
-		LayOutBack(Ground, Front, Back, Random.Next() < 0.55, ELayoutStrip::Ground, Random);
+		// Warehouse 7's cold store in a back corner: quarantine in the corner, the reefer section
+		// beside it, both the whole depth of the back; then back of house in what's left.
+		bool bWest = Random.Next() < 0.5;
+		int QuarantineWidth = 3;
+		int ReeferWidth = 4 + Random.Below(2);
+		int Cold = QuarantineWidth + ReeferWidth;
+		Ground.Paint(ERoomKind::Quarantine, bWest ? 0 : Cols - QuarantineWidth, Front, QuarantineWidth, Back);
+		Ground.Paint(ERoomKind::Reefer, bWest ? QuarantineWidth : Cols - Cold, Front, ReeferWidth, Back);
+		LayOutBack(Ground, Front, Back, Random.Next() < 0.55, ELayoutStrip::Ground, Random, bWest ? Cold : 0, Cols - Cold);
 		Plans[Basements] = Ground.Plan();
 
 		// Above the ground: the atrium over the biggest hall, which may go up more than one storey.
@@ -1537,9 +1660,9 @@ namespace Generate
 			}
 			else
 			{
-				LayOutBack(Upper, 0, UpperFront, true, ELayoutStrip::Front, Random);
+				LayOutBack(Upper, 0, UpperFront, true, ELayoutStrip::Front, Random, 0, Cols);
 			}
-			LayOutBack(Upper, UpperFront, UpperBack, Random.Next() < 0.75, ELayoutStrip::Upstairs, Random);
+			LayOutBack(Upper, UpperFront, UpperBack, Random.Next() < 0.75, ELayoutStrip::Upstairs, Random, 0, Cols);
 			for (FRect Atrium : Atria)
 				Upper.Paint(ERoomKind::Atrium, Atrium.Col, Atrium.Row, Atrium.Width, Atrium.Depth);
 			Plans[Basements + Storey] = Upper.Plan();
@@ -1584,42 +1707,40 @@ namespace Generate
 	}
 
 	/**
-	 * Back of house in a strip of rows: maybe a corridor along its southern side, then rooms side by
-	 * side behind it. On the ground they're mostly stock rooms, with a staff room or office at one end
+	 * Back of house in a strip of rows, between column `Col` and `Col + Width`: maybe a corridor along
+	 * its southern side, then rooms side by side behind it. On the ground they're mostly stock rooms, with a staff room or office at one end
 	 * now and then; upstairs, offices and staff rooms with the odd stock room. At the front of a
 	 * storey that isn't storage, a mix, either side of a corridor down the middle.
 	 */
-	void LayOutBack(FPainter& Painter, int Row, int Depth, bool bCorridor, ELayoutStrip Where, FRandom& Random)
+	void LayOutBack(FPainter& Painter, int Row, int Depth, bool bCorridor, ELayoutStrip Where, FRandom& Random, int Col, int Width)
 	{
-		int Cols = Painter.Cols;
 		if (!bCorridor || Depth < 3)
 		{
-			LayOutRooms(Painter, Row, Depth, Where, Random);
+			LayOutRooms(Painter, Row, Depth, Where, Random, Col, Width);
 		}
 		else if (Where == ELayoutStrip::Front)
 		{
 			int Middle = Row + 2 + Random.Below(Math::Max(1, Depth - 4));
-			Painter.Paint(ERoomKind::Corridor, 0, Middle, Cols, 1);
-			LayOutRooms(Painter, Row, Middle - Row, Where, Random);
-			LayOutRooms(Painter, Middle + 1, Row + Depth - Middle - 1, Where, Random);
+			Painter.Paint(ERoomKind::Corridor, Col, Middle, Width, 1);
+			LayOutRooms(Painter, Row, Middle - Row, Where, Random, Col, Width);
+			LayOutRooms(Painter, Middle + 1, Row + Depth - Middle - 1, Where, Random, Col, Width);
 		}
 		else
 		{
-			Painter.Paint(ERoomKind::Corridor, 0, Row, Cols, 1);
-			LayOutRooms(Painter, Row + 1, Depth - 1, Where, Random);
+			Painter.Paint(ERoomKind::Corridor, Col, Row, Width, 1);
+			LayOutRooms(Painter, Row + 1, Depth - 1, Where, Random, Col, Width);
 		}
 	}
 
 	/** Rooms side by side in a strip of rows, and one behind the other where it's deep. */
-	void LayOutRooms(FPainter& Painter, int From, int Depth, ELayoutStrip Where, FRandom& Random)
+	void LayOutRooms(FPainter& Painter, int From, int Depth, ELayoutStrip Where, FRandom& Random, int Col, int Span)
 	{
 		if (Depth <= 0)
 			return;
-		int Cols = Painter.Cols;
 		TArray<int> Widths = Where == ELayoutStrip::Ground
-			? Pieces(Cols, 3, 6, Random)
-			: Pieces(Cols, 2, Where == ELayoutStrip::Front ? 5 : 4, Random);
-		int At = 0;
+			? Pieces(Span, 3, 6, Random)
+			: Pieces(Span, 2, Where == ELayoutStrip::Front ? 5 : 4, Random);
+		int At = Col;
 		for (int I = 0; I < Widths.Num(); I++)
 		{
 			int Width = Widths[I];

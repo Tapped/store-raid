@@ -157,6 +157,12 @@ Each step ends playable, with the web game as the reference for how it should be
    spoils one to see it caught; `pnpm run ue level --many 100` checks many more (about 3 s a seed).
    `pnpm run ue level <seed>` draws one (`Level/LevelMap.as`): each storey as its tiles and walls,
    and beside it the same walls with each cell's room kind as a letter.
+   Past the web game, the layout is Warehouse 7's zone graph (the story bible's building): the guard's
+   post beside the loading bay, and in a back corner of the ground quarantine, reached only through
+   the reefer section, which opens onto a hall. Each is behind a single doorway
+   (`Generate::ReachedFrom`), with no stairs, ladders or pits in it, which `LevelCheck.as` checks.
+   They borrow a storeroom's and an office's dressing until they have their own
+   (`Generate::DressedAs`).
    Playable: `Level/Levels.as` is the `Level` type and `levelNamed()`, for the playground and
    `generated-<seed>`; the game state builds the one the server names on every machine (`LevelName`,
    replicated), and the game mode takes spawns, the kill height and the dimmer from it. Unlike the

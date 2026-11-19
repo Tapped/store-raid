@@ -671,7 +671,7 @@ class ALevelBuilding : AActor
 		bool bBasement = Storey < 0;
 		if (Room >= 0 && Level.Rooms[Room].Kind != ERoomKind::Atrium)
 		{
-			Kind = Level.Rooms[Room].Kind;
+			Kind = Generate::DressedAs(Level.Rooms[Room].Kind);
 			bBasement = Storey < 0 && Kind != ERoomKind::Office && Kind != ERoomKind::Staff;
 		}
 		const int Key = bBasement ? -2 - Math::Max(Room, 0) * 2 : (Room >= 0 ? Room * 2 : -1);
@@ -1509,7 +1509,7 @@ class ALevelBuilding : AActor
 		for (int K = -1; K <= 1; K += 2)
 		{
 			const int Room = RoomOf(O.Storey, ColOf(X + K * OX), RowOf(Z + K * OZ));
-			if (Room >= 0 && (Level.Rooms[Room].Kind == ERoomKind::Plant || Level.Rooms[Room].Kind == ERoomKind::Workshop))
+			if (Room >= 0 && (Generate::DressedAs(Level.Rooms[Room].Kind) == ERoomKind::Plant || Generate::DressedAs(Level.Rooms[Room].Kind) == ERoomKind::Workshop))
 				bRough = true;
 		}
 		if (!bRough)

@@ -23,12 +23,15 @@ namespace LevelMap
 			case ERoomKind::Plant: return "P";
 			case ERoomKind::Corridor: return "K";
 			case ERoomKind::Atrium: return "A";
+			case ERoomKind::Reefer: return "R";
+			case ERoomKind::Quarantine: return "Q";
+			case ERoomKind::Guard: return "G";
 			case ERoomKind::Rock: return "#";
 		}
 		return "?";
 	}
 
-	const FString LEGEND = "zones: E entrance, H hall, C cage, W workshop, S stock, O office, B staff (break room), P plant, K corridor, A atrium, # rock";
+	const FString LEGEND = "zones: E entrance, H hall, C cage, W workshop, S stock, O office, B staff (break room), P plant, K corridor, A atrium, R reefer, Q quarantine, G guard, # rock";
 
 	/**
 	 * Each storey, top first, as its tiles with their walls (as ParseTiles reads them) and beside that

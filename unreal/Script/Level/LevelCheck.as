@@ -366,6 +366,68 @@ namespace LevelCheck
 				Problems.Add(f"a {LightKindName(Light.Kind)} light at {Where(Reach::MakePoint(Storey, Light.X, Light.Z))} has no fitting");
 			}
 		}
+
+		Zones(Level, Building, Problems);
 		return Problems;
+	}
+
+	/**
+	 * The zone graph: Warehouse 7 has one each of the rooms behind a single doorway (the guard's post,
+	 * the reefer section, quarantine) on the ground, and each has that one doorway, onto a kind of
+	 * room it's reached from (Generate::ReachedFrom), besides those onto rooms reached through it.
+	 * Nothing leads in from another storey: their cells are floor, or solid.
+	 */
+	void Zones(FWarehouse Level, FBuilding Building, TArray<FString>& Problems)
+	{
+		TMap<FString, int> RoomOf;
+		for (int Id = 0; Id < Level.Rooms.Num(); Id++)
+		{
+			for (FColRow Cell : Level.Rooms[Id].Cells)
+				RoomOf.Add(f"{Level.Rooms[Id].Storey},{Cell.Col},{Cell.Row}", Id);
+		}
+		TArray<ERoomKind> Kinds;
+		Kinds.Add(ERoomKind::Guard);
+		Kinds.Add(ERoomKind::Reefer);
+		Kinds.Add(ERoomKind::Quarantine);
+		for (ERoomKind Kind : Kinds)
+		{
+			FString Name = Generate::RoomKindName(Kind);
+			int Count = 0;
+			for (FRoom Room : Level.Rooms)
+			{
+				if (Room.Kind != Kind)
+					continue;
+				Count++;
+				if (Room.Storey != 0)
+					Problems.Add(f"the {Name} room is on storey {Room.Storey}, not the ground");
+				TArray<ERoomKind> Ways;
+				for (FColRow Cell : Room.Cells)
+				{
+					ETileKind Tile = Building.Parsed.Tile(Room.Storey, Cell.Col, Cell.Row).Kind;
+					if (Tile != ETileKind::Floor && Tile != ETileKind::Solid)
+						Problems.Add(f"the {Name} room has a {Tiles::TileChar(Building.Parsed.Tile(Room.Storey, Cell.Col, Cell.Row))} at {Cell.Col},{Cell.Row}, a way in from another storey");
+					for (int S = 0; S < 4; S++)
+					{
+						ESide Side = Tiles::SideAt(S);
+						int Other = -1;
+						if (!RoomOf.Find(f"{Room.Storey},{Cell.Col + Tiles::OffsetX(Side)},{Cell.Row + Tiles::OffsetZ(Side)}", Other) || Other == Room.Id)
+							continue;
+						ERoomKind OtherKind = Level.Rooms[Other].Kind;
+						EEdge Edge = Building.Parsed.Edge(Room.Storey, Cell.Col, Cell.Row, Side);
+						FString OtherName = Generate::RoomKindName(OtherKind);
+						if (Edge == EEdge::None)
+							Problems.Add(f"the {Name} room is open to a {OtherName} with no wall at {Cell.Col},{Cell.Row}");
+						else if (Tiles::IsOpening(Edge) && !Generate::ReachedFrom(OtherKind).Contains(Kind))
+							Ways.Add(OtherKind);
+					}
+				}
+				if (Ways.Num() != 1)
+					Problems.Add(f"the {Name} room has {Ways.Num()} ways in, not one");
+				else if (!Generate::ReachedFrom(Kind).Contains(Ways[0]))
+					Problems.Add(f"the {Name} room opens onto a {Generate::RoomKindName(Ways[0])}");
+			}
+			if (Count != 1)
+				Problems.Add(f"{Count} {Name} rooms, not one");
+		}
 	}
 }
