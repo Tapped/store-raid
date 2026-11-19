@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readdirSync, statSync, symlinkSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+} from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
@@ -31,6 +39,24 @@ const port = Number(process.env.PORT ?? 5173);
 const base = process.env.BASE ?? "/";
 const serverPort = Number(process.env.SERVER_PORT ?? 2567);
 const wsPrefix = `${base}ws`;
+
+/**
+ * `assets/raw/` holds what models are built from, which the game never loads: a build copies the
+ * public folder whole, so it is taken out of the build again afterwards.
+ */
+function leaveOutRaw(): Plugin {
+  let outDir = "";
+  return {
+    name: "leave-out-raw",
+    apply: "build",
+    configResolved(config) {
+      outDir = resolve(config.root, config.build.outDir);
+    },
+    closeBundle() {
+      rmSync(resolve(outDir, "assets/raw"), { recursive: true, force: true });
+    },
+  };
+}
 
 /**
  * In dev, `models.json` lists every .glb under assets/models with its size and when it was written,
@@ -66,7 +92,7 @@ function listModels(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [listModels()],
+  plugins: [listModels(), leaveOutRaw()],
   root: fileURLToPath(new URL(".", import.meta.url)),
   base,
   publicDir,

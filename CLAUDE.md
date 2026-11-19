@@ -89,8 +89,8 @@ scripts/generate.ts        draws a generated level from a seed, or checks the ru
 scripts/village.ts         checks the village without a server: drawn ground against floors, ways through, a map (`--map`)
 scripts/villageWalk.ts     a bot walks the village from the truck to the church door (or over the bridge and back through the river)
 scripts/harbour.ts         the harbour's ground and what's in the way, from its model, into shared/harbour.json (`pnpm run harbour`)
-scripts/character.ts       the character model and its clips, from Mixamo downloads in raw/, through Blender (`pnpm run character`)
-scripts/zombie.ts          the zombie, a static model: Meshy's headless body and head in raw/characters/zombie/, scaled to each other and joined in Blender (`pnpm run zombie`)
+scripts/character.ts       the character model and its clips, from Mixamo downloads in assets/raw/, through Blender (`pnpm run character`)
+scripts/zombie.ts          the zombie, a static model: Meshy's headless body and head in assets/raw/characters/zombie/, scaled to each other and joined in Blender (`pnpm run zombie`)
 scripts/hatch.ts           a bot checks the truck's hatch in a game in the harbour: shut in the lobby, down for the raid, both control boxes
 scripts/harbourCheck.ts    checks the harbour level without a server: the warehouse's rules, and a way without jumps between the truck and the loading door, on foot and with a sofa (`--map` draws the yard)
 scripts/unity-import/      prefabs from a Unity .unitypackage → textured .glb in assets/, through Blender
@@ -361,7 +361,9 @@ You can't see the browser, so check your work from the terminal, with `pnpm run 
 ## Assets
 
 Assets (models, textures, audio) are never stored in git. One copy lives in **`assets/`** next to
-the `main/` checkout, and every checkout shares it:
+the `main/` checkout, and every checkout shares it. It is the source the Unreal port's `Content/`
+is imported from, and holds in `assets/raw/` what the game's models are built from: whatever isn't
+in git and the game needs, or needs to build from, is in `assets/`, so its backup is all of it.
 
 ```
 store-raid/
@@ -371,7 +373,7 @@ store-raid/
 ```
 
 `client/vite.config.ts` links each checkout's `public/assets` to that folder when Vite starts, so
-they're served at `/assets/...` in dev and copied into builds. A fresh clone gets `assets/` from
+they're served at `/assets/...` in dev and copied into builds (all but `raw/`). A fresh clone gets `assets/` from
 the Google Drive backup with `pnpm run assets:restore -- --yes`.
 
 - **Backup:** `pnpm run assets:backup` makes `gdrive:store-raid` match `assets/`, through rclone
@@ -433,13 +435,20 @@ the Google Drive backup with `pnpm run assets:restore -- --yes`.
   exists, so use the final path from day one. Vite answers a missing asset with `200` and its HTML
   page, so check the content type, not only the status, when testing a URL with curl.
 - Folders: `models/{characters,props,level,village}`, `textures/`, `audio/{sfx,music}`, `ui/`. Lowercase
-  kebab-case. `.glb` from Blender: Y-up, transforms applied, meters. What a model was made from
-  goes in `raw/` next to `assets/`, not in it (`raw/characters/ch35/` has the Mixamo `.fbx`
-  behind `ch35.glb`, `raw/industrial-harbour/` the Unity package): `raw/` isn't served, built or
-  backed up.
+  kebab-case. `.glb` from Blender: Y-up, transforms applied, meters.
+- **`assets/raw/`** holds what models are made from, as downloaded: `raw/characters/ch35/` has the
+  Mixamo `.fbx` behind `ch35.glb`, `raw/characters/zombie/` Meshy's models behind `zombie.glb`,
+  `raw/industrial-harbour/` the Unity package. A script in `scripts/` turns them into the game's
+  models in `assets/models/`; nothing loads them directly, and web builds leave them out. It is
+  backed up with the rest, as paid or generated sources can't always be downloaded again.
+- **Meshy** (the `meshy-3d-generation` skill, through the `meshy` CLI) makes models from text or
+  images, for credits, and never the same model twice. Download each into
+  `assets/raw/<kind>/<name>/` with a `meshy.json` beside it: the prompt or source image, the task
+  ids, the settings and the date. Then build the game's model from it with a script, as
+  `scripts/zombie.ts` does, and run `pnpm run assets:backup`.
 - **The character:** `ch35.glb` is built whole by `pnpm run character` (`scripts/character.ts`,
-  through Blender): the skinned model from the one `.fbx` in `raw/characters/<CHARACTER>/` (the
-  script's `CHARACTER`), its textures at 1024 as WebP, and every clip in `raw/characters/animations/`
+  through Blender): the skinned model from the one `.fbx` in `assets/raw/characters/<CHARACTER>/` (the
+  script's `CHARACTER`), its textures at 1024 as WebP, and every clip in `assets/raw/characters/animations/`
   as an animation group named after its file: `walk`, `carry-walk`, `carry-stop`, `sit-idle`,
   `sit-idle-2` and `sit-to-stand`. Clips are Mixamo downloads without skin, for any Mixamo character:
   bones match by name after the rig's prefix, only rotations and the hips' translation are kept, scaled

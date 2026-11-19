@@ -1,6 +1,6 @@
 /**
  * Builds the zombie from its two Meshy models: `pnpm run zombie`. The headless body and the head in
- * `raw/characters/zombie/` are scaled to each other and joined by `scripts/zombie.py` in Blender,
+ * `assets/raw/characters/zombie/` are scaled to each other and joined by `scripts/zombie.py` in Blender,
  * into `assets/models/characters/zombie.glb`, a static model about 1.75 m tall facing +z.
  *
  * `--preview` writes nothing but renders it from the front, the side and at the neck into
@@ -12,7 +12,7 @@ import { resolve } from "node:path";
 import { findBlender } from "./unity-import/blender";
 
 const ROOT = resolve(import.meta.dirname, "../..");
-const RAW = `${ROOT}/raw/characters/zombie`;
+const RAW = `${ROOT}/assets/raw/characters/zombie`;
 const MODEL = `${ROOT}/assets/models/characters/zombie.glb`;
 const CACHE = resolve(import.meta.dirname, "../node_modules/.cache/zombie");
 

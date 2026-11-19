@@ -1,6 +1,6 @@
 /**
  * Builds the character model from Mixamo downloads: `pnpm run character`. The skinned model,
- * `raw/characters/<CHARACTER>/<file>.fbx`, and every clip in `raw/characters/animations/`
+ * `assets/raw/characters/<CHARACTER>/<file>.fbx`, and every clip in `assets/raw/characters/animations/`
  * (downloaded without skin, named after the animation group it becomes) are converted by Blender in
  * the background into `assets/models/characters/<CHARACTER>.glb`.
  *
@@ -27,10 +27,10 @@ import { prune } from "@gltf-transform/functions";
 import sharp from "sharp";
 import { findBlender } from "./unity-import/blender";
 
-/** Which character to build, from `raw/characters/<name>/`. */
+/** Which character to build, from `assets/raw/characters/<name>/`. */
 const CHARACTER = "ch35";
 const ROOT = resolve(import.meta.dirname, "../..");
-const RAW = `${ROOT}/raw/characters`;
+const RAW = `${ROOT}/assets/raw/characters`;
 const ANIMATIONS = `${RAW}/animations`;
 const MODEL = `${ROOT}/assets/models/characters/${CHARACTER}.glb`;
 const CACHE = resolve(import.meta.dirname, "../node_modules/.cache/character");
