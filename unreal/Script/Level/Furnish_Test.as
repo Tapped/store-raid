@@ -1,14 +1,13 @@
-// Unit tests for furnishing's port (Reach.as, Furnish.as, Warehouse.as): every seed in
-// unreal/Tools/fixtures/furnished.txt must come out of Warehouse::Build as it does from the web
-// game's generatedLevel(): the same rooms, props, props' boxes, lights and items, in order, to the
-// micrometre (within 2, for the last bits of sines and arctangents, which differ between V8 and
-// C++). The fixture is written by `pnpm exec tsx unreal/Tools/dumpGenerated.ts [count] [furnished]`;
-// run it again if shared/furnish.ts, generate.ts, props.ts or tiles.ts changes. What the port made
-// is written to Saved/furnished.txt, to diff.
+// Unit tests for furnishing (Reach.as, Furnish.as, Warehouse.as): every seed in
+// unreal/Tools/fixtures/furnished.txt must come out of Warehouse::Build as it did when the fixture
+// was written: the same rooms, props, props' boxes, lights and items, in order, to the micrometre
+// (within 2, which the fixture needed when it was the web game's, from V8's sines and arctangents).
+// What the port makes is written to Saved/furnished.txt, to diff; after changing the generator,
+// furnishing or the props on purpose, `pnpm run ue fixtures` makes that the fixture.
 
 namespace FurnishTest
 {
-	/** A length in whole micrometres, as dumpGenerated.ts writes it. */
+	/** A length in whole micrometres, as the fixture has it. */
 	FString Um(float Value)
 	{
 		return f"{Math::RoundToInt(Value * 1000000.0)}";
@@ -46,7 +45,7 @@ namespace FurnishTest
 		return "";
 	}
 
-	/** A furnished level as dumpGenerated.ts writes it, line by line. */
+	/** A furnished level as the fixture has it, line by line. */
 	TArray<FString> Dump(int Seed, FWarehouse Level)
 	{
 		TArray<FString> Lines;
@@ -94,13 +93,13 @@ namespace FurnishTest
 	}
 }
 
-void Test_FurnishedLikeTheWebGame(FUnitTest& T)
+void Test_FurnishedAsTheFixture(FUnitTest& T)
 {
 	FString Path = FPaths::ProjectDir() + "Tools/fixtures/furnished.txt";
 	FString Text;
 	if (!FFileHelper::LoadFileToString(Text, Path))
 	{
-		T.AssertTrue(false, "no fixture at " + Path + ": run unreal/Tools/dumpGenerated.ts");
+		T.AssertTrue(false, "no fixture at " + Path + ": run pnpm run ue fixtures");
 		return;
 	}
 	TArray<FString> Expected;
@@ -159,6 +158,6 @@ void Test_FurnishedLikeTheWebGame(FUnitTest& T)
 	}
 	FFileHelper::SaveStringToFile(Written, FPaths::ProjectSavedDir() + "furnished.txt");
 	T.AssertTrue(Seeds > 0, "the fixture has seeds");
-	T.AssertEquals(0, Failed, f"seeds unlike the web game's, of {Seeds}");
-	Log(f"furnished {Seeds} seeds, {Failed} unlike the web game's");
+	T.AssertEquals(0, Failed, f"seeds unlike the fixture, of {Seeds}");
+	Log(f"furnished {Seeds} seeds, {Failed} unlike the fixture");
 }

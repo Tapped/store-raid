@@ -1,8 +1,9 @@
-// Unit tests for the generator's port (Generate.as): every seed in unreal/Tools/fixtures/generated.txt
-// must come out of Generate::Generate exactly as it does from the web game's generate(): the same
-// tries, entrance, storeys as drawn, rooms, distances and floors. The fixture is written by
-// `pnpm exec tsx unreal/Tools/dumpGenerated.ts [count]`; run it again if shared/generate.ts or
-// shared/tiles.ts changes. What the port made is written beside it, to Saved/generated.txt, to diff.
+// Unit tests for the generator (Generate.as): every seed in unreal/Tools/fixtures/generated.txt must
+// come out of Generate::Generate as it did when the fixture was written: the same tries, entrance,
+// storeys as drawn, rooms, distances and floors, so a change to the generator changes no level by
+// accident. The fixture began as the web game's levels, which the port matched. What the port makes
+// is written to Saved/generated.txt, to diff; after changing the generator on purpose,
+// `pnpm run ue fixtures` makes that the fixture.
 
 namespace GenerateTest
 {
@@ -18,7 +19,7 @@ namespace GenerateTest
 		return Options;
 	}
 
-	/** A generated level as dumpGenerated.ts writes it, line by line. */
+	/** A generated level as the fixture has it, line by line. */
 	TArray<FString> Dump(FGenerated Generated)
 	{
 		TArray<FString> Lines;
@@ -65,13 +66,13 @@ namespace GenerateTest
 	}
 }
 
-void Test_GeneratedLikeTheWebGame(FUnitTest& T)
+void Test_GeneratedAsTheFixture(FUnitTest& T)
 {
 	FString Path = FPaths::ProjectDir() + "Tools/fixtures/generated.txt";
 	FString Text;
 	if (!FFileHelper::LoadFileToString(Text, Path))
 	{
-		T.AssertTrue(false, "no fixture at " + Path + ": run unreal/Tools/dumpGenerated.ts");
+		T.AssertTrue(false, "no fixture at " + Path + ": run pnpm run ue fixtures");
 		return;
 	}
 	TArray<FString> Expected;
@@ -135,8 +136,8 @@ void Test_GeneratedLikeTheWebGame(FUnitTest& T)
 	}
 	FFileHelper::SaveStringToFile(Written, FPaths::ProjectSavedDir() + "generated.txt");
 	T.AssertTrue(Seeds > 0, "the fixture has seeds");
-	T.AssertEquals(0, Failed, f"seeds unlike the web game's, of {Seeds}");
-	Log(f"generated {Seeds} seeds, {Failed} unlike the web game's");
+	T.AssertEquals(0, Failed, f"seeds unlike the fixture, of {Seeds}");
+	Log(f"generated {Seeds} seeds, {Failed} unlike the fixture");
 }
 
 void Test_RandomLikeTheWebGame(FUnitTest& T)

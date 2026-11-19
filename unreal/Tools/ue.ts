@@ -13,6 +13,11 @@
  *   shot <who> [file]     save a screenshot of a running client (default node_modules/.cache/ue/<who>.png)
  *   ping <who>            whether a process is up, and its net mode and map
  *   test [filter]         script unit tests in a headless editor (default Angelscript.UnitTests)
+ *   fixtures              write the generator's and furnishing's fixtures (Tools/fixtures/) from what the
+ *                         port makes now, after changing either on purpose: runs their tests, then keeps
+ *                         what they wrote to Saved/
+ *   level <seed>          draw the generated warehouse from a seed: each storey as tiles and as zones
+ *   level --many <n> [first]  build seeds first.. (default 1) and check every rule on each (LevelCheck.as)
  *   check <name> [who]    a check in Tools/checks/ against a running bot: `check playground`
  *   import [filter…]      models from ../assets into Content/ (Tools/import/): staged with PNG textures,
  *                         then Interchange in a headless editor, with Nanite; only names containing a
@@ -29,7 +34,16 @@
  * Logs go to unreal/Saved/Logs/<who>.log as well as this terminal, prefixed with who said it.
  */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  watch,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STAGED, stageModels } from "./import/stage";
@@ -341,44 +355,115 @@ function single(role: Role): void {
  * Runs automation tests in a headless editor (the script unit tests only run in an editor context,
  * not under -game or -server), prints each result, and exits non-zero if any failed.
  */
-function test(filter: string): void {
-  const role: Role = {
-    who: "test",
-    devPort: 8790,
-    args: [
-      PROJECT,
-      `-ExecCmds=Automation RunTests ${filter}; Quit`,
-      "-nullrhi",
-      "-nosound",
-      "-NoP4",
-      ...common("test", 8790),
-    ],
-  };
-  let failed = 0;
-  let passed = 0;
-  const child = spawn(EDITOR, role.args, { cwd: ROOT, windowsHide: true });
+/**
+ * Runs console commands in a headless editor with no rendering, handing every line it logs to
+ * `onLine`; resolves when it has exited, so the last command should make it quit.
+ */
+function headless(who: string, commands: string[], onLine: (line: string) => void): Promise<void> {
+  const args = [
+    PROJECT,
+    // Commands on the command line are split at commas. The editor quits on QUIT_EDITOR, not Quit;
+    // automation's own "RunTests …; Quit" quits once its tests are done.
+    `-ExecCmds=${commands.join(",")}`,
+    "-nullrhi",
+    "-nosound",
+    "-NoP4",
+    ...common(who, 8790),
+  ];
+  const child = spawn(EDITOR, args, { cwd: ROOT, windowsHide: true });
   let rest = "";
   const take = (chunk: Buffer) => {
     rest += chunk.toString("utf8");
     const lines = rest.split(/\r?\n/);
     rest = lines.pop() ?? "";
-    for (const line of lines) {
-      if (/Test Completed\. Result=\{Success\}/.test(line)) passed++;
-      if (/Test Completed\. Result=\{(Fail|Error)/.test(line)) failed++;
-      if (
-        /Test Completed|Angelscript: Error|LogAutomationCommandLine: Error|Expected|Assert|Error: .*\.as/.test(
-          line,
-        )
-      )
-        console.log(line);
-    }
+    for (const line of lines) onLine(line);
   };
   child.stdout?.on("data", take);
   child.stderr?.on("data", take);
-  child.on("exit", () => {
-    console.log(`${passed} passed, ${failed} failed`);
-    process.exit(failed > 0 || passed === 0 ? 1 : 0);
+  return new Promise((done) => child.on("exit", () => done()));
+}
+
+/** Script compile errors, which leave a headless editor with nothing to run. */
+const SCRIPT_ERROR = /Angelscript: Error|Error: .*\.as/;
+
+async function test(filter: string): Promise<boolean> {
+  let failed = 0;
+  let passed = 0;
+  await headless("test", [`Automation RunTests ${filter}; Quit`], (line) => {
+    if (/Test Completed\. Result=\{Success\}/.test(line)) passed++;
+    if (/Test Completed\. Result=\{(Fail|Error)/.test(line)) failed++;
+    if (
+      /Test Completed|LogAutomationCommandLine: Error|Expected|Assert/.test(line) ||
+      SCRIPT_ERROR.test(line)
+    )
+      console.log(line);
   });
+  console.log(`${passed} passed, ${failed} failed`);
+  return failed === 0 && passed > 0;
+}
+
+/** The fixtures Generate_Test.as and Furnish_Test.as compare with, and what they write beside them. */
+const FIXTURES = ["generated.txt", "furnished.txt"];
+
+async function fixtures(): Promise<boolean> {
+  for (const name of FIXTURES) rmSync(join(ROOT, "Saved", name), { force: true });
+  await test("Angelscript.UnitTests.Level.Generate_Test+Angelscript.UnitTests.Level.Furnish_Test");
+  for (const name of FIXTURES) {
+    const written = join(ROOT, "Saved", name);
+    if (!existsSync(written)) {
+      console.error(`The tests wrote no ${name}: is the script compiling?`);
+      return false;
+    }
+    copyFileSync(written, join(ROOT, "Tools/fixtures", name));
+    const seeds = readFileSync(written, "utf8").match(/^seed /gm)?.length ?? 0;
+    console.log(`Tools/fixtures/${name}: ${seeds} seeds`);
+  }
+  console.log(
+    "Check that the diff (git diff unreal/Tools/fixtures) is what the change meant to do.",
+  );
+  return true;
+}
+
+/** What LevelMap.as logs, after its prefix. */
+const MAP_LINE = /StoreRaid map: (.*)$/;
+
+async function level(args: string[]): Promise<boolean> {
+  if (args[0] === "--many") {
+    const count = Number(args[1] ?? 100);
+    const first = Number(args[2] ?? 1);
+    // One command a seed: script may only run for 10 s at a time.
+    const commands = [...range(count).map((i) => `sr.levelcheck ${first + i}`), "QUIT_EDITOR"];
+    let ok = 0;
+    let seconds = 0;
+    const bad = new Set<number>();
+    await headless("level", commands, (line) => {
+      if (SCRIPT_ERROR.test(line)) console.log(line);
+      const text = line.match(MAP_LINE)?.[1];
+      if (!text) return;
+      const passed = text.match(/^seed \d+ ok ([\d.]+) s/);
+      if (passed) {
+        ok++;
+        seconds += Number(passed[1]);
+        return;
+      }
+      console.log(text);
+      const seed = text.match(/^seed (\d+) problem/);
+      if (seed) bad.add(Number(seed[1]));
+    });
+    const average = ok ? `, ${(seconds / ok).toFixed(2)} s a level` : "";
+    const which = bad.size ? `; problems with ${[...bad].join(", ")}` : "";
+    console.log(`${ok} of ${count} seeds keep every rule${average}${which}`);
+    return ok === count;
+  }
+  let drawn = false;
+  await headless("level", [`sr.map ${Number(args[0] ?? 1)}`, "QUIT_EDITOR"], (line) => {
+    if (SCRIPT_ERROR.test(line)) console.log(line);
+    const text = line.match(MAP_LINE)?.[1];
+    if (text === undefined) return;
+    console.log(text);
+    drawn = true;
+  });
+  return drawn;
 }
 
 /** Whether a model's mesh in Content/ is newer than its staged file and than the import script. */
@@ -550,7 +635,13 @@ switch (command) {
     single(windowRole(rest[0]));
     break;
   case "test":
-    test(rest[0] ?? "Angelscript.UnitTests");
+    process.exit((await test(rest[0] ?? "Angelscript.UnitTests")) ? 0 : 1);
+    break;
+  case "fixtures":
+    process.exit((await fixtures()) ? 0 : 1);
+    break;
+  case "level":
+    process.exit((await level(rest)) ? 0 : 1);
     break;
   case "exec":
     await exec(rest[0], rest.slice(1).join(" "));

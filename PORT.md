@@ -4,10 +4,7 @@ The game moves from Babylon.js + Colyseus to Unreal Engine 5.8 on Hazelight's An
 (`github.com/Hazelight/UnrealEngine-Angelscript`, branch `angelscript-master`), for its rendering,
 networking and tools, and for script that reloads while the game runs. The web game is finished:
 nothing more is added to it, and everything new is built in the port directly, not in the
-TypeScript first. It stays in the repo as the reference for what's already ported. Once the port's
-generator or furnishing changes on purpose, the fixtures dumped from the web game no longer apply:
-`Generate_Test.as` and `Furnish_Test.as` must then check against fixtures written from the port's
-own output.
+TypeScript first. It stays in the repo as the reference for what's already ported.
 
 Started 15 November 2026.
 
@@ -151,12 +148,15 @@ Each step ends playable, with the web game as the reference for how it should be
    So far, making the level, as the web game makes it on every seed tried: `generate.ts` is
    `Level/Generate.as` (seeds 1 to 200), `props.ts` `Props.as`, `furnish.ts` `Reach.as` (the
    building, links, targets and flood fills) and `Furnish.as`, and `generatedLevel()` `Warehouse.as`
-   (seeds 1 to 20). `Generate_Test.as` and `Furnish_Test.as` check them against the web game's own,
-   in `Tools/fixtures/` (seeds 1 to 30 and 1 to 3), written by `pnpm exec tsx
-   unreal/Tools/dumpGenerated.ts [count] [furnished count]`: more seeds for a wider check, and the
-   port's own go to `Saved/`, to diff. A level takes about 1.6 s in the test editor, interpreted.
+   (seeds 1 to 20). `Generate_Test.as` and `Furnish_Test.as` check that seeds 1 to 30 and 1 to 3
+   come out as the fixtures in `Tools/fixtures/` have them, which began as the web game's levels.
+   The port's generator now goes its own way: what the tests make is written to `Saved/`, to diff,
+   and after a change on purpose `pnpm run ue fixtures` makes that the fixtures (check their diff).
+   A level takes about 1.6 s in the test editor, interpreted.
    `levelCheck.ts` is `LevelCheck.as`: `LevelCheck_Test.as` holds seeds 1 to 3 to every rule and
-   spoils one to see it caught.
+   spoils one to see it caught; `pnpm run ue level --many 100` checks many more (about 3 s a seed).
+   `pnpm run ue level <seed>` draws one (`Level/LevelMap.as`): each storey as its tiles and walls,
+   and beside it the same walls with each cell's room kind as a letter.
    Playable: `Level/Levels.as` is the `Level` type and `levelNamed()`, for the playground and
    `generated-<seed>`; the game state builds the one the server names on every machine (`LevelName`,
    replicated), and the game mode takes spawns, the kill height and the dimmer from it. Unlike the
