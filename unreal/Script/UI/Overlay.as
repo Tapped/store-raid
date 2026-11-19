@@ -40,11 +40,11 @@ namespace Overlay
 		return "";
 	}
 
-	/** A kind's name, for a count of them: "Phone", "3 Phones", "2 TVs", "2 Boxes". */
+	/** A kind's name, for a count of them: "Phone", "3 Phones", "2 TVs", "2 Boxes", "2 Tick cases". */
 	FString Named(EItemKind Kind, int Count)
 	{
 		FString One = Items::KindName(Kind);
-		One = One.Left(1).ToUpper() + One.RightChop(1);
+		One = One.Left(1).ToUpper() + One.RightChop(1).Replace("-", " ");
 		if (Kind == EItemKind::Tv)
 			One = "TV";
 		if (Count == 1)

@@ -163,7 +163,7 @@ namespace LevelCheck
 			int Storey = Math::FloorToInt((Item.Y + 0.5) / Tiles::STOREY);
 			FPoint Point = Reach::MakePoint(Storey, Item.X, Item.Z);
 			FItemKindInfo Info = Items::Kind(Item.Kind);
-			EMover Mode = Item.Kind == EItemKind::Sofa ? EMover::Wide : Info.Hands == 2 ? EMover::Carry : EMover::Walk;
+			EMover Mode = Info.Carriers == 2 ? EMover::Wide : Info.Hands == 2 ? EMover::Carry : EMover::Walk;
 			FString Kind = Items::KindName(Item.Kind);
 			if (!After.Reaches(Mode, Point))
 				Problems.Add(f"a {Kind} at {Where(Point)} can't be reached ({ModeName(Mode)})");
@@ -429,5 +429,27 @@ namespace LevelCheck
 			if (Count != 1)
 				Problems.Add(f"{Count} {Name} rooms, not one");
 		}
+		// HB-0417's cases are in quarantine, two or three of them, and nothing else is.
+		int Cases = 0;
+		for (FItemSpawn Item : Level.Items)
+		{
+			int Storey = Math::FloorToInt((Item.Y + 0.5) / Tiles::STOREY);
+			bool bQuarantine = false;
+			for (FColRow Cell : Building.CellsUnder(Level::MakeBoxXZ(Item.X, Item.X, Item.Z, Item.Z)))
+			{
+				int Id = -1;
+				if (RoomOf.Find(f"{Storey},{Cell.Col},{Cell.Row}", Id) && Level.Rooms[Id].Kind == ERoomKind::Quarantine)
+					bQuarantine = true;
+			}
+			bool bCase = Item.Kind == EItemKind::TickCase;
+			if (bCase)
+				Cases++;
+			if (bCase && !bQuarantine)
+				Problems.Add(f"a tick case at {Where(Reach::MakePoint(Storey, Item.X, Item.Z))} is outside quarantine");
+			if (!bCase && bQuarantine)
+				Problems.Add(f"a {Items::KindName(Item.Kind)} at {Where(Reach::MakePoint(Storey, Item.X, Item.Z))} is in quarantine");
+		}
+		if (Cases < 2 || Cases > 3)
+			Problems.Add(f"{Cases} tick cases, not two or three");
 	}
 }

@@ -9,6 +9,8 @@ enum EItemKind
 	Tv,
 	Box,
 	Sofa,
+	/** A sealed case of tick stock from container HB-0417: the target, heavy, carried by two. Past the web game. */
+	TickCase,
 };
 
 /**
@@ -64,6 +66,14 @@ namespace Items
 				Info.Value = 400;
 				Info.Colour = FLinearColor(0.3, 0.12, 0.1);
 				break;
+			case EItemKind::TickCase:
+				// The size of models/props/tick-case.glb, handles and bumpers and all.
+				Info.Size = FVector(1.32, 0.57, 0.65);
+				Info.Hands = 2;
+				Info.Carriers = 2;
+				Info.Value = 600;
+				Info.Colour = FLinearColor(0.2, 0.2, 0.18);
+				break;
 		}
 		return Info;
 	}
@@ -82,6 +92,8 @@ namespace Items
 				return "box";
 			case EItemKind::Sofa:
 				return "sofa";
+			case EItemKind::TickCase:
+				return "tick-case";
 		}
 		return "?";
 	}

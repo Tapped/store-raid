@@ -418,6 +418,8 @@ struct FFurnisher
 	TArray<FPointSet> Routes;
 	TSet<int> Routed;
 	TMap<int, FHallAisles> HallAisles;
+	/** Where FurnishQuarantine left the tick cases from HB-0417, kept clear for PlaceLoot to put them down. */
+	TArray<FPoint> CaseSpots;
 
 	void Start(int Seed, FGenerated InGenerated, FTileGrid Grid, TArray<FLevelBox> TileBoxes, FPoint InStart, TArray<FBoxXZ> KeepClear)
 	{
@@ -1896,8 +1898,9 @@ struct FFurnisher
 	/**
 	 * Quarantine, laid out by hand round its one doorway: container HB-0417 in the middle, its open
 	 * doors facing the way in and set back from it, a cordon of plastic barriers along its sides
-	 * with one knocked out, work lights at its front corners aimed at it, and drums and canisters
-	 * left about. Its fittings are all dead (lightRooms).
+	 * with one knocked out, work lights at its front corners aimed at it, two or three tick cases
+	 * dragged out in front of its doors (CaseSpots), and drums and canisters left about. Its fittings
+	 * are all dead (lightRooms).
 	 */
 	void FurnishQuarantine(FRoom Room)
 	{
@@ -1929,7 +1932,15 @@ struct FFurnisher
 		float AcrossZ = -AlongX;
 		float Span = AlongX != 0 ? Bounds.MaxX - Bounds.MinX : Bounds.MaxZ - Bounds.MinZ;
 		FPropKind Container = Props::Kind(EProp::ContainerBreached);
-		float Back = (Span - Container.Depth) * 0.15;
+		// Set back from the doorway at least enough to leave a row of tick cases in front of its
+		// doors, past the floor kept clear inside the doorway. Cases lie long side east to west, so
+		// their footprint along and across the way in depends on which way that is.
+		FItemKindInfo Case = Items::Kind(EItemKind::TickCase);
+		float CaseAlong = AlongX != 0 ? Case.Size.X : Case.Size.Z;
+		float CaseAcross = AlongX != 0 ? Case.Size.Z : Case.Size.X;
+		float Spare = Span - Container.Depth;
+		float Front = Reach::KEEP_CLEAR + 0.4 + CaseAlong + 0.5;
+		float Back = Math::Clamp(Front - Spare / 2, Spare * 0.15, Math::Max(Spare * 0.15, Spare / 2 - 0.3));
 		float CX = (Bounds.MinX + Bounds.MaxX) / 2 - AlongX * Back;
 		float CZ = (Bounds.MinZ + Bounds.MaxZ) / 2 - AlongZ * Back;
 		float Facing = Reach::Turn(In);
@@ -1973,6 +1984,57 @@ struct FFurnisher
 				if (Stand(EProp::WorkLight, Room.Storey, X, Z, Math::Atan2(CX - X, CZ - Z), Room.Id))
 					break;
 			}
+		}
+		// The cases, out in front of its doors: a row just outside them, then another further out,
+		// the middle first and then to either side, each where its floor is clear, kept clear of
+		// what's scattered after.
+		int Cases = Chance(0.5) ? 3 : 2;
+		TArray<FPoint> Tries;
+		for (int I = 0; I < 15; I++)
+		{
+			int Row = Math::IntegerDivisionTrunc(I, 5);
+			int Slot = I % 5;
+			float A = Container.Depth / 2 + 0.4 + CaseAlong / 2 + Row * (CaseAlong + 0.4) + Rng(0, 0.1);
+			float C = (Slot == 0 ? 0.0 : Slot == 1 ? -1.0 : Slot == 2 ? 1.0 : Slot == 3 ? -2.0 : 2.0) * (CaseAcross + 0.35) + Rng(-0.05, 0.05);
+			Tries.Add(Reach::MakePoint(Room.Storey, CX + AlongX * A + AcrossX * C, CZ + AlongZ * A + AcrossZ * C));
+		}
+		// Where there's no room in front of it, the clear floor nearest its doors.
+		float DoorsX = CX + AlongX * Container.Depth / 2;
+		float DoorsZ = CZ + AlongZ * Container.Depth / 2;
+		TArray<FPoint> Floor;
+		for (float X = Bounds.MinX + 0.9; X < Bounds.MaxX - 0.9; X += 0.5)
+		{
+			for (float Z = Bounds.MinZ + 0.6; Z < Bounds.MaxZ - 0.6; Z += 0.5)
+				Floor.Add(Reach::MakePoint(Room.Storey, X, Z));
+		}
+		while (Floor.Num() > 0)
+		{
+			int Nearest = 0;
+			for (int I = 1; I < Floor.Num(); I++)
+			{
+				if (Math::Square(Floor[I].X - DoorsX) + Math::Square(Floor[I].Z - DoorsZ) < Math::Square(Floor[Nearest].X - DoorsX) + Math::Square(Floor[Nearest].Z - DoorsZ))
+					Nearest = I;
+			}
+			Tries.Add(Floor[Nearest]);
+			Floor.RemoveAtSwap(Nearest);
+			if (Tries.Num() > 15 + 60)
+				break;
+		}
+		for (FPoint Point : Tries)
+		{
+			if (CaseSpots.Num() >= Cases)
+				break;
+			FBoxXZ Box = Level::MakeBoxXZ(Point.X - Case.Size.X / 2 - 0.15, Point.X + Case.Size.X / 2 + 0.15, Point.Z - Case.Size.Z / 2 - 0.15, Point.Z + Case.Size.Z / 2 + 0.15);
+			bool bInside = true;
+			for (FColRow Cell : Building.CellsUnder(Box))
+			{
+				if (RoomAt(Room.Storey, Cell.Col, Cell.Row) != Room.Id)
+					bInside = false;
+			}
+			if (!bInside || !ClearFor(Room.Storey, Box))
+				continue;
+			Reserved[Building.Slot(Room.Storey)].Boxes.Add(Box);
+			CaseSpots.Add(Point);
 		}
 		TArray<EProp> Left = Furnish::List(EProp::DrumGroup, EProp::Barrel, EProp::PlasticBarrel);
 		Left.Add(EProp::PlasticCanister);
@@ -2484,8 +2546,9 @@ struct FFurnisher
 
 	/**
 	 * The items: flashlights by the entrance, and loot spread through the building, worth more the
-	 * further in, the higher up and the darker it is, and most of all in the cages. Each where it can
-	 * be reached the way it has to be carried, on clear floor, not in a doorway.
+	 * further in, the higher up and the darker it is, and most of all in the cages; and in quarantine
+	 * only HB-0417's tick cases. Each where it can be reached the way it has to be carried, on clear
+	 * floor, not in a doorway.
 	 */
 	TArray<FItemSpawn> PlaceLoot()
 	{
@@ -2502,6 +2565,8 @@ struct FFurnisher
 		for (FRoom Room : Rooms)
 		{
 			if (Generate::DressedAs(Room.Kind) == ERoomKind::Atrium || Generate::DressedAs(Room.Kind) == ERoomKind::Entrance || Generate::DressedAs(Room.Kind) == ERoomKind::Corridor)
+				continue;
+			if (Room.Kind == ERoomKind::Quarantine)
 				continue;
 			float RoomDarkness = Darkness(Room);
 			for (FColRow Cell : Room.Cells)
@@ -2559,7 +2624,7 @@ struct FFurnisher
 			float W = Info.Size.X;
 			float H = Info.Size.Y;
 			float D = Info.Size.Z;
-			EMover Mode = Each.Kind == EItemKind::Sofa ? EMover::Wide : Info.Hands == 2 ? EMover::Carry : EMover::Walk;
+			EMover Mode = Info.Carriers == 2 ? EMover::Wide : Info.Hands == 2 ? EMover::Carry : EMover::Walk;
 			int From = Math::FloorToInt(Each.Low * Spots.Num());
 			int To = Math::Max(From + 1, Math::FloorToInt(Each.High * Spots.Num()));
 			for (int Tries = 0; Tries < 80; Tries++)
@@ -2588,6 +2653,12 @@ struct FFurnisher
 				Items.Add(Level::MakeItemSpawn(Each.Kind, Point.X, Point.Storey * Tiles::STOREY + H / 2 + 0.05, Point.Z));
 				break;
 			}
+		}
+		float CaseHeight = Items::Kind(EItemKind::TickCase).Size.Y;
+		for (FPoint Point : CaseSpots)
+		{
+			if (Reachable.Reaches(EMover::Wide, Point))
+				Items.Add(Level::MakeItemSpawn(EItemKind::TickCase, Point.X, Point.Storey * Tiles::STOREY + CaseHeight / 2 + 0.05, Point.Z));
 		}
 		return Items;
 	}

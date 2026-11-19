@@ -1,7 +1,7 @@
-// Something that can be carried: a phone, flashlight, TV, box or sofa. A physics body simulated on
+// Something that can be carried: a phone, flashlight, TV, box, sofa or case of tick stock. A physics body simulated on
 // the server (Chaos, as Havok was in server/src/physics.ts) and replicated with the engine's physics
-// replication; drawn as a box of its size until its model is imported. Hands.as picks it up, carries
-// it and lets it go, on the server.
+// replication. Its body is a box of its size, drawn until its model (models/props/<kind>.glb) is
+// imported and then hidden under it. Hands.as picks it up, carries it and lets it go, on the server.
 //
 // What collides with what, as the layers in physics.ts: items lie on the level and on each other.
 // Players shove two-handed ones through their shover (a second capsule, see StoreRaidCharacter.as)
@@ -14,6 +14,17 @@ class AStoreRaidItem : AActor
 
 	UPROPERTY(DefaultComponent, RootComponent)
 	UStaticMeshComponent Mesh;
+
+	/**
+	 * Its model, centred on the box, when it's imported: drawn only, at its own size. Imported models
+	 * face north with the model's own right (Blender's -x) to the east, but an item's +x, where a
+	 * flashlight's lens is, is the game's +x: so it's turned half round.
+	 */
+	UPROPERTY(DefaultComponent, Attach = Mesh)
+	UStaticMeshComponent Model;
+	default Model.SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	default Model.SetAbsolute(false, false, true);
+	default Model.SetRelativeRotation(FRotator(0, 180, 0));
 
 	/** A flashlight's beam, from its lens at +x (Unreal's +Y), while it's on. */
 	UPROPERTY(DefaultComponent, Attach = Mesh)
@@ -63,7 +74,7 @@ class AStoreRaidItem : AActor
 		return Items::Kind(Kind);
 	}
 
-	/** The box of its size, its mass, and how it collides when lying loose. */
+	/** The box of its size, its model over it if there is one, its mass, and how it collides when lying loose. */
 	void SetUp()
 	{
 		if (bSetUp)
@@ -76,6 +87,10 @@ class AStoreRaidItem : AActor
 		UMaterialInstanceDynamic Material = Mesh.CreateDynamicMaterialInstance(0, Cast<UMaterialInterface>(LoadObject(nullptr, "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")));
 		if (Material != nullptr)
 			Material.SetVectorParameterValue(n"Color", KindInfo.Colour);
+		UStaticMesh Shape = Models::Mesh("props/" + Items::KindName(Kind));
+		Model.SetStaticMesh(Shape);
+		Model.SetWorldScale3D(FVector(1, 1, 1));
+		Mesh.SetVisibility(Shape == nullptr);
 
 		Mesh.SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 		Mesh.SetCollisionObjectType(ECollisionChannel::PhysicsBody);

@@ -122,8 +122,10 @@ Each step ends playable, with the web game as the reference for how it should be
    are imported. `check playground` passes all of `scripts/playground.ts`.
 2. **Hands and items.** Grab and drop, one- and two-handed, two-person carrying, physics items on the
    server (Chaos instead of Havok, replicated), flashlights, first-person hands.
-   Done but for the first-person hands, and items are boxes of their size until models are imported:
-   `Script/Items/` (`Hands.as` is GameRoom's grab, drop and carry), the dimmer, and `check items`.
+   Done but for the first-person hands: `Script/Items/` (`Hands.as` is GameRoom's grab, drop and
+   carry), the dimmer, and `check items`. An item's body is a box of its size, drawn as its model
+   (`models/props/<kind>.glb`) once that's imported, turned half round so a flashlight's lens is at
+   its +x, where the beam leaves; the sofa has no model yet and stays a box.
    Players' own capsules pass through items and a second capsule, the shover, pushes loose
    two-handed ones, as players were kinematic bodies in Havok.
 3. ✅ **The round.** Modes, phases, the truck with its hatch and seats, roles and spectating, loot and
@@ -168,7 +170,11 @@ Each step ends playable, with the web game as the reference for how it should be
    facing the way in, a cordon of plastic barriers with one knocked away, work lights aimed at it,
    every fitting dead, and polythene sheeting taped over the doorway, its notice facing out. The
    models are `reefer-container` and `container-breached` (options of `cargo/container.py`),
-   `quarantine-sheet` and `work-light`.
+   `quarantine-sheet` and `work-light`. The crew's target is there too: two or three tick cases
+   (`EItemKind::TickCase`, the story bible's sealed cases of tick stock, worth 600 each and carried
+   by two, model `tick-case`) out in front of the container's doors, set back far enough for a row of
+   them past the doorway's kept-clear floor, else on the clear floor nearest its doors. Quarantine has
+   no other loot, and `LevelCheck.as` holds every seed to that.
    Playable: `Level/Levels.as` is the `Level` type and `levelNamed()`, for the playground and
    `generated-<seed>`; the game state builds the one the server names on every machine (`LevelName`,
    replicated), and the game mode takes spawns, the kill height and the dimmer from it. Unlike the
