@@ -205,6 +205,12 @@ Each step ends playable, with the web game as the reference for how it should be
    where it is (`FWear`). Cladding has its corrugations in the geometry: sheets and single
    corrugations made by `pnpm run model corrugated-sheet` and `corrugated-strip`, laid over the flat
    face in line with the texture's. Where wall boxes overlap in a plane, only one face is drawn there. Still to come: how fast it builds (2 s on the server, 6 on a client).
+   Next for Warehouse 7's story, in this order, after porting the web game's sounds:
+   1. A keycard, and a locked doorway (a new edge kind) between the hall and the reefer section;
+      at first the keycard lies in the guard post.
+   2. A playtest (proximity voice isn't built yet).
+   3. Dockworker zombies: rig the static zombie model (Mixamo, as `pnpm run character` does), server
+      AI on `StoreRaidTerrain`'s pathfinding, reacting to noise, and a crowbar.
 5. **Ticks and health.** Moved on the server as server/src/ticks.ts moves them, number for number:
    `Script/Ticks/`, `TickRules.as` (shared/ticks.ts: the numbers, perches, the beam), `TickNest.as`
    (perch, drop, hunt, leap, latch, drain, flee from beams and fittings' light, stunned when pulled
