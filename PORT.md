@@ -2,8 +2,12 @@
 
 The game moves from Babylon.js + Colyseus to Unreal Engine 5.8 on Hazelight's Angelscript fork
 (`github.com/Hazelight/UnrealEngine-Angelscript`, branch `angelscript-master`), for its rendering,
-networking and tools, and for script that reloads while the game runs. Nothing more is added to
-the web game until the port has caught up with it; it stays in the repo as the reference until then.
+networking and tools, and for script that reloads while the game runs. The web game is finished:
+nothing more is added to it, and everything new is built in the port directly, not in the
+TypeScript first. It stays in the repo as the reference for what's already ported. Once the port's
+generator or furnishing changes on purpose, the fixtures dumped from the web game no longer apply:
+`Generate_Test.as` and `Furnish_Test.as` must then check against fixtures written from the port's
+own output.
 
 Started 15 November 2026.
 

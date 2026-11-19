@@ -6,6 +6,12 @@ the roadmap for the game, a night raid on a harbour warehouse.
 The game is being ported to Unreal Engine with Angelscript, in `unreal/`: `PORT.md` has the plan and
 how to run it, and `unreal/CLAUDE.md` what has tripped up work there before.
 
+**The web game is finished: all new work goes in the Unreal port.** Don't add features to
+`client/`, `server/`, `shared/` or `scripts/`, and don't change the TypeScript first to port it
+after: build new things in `unreal/Script/` directly. The rest of this file describes the web
+game, which stays as a reference for how the parts already ported behave. Models and surfaces are
+still built by `pnpm run model` and `pnpm run surface` (see **Assets**), which the port imports.
+
 ## Stack
 
 - **Client:** Babylon.js 9 + TypeScript, bundled by Vite 8 (`client/`)
