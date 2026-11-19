@@ -49,6 +49,12 @@ class ALevelGeometry : AActor
 	UInstancedStaticMeshComponent Fixtures;
 	default Fixtures.Mobility = EComponentMobility::Static;
 
+	/** Boxes that only collide, drawn by something else: the TVs' (Screens.as). */
+	UPROPERTY(DefaultComponent, Attach = Blocks)
+	UInstancedStaticMeshComponent Unseen;
+	default Unseen.Mobility = EComponentMobility::Static;
+	default Unseen.bHiddenInGame = true;
+
 	/** The ladders, in the movement component's terms, for every character to climb. */
 	TArray<FStoreRaidLadder> Ladders;
 
@@ -59,6 +65,9 @@ class ALevelGeometry : AActor
 		Blocks.SetCollisionProfileName(n"BlockAll");
 		Fixtures.SetStaticMesh(Blocks.StaticMesh);
 		Fixtures.SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Unseen.SetStaticMesh(Blocks.StaticMesh);
+		Unseen.SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		Unseen.SetCollisionProfileName(n"BlockAll");
 		// A building drawn by room (ALevelBuilding) covers its boxes in skins, so they only collide.
 		// The dedicated server draws nothing anyway.
 		if (Level.Grid.Storeys.Num() > 0)
@@ -67,7 +76,12 @@ class ALevelGeometry : AActor
 		for (const FFloor& Floor : Level.Floors)
 			AddFloor(Floor);
 		for (const FLevelBox& Box : Level.Boxes)
-			AddBlock(Box.MinX, Box.MaxX, Box.Y, Box.Y + Box.Height, Box.MinZ, Box.MaxZ);
+		{
+			if (IsScreen(Level, Box))
+				Unseen.AddInstance(Shapes::BoxTransform(Box.MinX, Box.MaxX, Box.Y, Box.Y + Box.Height, Box.MinZ, Box.MaxZ), true);
+			else
+				AddBlock(Box.MinX, Box.MaxX, Box.Y, Box.Y + Box.Height, Box.MinZ, Box.MaxZ);
+		}
 		// The roof over a building, which nobody reaches: a slab on its walls.
 		if (Level.Roof > 0)
 		{
@@ -86,6 +100,21 @@ class ALevelGeometry : AActor
 			Volume.Gap = (Tiles::LADDER_WALL + 0.3) * 100.0;
 			Ladders.Add(Volume);
 		}
+	}
+
+	/** Whether a box is a TV's, standing where one of the level's screens does: Screens.as draws those. */
+	bool IsScreen(FLevel Level, FLevelBox Box) const
+	{
+		if (Box.Kind != ELevelBoxKind::Furniture)
+			return false;
+		for (const FScreen& Screen : Level.Screens)
+		{
+			const FBoxXZ Foot = Tiles::ScreenFootprint(Screen);
+			if (Math::Abs(Box.Y - Screen.Y) < 0.01 && Math::Abs(Box.MinX - Foot.MinX) < 0.01 && Math::Abs(Box.MaxX - Foot.MaxX) < 0.01
+				&& Math::Abs(Box.MinZ - Foot.MinZ) < 0.01 && Math::Abs(Box.MaxZ - Foot.MaxZ) < 0.01)
+				return true;
+		}
+		return false;
 	}
 
 	/** A box that blocks and is always drawn, from its extents in game meters. */

@@ -126,7 +126,8 @@ What has tripped up work here before:
 - Someone else's character has no movement mode on a client (`MOVE_None`; only its own machine and
   the server know it), so `IsMovingOnGround()` is false for it: footsteps look down from its feet.
 - A placed sound is muffled by anything on the Visibility channel between it and the listener:
-  keep things that move about (items) off it.
+  keep things that move about (items) off it, and place a sound outside the box it comes from and
+  a little off a wall's face (a TV's drone, the vent), or that box or wall muffles it from everywhere.
 - If a console command's file doesn't compile, the running game keeps the old script without
   saying so on `exec`: check the log for `Error` when a command doesn't do what it now says.
 

@@ -1,6 +1,7 @@
 /**
  * Checks the game's sounds by recording what a client hears (sr.record), one kind of sound at a time
  * (the engine's debug solo), in the playground: the ambience louder by the vent over the entrance,
+ * the basement TV's static loud in front of it and muffled upstairs,
  * our own footsteps as we walk and someone else's quieter, the flashlight's click, the hatch's motor
  * and latch, and a tick's taps as it walks and hiss as it quests. Exits non-zero if any are missing.
  *
@@ -143,6 +144,22 @@ await wait(1500);
   check(
     near.median > far.median + 4,
     `and it's louder by the vent than across the hall (${far.median.toFixed(1)} dB)`,
+  );
+}
+
+// The TV in the basement at (-10, -3, -7.625), facing north: its static is loud in front of it and
+// muffled by the floor from the hall above. Heard from the sr.eye camera, which the listener follows.
+{
+  const near = await record("tv-near", "tv-static", async () => {
+    await exec(ears, "sr.eye -10 -1.6 -6.6 180 -10");
+    await wait(1500);
+  });
+  await exec(ears, "sr.eye off");
+  const hall = await record("tv-hall", "tv-static", still(1.5));
+  check(near.median > -60, `the TV drones static (${near.median.toFixed(1)} dB in front of it)`);
+  check(
+    near.median > hall.median + 12,
+    `and it's muffled from the hall above (${hall.median.toFixed(1)} dB)`,
   );
 }
 

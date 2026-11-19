@@ -78,7 +78,8 @@ in front of a player, hunting), `sr.perch <x> <y> <z>` (a tick perched at a poin
 and `sr.health <amount> [name]`.
 `sounds` (a client and a bot, in the playground) records what the client hears, one kind of sound
 at a time (the engine's debug solo), and checks each plays when it should and about as loud: the
-ambience louder by the vent, our own footsteps and the bot's quieter ones, the flashlight's click,
+ambience louder by the vent, the basement TV's static muffled upstairs, our own footsteps and the
+bot's quieter ones, the flashlight's click,
 the hatch's motor and its latch 3 s later, and a demo tick's taps and hiss.
 
 **Levels and modes:** the server's room is in the playground unless `UE_LEVEL=generated-<seed>`
@@ -258,8 +259,11 @@ Each step ends playable, with the web game as the reference for how it should be
    (`Ambience.as`: the bed, and the vent over the entrance, `FLevel.Vent`), number for number.
    `check sounds` checks them. Unlike the web game, one wall muffles as much as several (the engine's
    occlusion is one trace), and a mono sound heard straight is quieter than Web Audio played it.
-   Still to come: TV static (once TVs are drawn), the village's wind and river, and the tuning
-   panel, until which the `Sound/` settings are constants.
+   The TVs of `tv` tiles are drawn as screens.ts drew them (`Level/Screens.as`): the TV's model on a
+   cabinet, its screen showing static (`M_Static`, made by `pnpm run ue surfaces`: coarse grains
+   changing 24 times a second and a darker band rolling down) and droning `tv-static` from just in
+   front of it; its box in the level only collides (`ALevelGeometry.Unseen`). Still to come: the
+   village's wind and river, and the tuning panel, until which the `Sound/` settings are constants.
 
 Much of the client goes away rather than being ported: the render pipeline, lighting in shaders,
 visibility, KTX2, atlasing and fog are the engine's job now.

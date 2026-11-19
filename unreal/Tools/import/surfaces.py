@@ -25,7 +25,8 @@ colour (`Painted` says which). An instance without that data has no wear.
 
 It also makes `/Game/Surfaces/M_Glow`, which isn't a surface: the glow of a flickering fitting
 (Script/Level/Fittings.as), its emissive `Glow`, set every frame from the fitting's flicker; and
-`/Game/Surfaces/M_Dying`, the post-process that shows a player close to death (Script/UI/Dying.as).
+`/Game/Surfaces/M_Dying`, the post-process that shows a player close to death (Script/UI/Dying.as);
+and `/Game/Surfaces/M_Static`, a TV's screen showing static (Script/Level/Screens.as).
 
 Content/ is never in git: running this again rebuilds the surfaces.
 """
@@ -418,9 +419,60 @@ def make_dying():
     log("M_Dying ok")
 
 
+STATIC = """
+// A TV's static, as client/src/screens.ts drew it: grey grains, 96 across and 60 down, changing 24
+// times a second, the whole screen flickering a little with each change, and a softer, darker band
+// rolling down through them. Coarse on purpose: TAA smears fine grains into grey, but grains a few
+// pixels across change sharply. UV v is 0 at the top. Random numbers from PCG3D (an integer hash;
+// a sine hash lines its grains up in stripes).
+uint3 V = uint3(floor(UV * float2(96, 60)), (uint)floor(Time * 24));
+V = V * 1664525u + 1013904223u;
+V.x += V.y * V.z; V.y += V.z * V.x; V.z += V.x * V.y;
+V ^= V >> 16u;
+V.x += V.y * V.z; V.y += V.z * V.x; V.z += V.x * V.y;
+float R = V.x / 4294967295.0;
+uint F = (uint)floor(Time * 24) * 747796405u + 2891336453u;
+F = ((F >> ((F >> 28u) + 4u)) ^ F) * 277803737u;
+float Flicker = 0.75 + 0.25 * (((F >> 22u) ^ F) / 4294967295.0);
+float From = frac(UV.y - frac(Time * 0.35) + 1);
+float Shade = Flicker * (1 - 0.45 * exp(-pow((From - 0.1) / 0.06, 2)));
+return pow(R, 1.6) * Shade * Glow;
+"""
+
+
+def make_static():
+    """M_Static: a TV's screen showing static, unlit, giving off `Glow` (linear colour) at its brightest."""
+    path = ROOT + "/M_Static"
+    if unreal.EditorAssetLibrary.does_asset_exist(path):
+        material = unreal.EditorAssetLibrary.load_asset(path)
+        library.delete_all_material_expressions(material)
+    else:
+        material = assets.create_asset("M_Static", ROOT, unreal.Material, unreal.MaterialFactoryNew())
+    material.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+    uv = library.create_material_expression(material, unreal.MaterialExpressionTextureCoordinate, -800, 0)
+    time = library.create_material_expression(material, unreal.MaterialExpressionTime, -800, 150)
+    glow = library.create_material_expression(material, unreal.MaterialExpressionVectorParameter, -800, 300)
+    glow.set_editor_property("parameter_name", "Glow")
+    glow.set_editor_property("default_value", unreal.LinearColor(0.34, 0.36, 0.4, 1))
+    mask = library.create_material_expression(material, unreal.MaterialExpressionComponentMask, -600, 300)
+    mask.set_editor_property("r", True)
+    mask.set_editor_property("g", True)
+    mask.set_editor_property("b", True)
+    node = custom(material, STATIC, unreal.CustomMaterialOutputType.CMOT_FLOAT3, ["UV", "Time", "Glow"], -400, 100)
+    library.connect_material_expressions(uv, "", node, "UV")
+    library.connect_material_expressions(time, "", node, "Time")
+    library.connect_material_expressions(glow, "", mask, "")
+    library.connect_material_expressions(mask, "", node, "Glow")
+    library.connect_material_property(node, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    library.recompile_material(material)
+    unreal.EditorAssetLibrary.save_loaded_asset(material)
+    log("M_Static ok")
+
+
 def main():
     make_glow()
     make_dying()
+    make_static()
     with open(os.path.join(STAGED, "surfaces.json"), encoding="utf8") as file:
         surfaces = json.load(file)
     done = []

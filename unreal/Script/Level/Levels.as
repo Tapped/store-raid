@@ -119,7 +119,8 @@ namespace Levels
 		Level.Boxes.Add(Level::MakeLevelBox(Level::MakeBoxXZ(-X - W, X + W, -Z - W, Z + W), Top, W, ELevelBoxKind::Wall));
 		Level.KillY = Playground::KILL_Y;
 		Level.Dimmer = Playground::DIMMER;
-		Level.Vent = FVector(0, 2.6, -Playground::HALL_Z);
+		// 30 cm out from the south wall: on its face, the wall would muffle it (Sounds.as).
+		Level.Vent = FVector(0, 2.6, -Playground::HALL_Z + 0.3);
 		Level.Truck = Playground::TruckPlace();
 		Level.Items = Playground::Items();
 		for (int Index = 0; Index < 8; Index++)
@@ -168,8 +169,8 @@ namespace Levels
 		const float X0 = Warehouse.Grid.X;
 		const float Z0 = Warehouse.Grid.Z;
 		Level.Footprint = Level::MakeBoxXZ(X0, -X0, Z0, -Z0);
-		// Over the loading door, in the front wall.
-		Level.Vent = FVector(Warehouse.EntranceX, 2.6, Z0);
+		// Over the loading door, 30 cm in from the front wall (which is astride Z0).
+		Level.Vent = FVector(Warehouse.EntranceX, 2.6, Z0 + Tiles::WALL / 2 + 0.3);
 		for (int Index = 0; Index < 8; Index++)
 			Level.Spawns.Add(FVector2D(Warehouse.EntranceX - 1.5 + (Index % 4), Warehouse.EntranceZ + 0.5 + Math::IntegerDivisionTrunc(Index, 4)));
 

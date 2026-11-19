@@ -165,6 +165,11 @@ class AStoreRaidGameState : AGameStateBase
 				ALevelConcepts Shown = Cast<ALevelConcepts>(SpawnActor(ALevelConcepts));
 				Shown.Build(Concepts::Playground());
 			}
+			if (Layout.Screens.Num() > 0)
+			{
+				ALevelScreens Screens = Cast<ALevelScreens>(SpawnActor(ALevelScreens));
+				Screens.Build(Layout.Screens);
+			}
 			Ambience::Start(Layout);
 		}
 		// The dimmer: a plate on the wall with a knob, for everyone to see.
