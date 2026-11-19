@@ -48,6 +48,8 @@ struct FLevel
 	/** Where the crew's truck is parked. */
 	FTruckPlace Truck;
 	TArray<FItemSpawn> Items;
+	/** A vent over where players come in, which the ambience is loudest at, so they can find the way out by ear (level.entrance). */
+	FVector Vent;
 	/** Where players come in outside a game, the first free one, as spawnPoint(index). */
 	TArray<FVector2D> Spawns;
 	TArray<FLamp> Lamps;
@@ -117,6 +119,7 @@ namespace Levels
 		Level.Boxes.Add(Level::MakeLevelBox(Level::MakeBoxXZ(-X - W, X + W, -Z - W, Z + W), Top, W, ELevelBoxKind::Wall));
 		Level.KillY = Playground::KILL_Y;
 		Level.Dimmer = Playground::DIMMER;
+		Level.Vent = FVector(0, 2.6, -Playground::HALL_Z);
 		Level.Truck = Playground::TruckPlace();
 		Level.Items = Playground::Items();
 		for (int Index = 0; Index < 8; Index++)
@@ -165,6 +168,8 @@ namespace Levels
 		const float X0 = Warehouse.Grid.X;
 		const float Z0 = Warehouse.Grid.Z;
 		Level.Footprint = Level::MakeBoxXZ(X0, -X0, Z0, -Z0);
+		// Over the loading door, in the front wall.
+		Level.Vent = FVector(Warehouse.EntranceX, 2.6, Z0);
 		for (int Index = 0; Index < 8; Index++)
 			Level.Spawns.Add(FVector2D(Warehouse.EntranceX - 1.5 + (Index % 4), Warehouse.EntranceZ + 0.5 + Math::IntegerDivisionTrunc(Index, 4)));
 

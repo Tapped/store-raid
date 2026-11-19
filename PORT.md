@@ -76,6 +76,10 @@ to death. Without the bot it leaves out the other player's beam. For ticks there
 (every tick and everyone's health), and on the server `sr.sic [meters] [name]` (a tick on the floor
 in front of a player, hunting), `sr.perch <x> <y> <z>` (a tick perched at a point, as if on racking)
 and `sr.health <amount> [name]`.
+`sounds` (a client and a bot, in the playground) records what the client hears, one kind of sound
+at a time (the engine's debug solo), and checks each plays when it should and about as loud: the
+ambience louder by the vent, our own footsteps and the bot's quieter ones, the flashlight's click,
+the hatch's motor and its latch 3 s later, and a demo tick's taps and hiss.
 
 **Levels and modes:** the server's room is in the playground unless `UE_LEVEL=generated-<seed>`
 (`-level=` on its command line), a generated warehouse. It's a game or the playground as
@@ -83,6 +87,19 @@ and `sr.health <amount> [name]`.
 games. `pnpm run ue exec server sr.mode game` switches a running one; `UE_RAID_TIME=<seconds>`
 shortens raids. The port's playground has the crew's truck, which the web game's doesn't, parked along the
 south wall (`Playground::TruckPlace()`), so the round can be played before the harbour is ported.
+
+**Sounds:** `pnpm run ue sounds [filter…]` brings the sounds in `../assets/audio/sfx` into
+`/Game/Audio/<name>` as sound waves: `Tools/import/sounds.ts` turns each into a 16-bit WAV with
+ffmpeg (on the PATH) in `Saved/Import/sounds/`, then `sounds.py` imports them, marking the loops
+(its `LOOPS`) looping and playing on while out of earshot. Script plays them by name
+(`Script/Sound/Sounds.as`). Off-screen clients render sound with no device (`-DeterministicAudio`),
+so nothing plays aloud; they run at 30 frames a second, as that renderer renders 1/30 s a frame
+whatever the frame time, and without spatialisation, which it renders as silence, so placed sounds
+there fade and are muffled but aren't panned; and unfocused, they'd be muted, so they aren't.
+`sr.record start` and `sr.record stop <name>` record what a client hears to `Saved/Audio/<name>.wav`,
+and `sr.sound <name> [x y z]` plays a sound there, from a point in game meters or heard straight.
+`au.Debug.AudioSoloSoundWave <part of a name>` (and `au.ClearMutesAndSolos`) hears one kind alone,
+and `au.DumpActiveSounds` lists what's playing and how loud. A `window` client is the one to listen to.
 
 **Models:** `pnpm run ue import [filter…]` brings models from `../assets/models` into `Content/`, all
 of them or those whose path (`props/tv`, `village/`) contains a filter, in about 2½ minutes for all 117.
@@ -228,9 +245,21 @@ Each step ends playable, with the web game as the reference for how it should be
    curled and scrabbling in the air, on its back or on a face. `sr.tickdemo <x> <y> <z> [radius]
    [speed] [yaw] [state]` puts one on a single machine, walking a circle or standing, to look at, and
    `sr.torch [candela]` carries a light with the `sr.eye` camera to see it in the dark. `check ticks`
-   checks beams too. Still to come: hissing and tapping (with sound).
+   checks beams too. Its claws tap where its feet land, and it hisses as it quests, leaps or is
+   found by a light (`TickLegs.as`, as client/src/tick.ts and ticks.ts).
 6. **The harbour and the yard, then the village.** Environments, sky and fog, ground.
 7. **Sound, the tuning panel, the rest.** Then the web game is deleted.
+   Sound is on Unreal's audio engine (`Script/Sound/`): `Sounds.as` is audio.ts, a placed sound
+   fading on the web game's curve (`FFalloff`, made into an attenuation by `UStoreRaidAudio`, as a
+   curve needs keys script can't set) and muffled by walls on the Visibility channel, which only the
+   level blocks; `FOneShots` varies pitch and volume; `USoundBank` keeps a world's attenuations.
+   Ported: footsteps (`Footsteps.as`, the gait; ours straight, others' from their feet), the
+   flashlight's click, the hatch's motor and latch, a tick's taps and hiss, and the ambience
+   (`Ambience.as`: the bed, and the vent over the entrance, `FLevel.Vent`), number for number.
+   `check sounds` checks them. Unlike the web game, one wall muffles as much as several (the engine's
+   occlusion is one trace), and a mono sound heard straight is quieter than Web Audio played it.
+   Still to come: TV static (once TVs are drawn), the village's wind and river, and the tuning
+   panel, until which the `Sound/` settings are constants.
 
 Much of the client goes away rather than being ported: the render pipeline, lighting in shaders,
 visibility, KTX2, atlasing and fog are the engine's job now.

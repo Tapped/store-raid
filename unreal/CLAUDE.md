@@ -116,6 +116,20 @@ What has tripped up work here before:
 - A character's capsule rests about 2 cm above the floor: `sr.where` reports `y 0.02` standing on
   the ground, so checks compare heights within a tolerance.
 
+**Sound**
+
+- Off-screen clients render sound with `-DeterministicAudio`, no device. That renderer takes the
+  frame time once at startup (1/30 s) and renders that much every frame, so they're held to 30 fps
+  or their sound runs ahead of the game; it renders spatialised sounds as silence, so they run with
+  `au.AllowAudioSpatialization 0`; and the engine mutes an unfocused game
+  (`UnfocusedVolumeMultiplier`), which an off-screen window always is. `Tools/ue.ts` sets all three.
+- Someone else's character has no movement mode on a client (`MOVE_None`; only its own machine and
+  the server know it), so `IsMovingOnGround()` is false for it: footsteps look down from its feet.
+- A placed sound is muffled by anything on the Visibility channel between it and the listener:
+  keep things that move about (items) off it.
+- If a console command's file doesn't compile, the running game keeps the old script without
+  saying so on `exec`: check the log for `Error` when a command doesn't do what it now says.
+
 **Checks**
 
 - Every check shares one room on the running server, so a check starts with `sr.respawn` and

@@ -53,6 +53,9 @@ class ATruck : AActor
 	FParkedTruck Parked;
 	/** Where the hatch is drawn and solid, 0 up to 1 down. */
 	float Shown = -1;
+	/** The hatch's motor as it starts to move, and its latch as it comes to rest (Sound/Truck in truck.ts). */
+	FOneShots Motor;
+	FOneShots Latch;
 
 	/** Set the truck up where it's parked. The actor stays at the origin; its parts are in level space. */
 	void Build(FParkedTruck InParked)
@@ -114,6 +117,27 @@ class ATruck : AActor
 		Show(1);
 	}
 
+	/**
+	 * The motor as the hatch leaves rest (up or down), slowed to sound deeper, and the latch as it
+	 * comes to rest again, from the hinge. A jump from rest to rest, as a round puts it back, is silent.
+	 */
+	void HearHatch(float From, float To)
+	{
+		const bool bFromRest = From == 0 || From == 1;
+		const bool bToRest = To == 0 || To == 1;
+		if (From < 0 || bFromRest == bToRest || !Sounds::Heard())
+			return;
+		if (!Motor.bLoaded)
+		{
+			Motor.Load(Sounds::List("hatch-motor"));
+			Latch.Load(Sounds::List("hatch-latch"));
+		}
+		if (bFromRest)
+			Motor.PlayOn(Hinge, 0.7, 0.04, 0.45);
+		else
+			Latch.PlayOn(Hinge, 0.9, 0.1, 0.7);
+	}
+
 	void AddCube(float MinX, float MaxX, float MinY, float MaxY, float MinZ, float MaxZ)
 	{
 		Solid.AddInstance(Shapes::BoxTransform(MinX, MaxX, MinY, MaxY, MinZ, MaxZ), true);
@@ -124,6 +148,7 @@ class ATruck : AActor
 	{
 		if (At == Shown)
 			return;
+		HearHatch(Shown, At);
 		Shown = At;
 		// Eased at both ends, as a ram starts and stops. The model lies out behind the hinge (-X):
 		// shut, that end is turned up; down, it's tipped below level onto the ground.

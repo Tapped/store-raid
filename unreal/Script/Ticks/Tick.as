@@ -28,6 +28,9 @@ class ATick : AActor
 	float Yaw = 0;
 	UPROPERTY(Replicated)
 	ETickState State = ETickState::Perched;
+	/** The state this machine last showed it in, to hiss when it changes. */
+	ETickState StateShown = ETickState::Perched;
+	bool bStateShown = false;
 	/** Whom it's on, while latched. */
 	UPROPERTY(Replicated)
 	APlayerState Victim;
@@ -167,6 +170,12 @@ class ATick : AActor
 			Pose.bStill = true;
 		FHitResult Hit;
 		SetActorLocationAndRotation(At, Facing, false, Hit, true);
+		// It hisses as it leaps or drops, and as a light finds it (client/src/ticks.ts).
+		if (bStateShown && State != StateShown && StateShown != ETickState::Latched
+			&& (State == ETickState::Airborne || State == ETickState::Wary || State == ETickState::Fleeing))
+			Legs.HissNow(Model);
+		StateShown = State;
+		bStateShown = true;
 		Legs.Update(Model, DeltaSeconds, Pose);
 	}
 

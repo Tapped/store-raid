@@ -25,6 +25,8 @@
  *                         last import, unless --force. Content/ can be deleted and rebuilt
  *   surfaces [filter…]    the surface library (../assets/textures/surfaces) into Content/Surfaces/: its
  *                         textures, the world-projected material M_Surface and an instance a surface
+ *   sounds [filter…]      the sounds in ../assets/audio/sfx into Content/Audio/ (Tools/import/sounds.ts),
+ *                         staged as WAV, loops marked as looping
  *
  * Every process gets a dev port (see DevServer.h) for exec and shot: the server 8700, clients 8711 on,
  * bots 8731 on, the window 8721. The game listens on 7777. UE_LEVEL=generated-<seed> puts the server's
@@ -46,6 +48,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stageSounds } from "./import/sounds";
 import { STAGED, stageModels } from "./import/stage";
 import { stageSurfaces } from "./import/surfaces";
 
@@ -122,7 +125,16 @@ function clientRole(index: number, name?: string): Role {
       "-windowed",
       "-ResX=1280",
       "-ResY=720",
-      "-nosound",
+      // Sound rendered every tick with no device: nothing comes out of the speakers, but what the
+      // client hears can be recorded to a file (sr.record) and checked. That renderer takes the
+      // frame time once at startup (1/30 s) and renders that much every frame, so the client runs at
+      // 30 frames a second, or its sound runs ahead of the game. It also renders spatialised sounds
+      // as silence, so placed sounds aren't panned here: they still fade and are muffled by walls,
+      // which is what a recording can check. A window client pans them.
+      "-DeterministicAudio",
+      "-ExecCmds=t.MaxFPS 30,au.AllowAudioSpatialization 0",
+      // An off-screen window never has focus, and the engine mutes a game that hasn't.
+      "-ini:Engine:[Audio]:UnfocusedVolumeMultiplier=1.0",
       ...common(who, devPort),
     ],
   };
@@ -532,6 +544,19 @@ async function importSurfaces(filters: string[]): Promise<void> {
 }
 
 /**
+ * The sounds (`assets/audio/sfx/`) into Content/Audio/: staged as WAV (see Tools/import/sounds.ts),
+ * then imported as sound waves in a headless editor by Tools/import/sounds.py.
+ */
+async function importSounds(filters: string[]): Promise<void> {
+  const staged = await stageSounds(filters);
+  if (!staged.length) {
+    console.error(`No sound matches ${filters.join(" ")}`);
+    process.exit(1);
+  }
+  runImportScript(join(ROOT, "Tools/import/sounds.py"), "sounds");
+}
+
+/**
  * Runs an editor Python script headless, printing its lines that start with `<prefix>: ` and any
  * errors; it ends with `<prefix>: done: N … 0 failed` when everything went in. Exits with whether it did.
  */
@@ -657,6 +682,9 @@ switch (command) {
     break;
   case "surfaces":
     await importSurfaces(rest);
+    break;
+  case "sounds":
+    await importSounds(rest);
     break;
   case "check": {
     const file = join(ROOT, "Tools/checks", `${rest[0]}.ts`);

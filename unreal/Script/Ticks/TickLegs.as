@@ -20,6 +20,17 @@
 const float STRIDE = 28;
 /** The part of the cycle a foot spends in the air; it's planted for the rest. */
 const float SWING = 0.4;
+/** How loud its taps are at their loudest, and its hiss. */
+const float TICK_TAPS = 0.15;
+const float TICK_HISS = 0.29;
+/** Taps sooner than TAP_GAP_MIN seconds after the last are silent, sooner than TAP_GAP_MAX softer, to TAP_SOFTEST. */
+const float TAP_GAP_MIN = 0.07;
+const float TAP_GAP_MAX = 0.3;
+const float TAP_SOFTEST = 0.35;
+/** Seconds of quiet between hisses while it keeps questing, at least and at most. */
+const float HISS_GAP_MIN = 1.5;
+const float HISS_GAP_MAX = 4;
+
 /** How far ahead of the leg in front of it each leg of a group lifts, in cycles. */
 const float WAVE = 0.05;
 /** How far the feet are from the middle: turning on the spot moves them this many cm a radian. */
@@ -108,6 +119,13 @@ struct FTickLegs
 	FVector Velocity;
 	float TurnRate = 0;
 	float Cycle = 0;
+	/** Its claws tapping where its feet land, and its hiss (Sound/Tick in client/src/tick.ts). */
+	FOneShots Taps;
+	FOneShots Hiss;
+	float LastTap = -100;
+	float NextHiss = 0;
+	/** Where feet landed this frame, to tap there. */
+	TArray<FVector> Landed;
 
 	/** Reads the rest pose off the model. False if it isn't the tick's rig. */
 	bool Setup(UPoseableMeshComponent Model)
@@ -218,6 +236,18 @@ struct FTickLegs
 		Still = bMoving || Pose.bLoose || Pose.bStill ? 0 : Still + Dt;
 		const bool bQuesting = Pose.bRear || Still > QUEST_AFTER;
 		Quest = Math::Clamp(Quest + (bQuesting ? Dt : -Dt) * QUEST_RATE, 0.0, 1.0);
+		if (!Taps.bLoaded)
+		{
+			Taps.Load(Sounds::List("tick-tap-1", "tick-tap-2", "tick-tap-3"));
+			Hiss.Load(Sounds::List("tick-hiss"));
+		}
+		// A hiss as it rears up to quest, then now and then while it goes on, from its mouth.
+		if (bQuesting && !Pose.bRear && Quest > 0.3 && Clock >= NextHiss)
+		{
+			const float Rate = Math::RandRange(0.85, 1.05);
+			Hiss.PlayOn(Model, TICK_HISS, 0, Rate, FFalloff(), n"head");
+			NextHiss = Clock + Hiss.Duration() / Rate + Math::RandRange(HISS_GAP_MIN, HISS_GAP_MAX);
+		}
 
 		if (!Pose.bLoose)
 		{
@@ -233,7 +263,10 @@ struct FTickLegs
 					Leg.bStepping = false;
 				}
 			}
+			Landed.Reset();
 			StepLegs(At, Yaw, Speed, bMoving, Dt);
+			for (FVector Foot : Landed)
+				Tap(Foot);
 		}
 
 		// The body rides a little lower while legs are in the air, rolls away from lifted legs, and
@@ -340,7 +373,10 @@ struct FTickLegs
 			Leg.Foot = Math::Lerp(Leg.StepFrom, To, Across);
 			Leg.Foot.Z = At.Z + STEP_HEIGHT * Math::Square(Math::Sin(PI * Leg.StepT));
 			if (Leg.StepT >= 1)
+			{
 				Leg.bStepping = false;
+				Landed.Add(Leg.Foot);
+			}
 			else
 				bAnyStepping = true;
 		}
@@ -369,6 +405,32 @@ struct FTickLegs
 			Leg.StepT = 0;
 			Leg.StepTime = Math::Max(SETTLE_TIME, Most / FOOT_SPEED);
 		}
+	}
+
+	/**
+	 * A claw tap where a foot lands (world space): four feet land within a few hundredths of a second
+	 * of each other, which played a tap each sounds like a machine gun. So one sooner than
+	 * TAP_GAP_MIN after the last tap is silent, and one sooner than TAP_GAP_MAX is softer, down to
+	 * TAP_SOFTEST: a group lands as one accented tap and a few quiet ones.
+	 */
+	void Tap(FVector At)
+	{
+		const float Gap = Clock - LastTap;
+		if (Gap < TAP_GAP_MIN)
+			return;
+		LastTap = Clock;
+		const float T = Math::Min(1.0, (Gap - TAP_GAP_MIN) / (TAP_GAP_MAX - TAP_GAP_MIN));
+		Taps.PlayAt(At, TICK_TAPS * Math::Lerp(TAP_SOFTEST, 1.0, T), 0.15);
+	}
+
+	/** A hiss from its mouth, now: as it leaps or drops, or as a light finds it. */
+	void HissNow(UPoseableMeshComponent Model)
+	{
+		if (!Hiss.bLoaded)
+			Hiss.Load(Sounds::List("tick-hiss"));
+		const float Rate = Math::RandRange(0.9, 1.15);
+		Hiss.PlayOn(Model, TICK_HISS, 0, Rate, FFalloff(), n"head");
+		NextHiss = Clock + Hiss.Duration() / Rate + HISS_GAP_MAX;
 	}
 
 	/** Bend a leg so its claw tip reaches Target (component space), with the body turned and raised. */

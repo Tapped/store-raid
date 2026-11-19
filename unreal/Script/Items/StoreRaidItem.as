@@ -4,6 +4,7 @@
 // imported and then hidden under it. Hands.as picks it up, carries it and lets it go, on the server.
 //
 // What collides with what, as the layers in physics.ts: items lie on the level and on each other.
+// They're not on the Visibility channel, which only the level blocks: a sound's walls (Sounds.as).
 // Players shove two-handed ones through their shover (a second capsule, see StoreRaidCharacter.as)
 // and step over one-handed ones; their own capsule passes through every item, so items never stop
 // them. Carried and just-dropped items pass through players, who'd knock them about or catch them.
@@ -49,11 +50,15 @@ class AStoreRaidItem : AActor
 	float Lagging = 0;
 
 	bool bSetUp = false;
+	/** Whether it's begun play here: a flashlight already on as it arrives switches on without a click. */
+	bool bStarted = false;
+	FOneShots Click;
 
 	UFUNCTION(BlueprintOverride)
 	void BeginPlay()
 	{
 		SetUp();
+		bStarted = true;
 	}
 
 	UFUNCTION()
@@ -67,6 +72,12 @@ class AStoreRaidItem : AActor
 	void OnRep_On()
 	{
 		Beam.SetVisibility(bOn);
+		// The switch's click, at the flashlight (Sound/Flashlight in items.ts).
+		if (!bStarted)
+			return;
+		if (!Click.bLoaded)
+			Click.Load(Sounds::List("flashlight-click"));
+		Click.PlayAt(ActorLocation, 0.05, 0.05);
 	}
 
 	FItemKindInfo Info() const
@@ -98,7 +109,6 @@ class AStoreRaidItem : AActor
 		Mesh.SetCollisionResponseToChannel(ECollisionChannel::WorldStatic, ECollisionResponse::ECR_Block);
 		Mesh.SetCollisionResponseToChannel(ECollisionChannel::WorldDynamic, ECollisionResponse::ECR_Block);
 		Mesh.SetCollisionResponseToChannel(ECollisionChannel::PhysicsBody, ECollisionResponse::ECR_Block);
-		Mesh.SetCollisionResponseToChannel(ECollisionChannel::Visibility, ECollisionResponse::ECR_Block);
 		Mesh.SetSimulatePhysics(true);
 		Mesh.SetMassOverrideInKg(NAME_None, Math::Max(0.2, KindInfo.Size.X * KindInfo.Size.Y * KindInfo.Size.Z * Items::DENSITY), true);
 		SetShovable(true);

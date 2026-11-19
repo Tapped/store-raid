@@ -33,6 +33,9 @@ class AStoreRaidCharacter : AStoreRaidCharacterBase
 	/** Whether the seat has been said yet: until then the body waits, so one already seated starts seated. */
 	bool bSeatKnown = false;
 	bool bBodyHidden = false;
+	/** Their feet, heard on every machine but the server: ours straight, theirs from where they are. */
+	FGait Gait;
+	FOneShots Steps;
 
 	/**
 	 * What shoves loose items: a capsule like the player's own, which blocks only physics bodies. The
@@ -87,7 +90,10 @@ class AStoreRaidCharacter : AStoreRaidCharacterBase
 	UFUNCTION(BlueprintOverride)
 	void Tick(float DeltaSeconds)
 	{
-		if (System::IsDedicatedServer() || Body.SkeletalMeshAsset == nullptr || !bSeatKnown || PlayerState == nullptr)
+		if (System::IsDedicatedServer())
+			return;
+		Footstep(DeltaSeconds);
+		if (Body.SkeletalMeshAsset == nullptr || !bSeatKnown || PlayerState == nullptr)
 			return;
 		float SeatYaw = 0;
 		const AStoreRaidPlayerState Player = Cast<AStoreRaidPlayerState>(PlayerState);
@@ -98,6 +104,39 @@ class AStoreRaidCharacter : AStoreRaidCharacterBase
 			SeatYaw = Room.Parked.Seats[Player.Seat].Yaw;
 		const bool bCarrying = Left != nullptr && Left == Right;
 		Pose.Update(Body, GetVelocity(), GetBaseAimRotation().Yaw, bSeatedShown, SeatYaw, bCarrying, DeltaSeconds);
+	}
+
+	/**
+	 * A footstep when a foot lands, walking or running on the ground (not on a ladder, in the air or
+	 * seated): ours heard straight, someone else's from their feet. Someone else's character here has
+	 * no movement mode (it's MOVE_None on every machine but its own and the server), so whether
+	 * they're on the ground is a short look down from their feet.
+	 */
+	void Footstep(float DeltaSeconds)
+	{
+		const AStoreRaidPlayerState Player = Cast<AStoreRaidPlayerState>(PlayerState);
+		const bool bSeated = bSeatedShown || (Player != nullptr && Player.Seat >= 0);
+		const float Speed = GetVelocity().Size2D() / 100.0;
+		if (!Gait.Update(DeltaSeconds, Speed, !bSeated))
+			return;
+		const FVector Feet = ActorLocation - FVector(0, 0, CapsuleComponent.ScaledCapsuleHalfHeight);
+		if (IsLocallyControlled() ? !Movement.IsMovingOnGround() : !OnGround(Feet))
+			return;
+		if (!Steps.bLoaded)
+			Steps.Load(Footsteps::Takes());
+		if (IsLocallyControlled())
+			Steps.PlayStraight(Gait.Volume() * Footsteps::OWN);
+		else
+			// A little above the floor, so the floor itself doesn't muffle them.
+			Steps.PlayAt(Feet + FVector(0, 0, 10), Gait.Volume() * Footsteps::THEIRS);
+	}
+
+	/** Whether there's floor under these feet: within 30 cm below them (STEP_DOWN and then some). */
+	bool OnGround(FVector Feet) const
+	{
+		TArray<AActor> Ignored;
+		FHitResult Hit;
+		return System::LineTraceSingle(Feet + FVector(0, 0, 10), Feet - FVector(0, 0, 30), ETraceTypeQuery::Visibility, false, Ignored, EDrawDebugTrace::None, Hit, true);
 	}
 
 	/** Hidden while we look through this player's eyes, so the camera isn't inside their head. */
