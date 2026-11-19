@@ -59,7 +59,9 @@ running game can't take in place, or after one stops (script that doesn't compil
 `sr.move`, `sr.look`, `sr.face <yaw> [pitch]`, `sr.run`, `sr.jump`, `sr.goal <x> <z>` (walk to a
 point), `sr.grab`, `sr.release`, `sr.drop`, `sr.light`, `sr.respawn`, `sr.reset` (every item back),
 `sr.where` (this player, as `key value` pairs), `sr.eye <x> <y> <z> <bearing> [pitch]` (look from any point on
-that machine, for screenshots; `sr.eye off`), `sr.players`, `sr.items` and `sr.room`; for the
+that machine, for screenshots; `sr.eye off`), `sr.torch [candela]` (a light carried with that eye, to
+see in the dark; `sr.torch off`), `sr.bodies` (what each character's body plays on that machine),
+`sr.players`, `sr.items` and `sr.room`; for the
 round, `sr.ready`, `sr.stand` and `sr.overlay` (what this screen's overlay and results say), and on
 the server `sr.mode playground|game`, `sr.clock <seconds>` (what's left of the phase) and
 `sr.raidtime <seconds>`. A process started with `-bot` walks a small round until given a goal.
@@ -67,6 +69,9 @@ the server `sr.mode playground|game`, `sr.clock <seconds>` (what's left of the p
 bot; the port of `scripts/playground.ts`), `items` (a bot and a client; hands, the flashlight, the
 sofa), `hatch` (the port of `scripts/hatch.ts`) and `round` (a bot and a client: seats, ready, loot,
 leaving, results, death and watching, dawn). The last two make the room a game and put it back.
+Those four want the server on the playground (no `UE_LEVEL`): on generated-2 they fail. `hatch`
+fails from its second press of the outside button on (6 steps), as it did before the character
+body went in: not looked into yet.
 `ticks` (a client and a bot, on `UE_LEVEL=generated-2`, `dev 1 1`) has a perched tick made wary by
 the player's beam, settle, and drop on them; the bot's beam make it let go and flee; a beam send a
 hunting one fleeing; then a tick hunt, latch on and drain the player, be pulled off, and drain them
@@ -91,9 +96,11 @@ the textures, KTX2 (UASTC, decoded with Babylon's decoder from `node_modules`) o
 Then `Tools/import/import.py` runs in a headless editor: each model goes to
 `/Game/Models/<folder>/<name>/`, its mesh named `<name>` beside its materials (Interchange's glTF
 material instances) and textures. A static model's nodes are combined into one static mesh with
-Nanite; a skinned one is a skeletal mesh with its skeleton and clips. Models are turned at import to
-face north (Unreal's +X) with their right east (+Y), as `World::ToWorld` has the game's axes, so
-script places them with the game's yaw. New models go on show in the playground through `Concepts::Playground()` (`Level/Concepts.as`,
+Nanite; a skinned one is a skeletal mesh with its skeleton and clips. Static models are turned at
+import to face north (Unreal's +X) with their right east (+Y), as `World::ToWorld` has the game's
+axes, so script places them with the game's yaw. Skinned ones aren't: Interchange turned their
+skeleton but not their vertices, so they come in facing +Y and the component holding one is turned
+a quarter back (`ATick.Model`, `Body.as`); `Models::Clip("characters/ch35", "walk")` loads a clip. New models go on show in the playground through `Concepts::Playground()` (`Level/Concepts.as`,
 as `CONCEPTS` in client/src/playground.ts), drawn on every screen with no collision: the zombie stands
 there now. In script, `Models::Mesh("level/truck")` (or `Skinned()`)
 loads one, and `sr.model <name> <x> <y> <z> [yaw]` puts one down on that machine to look at
